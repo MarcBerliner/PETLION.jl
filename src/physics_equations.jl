@@ -275,7 +275,7 @@ function build_K_eff!(states, p::AbstractParam)
     return nothing
 end
 
-function activeMaterial(p::AbstractParam)
+function active_material(p::AbstractParam)
     """
     Electrode active material fraction [-]
     """
@@ -289,11 +289,11 @@ function activeMaterial(p::AbstractParam)
     return ϵ_sp, ϵ_sn
 end
 
-function effectiveConductivity(p::AbstractParam)
+function conductivity_effective(p::AbstractParam)
     """
     Effective conductivity [S/m]
     """
-    ϵ_sp, ϵ_sn = activeMaterial(p)
+    ϵ_sp, ϵ_sn = active_material(p)
 
     σ_eff_p = p.θ[:σ_p]*ϵ_sp
     σ_eff_n = p.θ[:σ_n]*ϵ_sn
@@ -301,11 +301,11 @@ function effectiveConductivity(p::AbstractParam)
     return σ_eff_p, σ_eff_n
 end
 
-function surfaceToVolumeRatio(p::AbstractParam)
+function surface_area_to_volume_ratio(p::AbstractParam)
     """
     Surface area to volume ratio for a sphere (SA/V = 4πr^2/(4/3πr^3)) multipled by the active material fraction [m^2/m^3]
     """
-    ϵ_sp, ϵ_sn = activeMaterial(p)
+    ϵ_sp, ϵ_sn = active_material(p)
 
     a_p = 3ϵ_sp/p.θ[:Rp_p]
     a_n = 3ϵ_sn/p.θ[:Rp_n]
@@ -313,7 +313,7 @@ function surfaceToVolumeRatio(p::AbstractParam)
     return a_p, a_n
 end
 
-function surfaceConcentrationInitial(p::AbstractParam)
+function surface_concentration_initial(p::AbstractParam)
     """
     Initial c_s_star concentration defined as a linear relationship between (θ_min, θ_max) depending on the SOC fraction
     """
@@ -351,8 +351,8 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     ## Positive electrode
 
     # RHS for the solid potential in the positive electrode. The BC on the left is enforced [Neumann BC]
-    σ_eff_p, σ_eff_n = effectiveConductivity(p)
-    a_p, a_n = surfaceToVolumeRatio(p)
+    σ_eff_p, σ_eff_n = conductivity_effective(p)
+    a_p, a_n = surface_area_to_volume_ratio(p)
 
     @views @inbounds f_p = [
         ((p.θ[:l_p].*Δx_p.*a_p.*F.*j.p[1])-I_density).*Δx_p.*p.θ[:l_p]./σ_eff_p
@@ -441,7 +441,7 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     res_Φ_e = res[:Φ_e]
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
-    a_p, a_n = surfaceToVolumeRatio(p)
+    a_p, a_n = surface_area_to_volume_ratio(p)
     
     R = 8.31446261815324
     F = 96485.3365
@@ -565,7 +565,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     # Diffusion coefficients
     # Comment this for benchmark purposes
     D_eff_p, D_eff_s, D_eff_n = coeff_electrolyte_diffusion_effective(states, p)
-    a_p, a_n = surfaceToVolumeRatio(p)
+    a_p, a_n = surface_area_to_volume_ratio(p)
 
     # Interpolation of the diffusion coefficients, same for electrolyte conductivities
     D_eff_p, D_eff_s, D_eff_n = interpolateElectrolyteConductivities(D_eff_p, D_eff_s, D_eff_n, p)
@@ -1293,8 +1293,8 @@ end
     R = 8.31446261815324
 
     # Retrieve effective electrolyte conductivity coefficients.
-    a_p, a_n = surfaceToVolumeRatio(p)
-    σ_eff_p, σ_eff_n = effectiveConductivity(p)
+    a_p, a_n = surface_area_to_volume_ratio(p)
+    σ_eff_p, σ_eff_n = conductivity_effective(p)
 
     # Evaluate the derivatives used in Q_ohm calculations
     function build_thermal_derivatives()
@@ -1464,3 +1464,68 @@ end
     return nothing
 end
 
+
+
+@inline function calc_I1C(p::param)
+    F = 96485.3365
+    θ = p.θ
+
+    if p.numerics.aging === :R_film
+        @inbounds @views I1C = (F/3600.0)*min(
+            θ[:c_max_n]::Float64*(θ[:θ_max_n] - θ[:θ_min_n]::Float64)*(1.0 - (θ[:ϵ_n][1])::Float64 - θ[:ϵ_fn]::Float64)*θ[:l_n]::Float64,
+            θ[:c_max_p]::Float64*(θ[:θ_min_p] - θ[:θ_max_p]::Float64)*(1.0 - θ[:ϵ_p]::Float64      - θ[:ϵ_fp]::Float64)*θ[:l_p]::Float64,
+        )
+    else
+        @inbounds @views I1C = (F/3600.0)*min(
+            θ[:c_max_n]::Float64*(θ[:θ_max_n] - θ[:θ_min_n]::Float64)*(1.0 - θ[:ϵ_n]::Float64 - θ[:ϵ_fn]::Float64)*θ[:l_n]::Float64,
+            θ[:c_max_p]::Float64*(θ[:θ_min_p] - θ[:θ_max_p]::Float64)*(1.0 - θ[:ϵ_p]::Float64 - θ[:ϵ_fp]::Float64)*θ[:l_p]::Float64,
+        )
+    end
+
+    return I1C
+end
+
+@inline function calc_V(Y::Vector{Float64}, p::param, run::AbstractRun, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}}
+    if run.method === :V
+        V = value(run)
+    else
+        if p.numerics.edge_values === :center
+            V = @views @inbounds Y[ind_Φ_s[1]] - Y[ind_Φ_s[end]]
+        else # interpolated edges
+            V = @views @inbounds (1.5*Y[ind_Φ_s[1]] - 0.5*Y[ind_Φ_s[2]]) - (1.5*Y[ind_Φ_s[end]] - 0.5*Y[ind_Φ_s[end-1]])
+        end
+    end
+    return V
+end
+
+@inline function calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun, p::param)
+    if run.method === :I
+        I = @inbounds value(run)
+    elseif  run.method === :V
+        I = @inbounds Y[p.ind.I[1]]
+    elseif run.method === :P
+        I = @inbounds value(run)/model.V[end]
+    end
+    
+    return I
+end
+
+@inline function calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun, p::param)
+    if run.method === :I || run.method === :V
+        P = @views @inbounds model.I[end]*model.V[end]
+    elseif run.method === :P
+        P = value(run)
+    end
+
+    return P
+end
+
+@inline function calc_SOC(c_s_avg::Vector{Float64}, p::param)
+    if p.numerics.solid_diffusion === :Fickian
+        c_s_avg_sum = @views @inbounds mean(c_s_avg[(p.N.p*p.N.r_p)+1:end])
+    else # c_s_avg in neg electrode
+        c_s_avg_sum = @views @inbounds mean(c_s_avg[p.N.p+1:end])
+    end
+
+    return (c_s_avg_sum/p.θ[:c_max_n]::Float64 - p.θ[:θ_min_n]::Float64)/(p.θ[:θ_max_n]::Float64 - p.θ[:θ_min_n]::Float64) # cell-soc fraction
+end

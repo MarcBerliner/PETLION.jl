@@ -27,21 +27,6 @@ end
 @inline value(run::run_constant) = run.value
 @inline value(run::run_function) = @inbounds run.value[1]
 
-@with_kw mutable struct state_sections{T} <: AbstractArray{T,1}
-    tot::AbstractArray{T,1} = nothing
-    a = nothing
-    p = nothing
-    s = nothing
-    n = nothing
-    z = nothing
-    sections::Tuple = ()
-    var_type::Symbol = :NA
-end
-Base.size(state::state_sections) = size(state.tot)
-Base.IndexStyle(::Type{<:state_sections}) = IndexLinear()
-Base.getindex(state::state_sections, i::Int64)= state.tot[i]
-Base.setindex!(state::state_sections, v, i::Int64)= (state.tot[i] = v)
-
 @with_kw struct index_state <: AbstractUnitRange{Int64}
     start::Int64 = 0
     stop::Int64 = 0
@@ -321,7 +306,7 @@ function Base.show(io::IO, p::AbstractParam)
     
     sp = p.numerics.solid_diffusion === :Fickian ? "  " : ""
     str = string(
-    "$(typeof(p)):\n",
+    "$(replace(string(typeof(p)), "PorousElectrodes."=>"")):\n",
     "  Cathode: $(p.numerics.cathode), $(p.numerics.rxn_p), & $(p.numerics.OCV_p)\n",
     "  Anode:   $(p.numerics.anode), $(p.numerics.rxn_n), & $(p.numerics.OCV_n)\n",
     "  System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), & $(p.numerics.K_eff)\n",
@@ -538,3 +523,5 @@ Base.:*(A::AbstractMatrix, x::AbstractVector{Num}; simple::Bool = true) = _MTK_M
 Base.:*(A::Union{Array{T,2}, Array{T,2}, Array{T,2}, Array{T,2}}, x::StridedArray{Num, 1}; simple::Bool = true) where {T<:Union{Float32, Float64}} = _MTK_MatVecProd(A, x; simple=simple)
 
 Base.deleteat!(a::VectorOfArray, i::Integer) = (Base._deleteat!(a.u, i, 1); a.u)
+
+function emptyfunc end

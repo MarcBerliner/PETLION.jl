@@ -108,6 +108,20 @@
     return nothing
 end
 
+function get_corrected_methods(methods)
+    """
+    Corrects the input methods to `Params`
+    """
+    if methods isa Symbol
+        methods = (methods,)
+    elseif isempty(methods)
+        error("methods cannot be empty")
+    end
+    check_appropriate_method.(methods)
+    
+    return methods
+end
+
 @inline function check_method(I::R1, V::R2, P::R3) where {R1<:Union{Number,Function,Symbol,Nothing},R2<:Union{Number,Nothing,Symbol},R3<:Union{Number,Function,Symbol,Nothing}}
     if     !isnothing(I)
         method = :I
@@ -162,7 +176,7 @@ end
 end
 
 @inline function check_errors_parameters_runtime(p::R1,opts::R2,tspan::R3) where {R1<:param,R2<:options_model,R3<:Union{Number,AbstractArray,Nothing}}
-    ϵ_sp, ϵ_sn = activeMaterial(p)
+    ϵ_sp, ϵ_sn = active_material(p)
 
     if ( ϵ_sp > 1 )                             error("ϵ_p + ϵ_fp must be ∈ [0, 1)") end
     if ( ϵ_sn > 1 )                             error("ϵ_n + ϵ_fn must be ∈ [0, 1)") end

@@ -355,6 +355,7 @@ end
     set_var!(model.Y,  opts.var_keep.Y, bounds.t_final_interp_frac.*(int.u.v .- model.Y[end]) .+ model.Y[end])
     set_vars!(model, p, model.Y[end], YP, t, run, opts; modify! = set_var_last!)
     
+    return nothing
 end
 
 @inline function warm_start_init!(Y0::Vector{Float64}, model::model_output, run::AbstractRun, p::param, SOC::Float64=(@inbounds model.SOC[end]))
@@ -427,8 +428,7 @@ end
         end
     end
     # set YP0 to zeros
-    # not currently needed because MTK functions preallocate with zeros
-    # YP0 .= 0.0
+    fill!(YP0, 0)
     # calculate the differential equations for YP0
     IC.f_diff!(YP0, Y0, YP0, θ_tot)
     
