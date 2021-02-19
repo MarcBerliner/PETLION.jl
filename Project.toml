@@ -1,0 +1,13 @@
+name = "PorousElectrodes2"
+uuid = "5e0a28e4-193c-47fa-bbb8-9c901cc1ac2c"
+authors = ["Marc D. Berliner", "Daniel A. Cogswell", "Martin Z. Bazant", "Richard D. Braatz"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
