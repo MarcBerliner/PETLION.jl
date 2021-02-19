@@ -1,4 +1,4 @@
-name = "PorousElectrodes2"
+name = "PorousElectrodes"
 uuid = "5e0a28e4-193c-47fa-bbb8-9c901cc1ac2c"
 authors = ["Marc D. Berliner", "Daniel A. Cogswell", "Martin Z. Bazant", "Richard D. Braatz"]
 version = "0.1.0"

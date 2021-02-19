@@ -1,4 +1,4 @@
-module PorousElectrodes2
+module PorousElectrodes
 
 # Write your package code here.
 

@@ -1,6 +1,6 @@
-using PorousElectrodes2
+using PorousElectrodes
 using Test
 
-@testset "PorousElectrodes2.jl" begin
+@testset "PorousElectrodes.jl" begin
     # Write your tests here.
 end
