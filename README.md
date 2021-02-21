@@ -1,7 +1,7 @@
 ![alt text](docs/logo/PETLION_medium.png)
 
 
-# Porous Electrode Theory for Li-ion Batteries
+# PETLION.jl – Porous Electrode Theory for Li-ion Batteries
 
 [![Build Status](https://travis-ci.com/MarcBerliner/PETLION.jl.svg?branch=master)](https://travis-ci.com/MarcBerliner/PETLION.jl)
 [![Build Status](https://ci.appveyor.com/api/projects/status/github/MarcBerliner/PETLION.jl?svg=true)](https://ci.appveyor.com/project/MarcBerliner/PETLION-jl)
