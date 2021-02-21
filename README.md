@@ -1,4 +1,4 @@
-![alt text](docs/logo/PETLION_large.png)
+![alt text](docs/logo/PETLION_medium.png)
 
 
 # PETLION
