@@ -92,12 +92,10 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
     ## Y0 function
     println_v("Making initial guess function...")
     Y0_sym = _symbolic_initial_guess(p_sym, SOC_sym, θ_sym, I_current_sym)
-    println_v("Done\n")
 
     ## batteryModel function
     println_v("Making symbolic model...")
     res, ind_res = _symbolic_residuals(p_sym, t_sym, x_sym, xp_sym, I_current_sym, θ_sym, method)
-    println_v("Done\n")
 
     θ_sym_slim, θ_keys_slim, θ_len_slim = get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
     
@@ -110,8 +108,6 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
     println_v("Making symbolic Jacobian. May take a few mins...")
     Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method;
         res_prev=res_prev, Jac_prev=Jac_prev, verbose=verbose)
-
-    println_v("Done\n")
 
     println_v("Making initial condition functions...")
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method, ind_res)
@@ -264,7 +260,7 @@ function _symbolic_jacobian(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym
     end
     check_semi_explicit(Jacxp)
 
-    Jac_new = @inbounds @views sparsejacobian_multithread(res[ind_new], x_sym;  show_progress = !flag_prev)
+    Jac_new = @inbounds @views sparsejacobian_multithread(res[ind_new], x_sym;  show_progress = !flag_prev, simplify=false)
     
     # For some reason, Jac[ind_new] .= Jac_new doesn't work on linux. This if statement is a temporary workaround
     if !flag_prev
