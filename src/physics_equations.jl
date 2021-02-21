@@ -5,12 +5,12 @@ function residuals_PET!(residuals, t, x, ẋ, method::Symbol, p::AbstractParam;
     check_appropriate_method(method)
     
     ## First put the vector of x's, ẋ's, and residuals into dictionaries
-    states  = retrieve_states(x, p)
+    states = retrieve_states(x, p)
     ∂states = retrieve_states(ẋ, p)
-    res     = retrieve_states(residuals, p)
+    res = retrieve_states(residuals, p)
 
-    states[:t]        = t
-    states[:method]   = method
+    states[:t] = t
+    states[:method] = method
     states[:symbolic] = symbolic
 
     ## Calculate a few necessary auxiliary variables
@@ -127,7 +127,7 @@ function build_j_aging!(states, p)
     """
     Append `j` with possibly additions from `j_s`
     """
-    j   = states[:j]
+    j = states[:j]
     j_s = states[:j_s]
 
     j_aging = p.numerics.aging ∈ (:SEI, :R_film) ? j .+ [zeros(p.N.p);j_s] : j
@@ -153,9 +153,9 @@ function build_c_s_star!(states, p::AbstractParam)
     # build_c_s_star! evaluates the concentration of Li-ions at the electrode surfaces.
     
     c_s_avg = states[:c_s_avg]
-    j       = states[:j]
-    Q       = states[:Q]
-    T       = states[:T]
+    j = states[:j]
+    Q = states[:Q]
+    T = states[:T]
     
     # Check what kind of solid diffusion model has been chosen.
     if p.numerics.solid_diffusion ∈ (:quadratic, :polynomial)
@@ -196,12 +196,12 @@ function build_OCV!(states, p)
     In-place barrier function for build_OCV
     """
     c_s_star = states[:c_s_star]
-    T        = states[:T]
+    T = states[:T]
 
     # Compute the OCV for the positive & negative electrodes.
     U_p, U_n, ∂U∂T_p, ∂U∂T_n = build_OCV(c_s_star, T, p)
 
-    states[:U]    = state_new([U_p; U_n],       (:p, :n), p)
+    states[:U] = state_new([U_p; U_n],       (:p, :n), p)
     states[:∂U∂T] = state_new([∂U∂T_p; ∂U∂T_n], (:p, :n), p)
 
     return nothing
@@ -213,8 +213,8 @@ end
     """
     c_s_star_p = c_s_star[(1:p.N.p)]
     c_s_star_n = c_s_star[(1:p.N.n) .+ (p.N.p)]
-    T_p        = T[(1:p.N.p) .+ (p.N.a)]
-    T_n        = T[(1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)]
+    T_p = T[(1:p.N.p) .+ (p.N.a)]
+    T_n = T[(1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)]
     
     θ_p = c_s_star_p./p.θ[:c_max_p]
     θ_n = c_s_star_n./p.θ[:c_max_n]
@@ -230,11 +230,11 @@ function build_η!(states, p)
     Calculate the overpotentials for the positive & negative electrodes
     """
 
-    Φ_s  = states[:Φ_s]
-    Φ_e  = states[:Φ_e]
-    U    = states[:U]
-    j    = states[:j]
-    j_s  = states[:j_s]
+    Φ_s = states[:Φ_s]
+    Φ_e = states[:Φ_e]
+    U = states[:U]
+    j = states[:j]
+    j_s = states[:j_s]
     film = states[:film]
 
     F = 96485.3365
@@ -266,7 +266,7 @@ end
 
 function build_K_eff!(states, p::AbstractParam)
     c_e = states[:c_e]
-    T   = states[:T]
+    T = states[:T]
 
     K_eff_p, K_eff_s, K_eff_n = p.numerics.K_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 
@@ -327,7 +327,7 @@ function coeff_reaction_rate(states, p::AbstractParam)
     """
     Reaction rates (k) of cathode and anode [m^2.5/(m^0.5 s)]
     """
-    T       = states[:T]
+    T = states[:T]
     c_s_avg = states[:c_s_avg]
 
     return p.numerics.rxn_rate(T.p, T.n, c_s_avg.p, c_s_avg.n, p)
@@ -339,8 +339,8 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     residuals_Φ_s! evaluates the residuals of the solid potential equation [V]
     """
 
-    j         = states[:j_aging]
-    Φ_s       = states[:Φ_s]
+    j = states[:j_aging]
+    Φ_s = states[:Φ_s]
     I_density = states[:I][1]
 
     res_Φ_s = res[:Φ_s]
@@ -374,14 +374,14 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     function block_matrix_Φ_s(N::Int, mat_type=Float64)
         A = zeros(mat_type, N, N)
     
-        ind_0diag    = diagind(A)
+        ind_0diag = diagind(A)
         ind_neg1diag = diagind(A, -1)
         ind_pos1diag = diagind(A, 1)
     
         A[ind_0diag]    .= -2.0
         A[ind_pos1diag] .=  1.0
         A[ind_neg1diag] .=  1.0
-        A[1,1]     = -1.0
+        A[1,1] = -1.0
         A[end,end] = -1.0
     
         return A
@@ -431,10 +431,10 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     residuals_Φ_e! evaluates residuals for the electrolyte potential equation discretized using method of lines, [V]
     """
 
-    j   = states[:j_aging]
+    j = states[:j_aging]
     Φ_e = states[:Φ_e]
     c_e = states[:c_e]
-    T   = states[:T]
+    T = states[:T]
 
     K_eff = states[:K_eff]
 
@@ -536,14 +536,14 @@ end
 
 function coeff_solid_diffusion_effective(states::Dict, p::AbstractParam)
     c_s_avg = states[:c_s_avg]
-    T       = states[:T]
+    T = states[:T]
     
     return p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
 end
 
 function coeff_electrolyte_diffusion_effective(states::Dict, p::AbstractParam)
     c_e = states[:c_e]
-    T   = states[:T]
+    T = states[:T]
     
     return p.numerics.D_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 end
@@ -554,7 +554,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     """
 
     c_e = states[:c_e]
-    j   = states[:j]
+    j = states[:j]
 
     ∂c_e = ∂states[:c_e]
 
@@ -588,9 +588,9 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     ## Interface between separator & positive electrode [last volume in the positive electrode]
 
     # Compute the common denominator at the interface
-    @views @inbounds den_s   = (Δx_p*p.θ[:l_p]/2 + Δx_s*p.θ[:l_s]/2)
+    @views @inbounds den_s = (Δx_p*p.θ[:l_p]/2 + Δx_s*p.θ[:l_s]/2)
     # Last diffusion coefficient of the positive electrode
-    @views @inbounds last_p  = D_eff_p[end-1]/(Δx_p*p.θ[:l_p])
+    @views @inbounds last_p = D_eff_p[end-1]/(Δx_p*p.θ[:l_p])
     # Diffusion coefficient on the interface
     @views @inbounds first_s = D_eff_p[end]/den_s
     # Fix the values at the boundaries
@@ -599,18 +599,18 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     ## Interface between separator & positive electrode [first volume in the separator]
 
     # First diffusion coefficient in the separator
-    @views @inbounds second_s    = D_eff_s[1]/(Δx_s*p.θ[:l_s])
+    @views @inbounds second_s = D_eff_s[1]/(Δx_s*p.θ[:l_s])
     # Diffusion coefficient on the interface
-    @views @inbounds first_s     = D_eff_p[end]/den_s
+    @views @inbounds first_s = D_eff_p[end]/den_s
 
     @views @inbounds A_tot[p.N.p+1,p.N.p:p.N.p+2] .= [first_s; -(first_s+second_s); second_s]/(Δx_s*p.θ[:l_s]*p.θ[:ϵ_s])
 
     ## Interface between separator & negative electrode [last volume in the separator]
 
     # Compute the common denominator at the interface
-    @views @inbounds den_s   = (Δx_s*p.θ[:l_s]/2 + Δx_n*p.θ[:l_n]/2)
+    @views @inbounds den_s = (Δx_s*p.θ[:l_s]/2 + Δx_n*p.θ[:l_n]/2)
     # Last diffusion coefficient in the separator
-    @views @inbounds last_s  = D_eff_s[end-1]/(Δx_s*p.θ[:l_s])
+    @views @inbounds last_s = D_eff_s[end-1]/(Δx_s*p.θ[:l_s])
     # Diffusion coefficient on the interface
     @views @inbounds first_n = D_eff_s[end]/den_s
 
@@ -619,11 +619,11 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     ## Interface between separator & negative electrode [first volume in the negative electrode]
 
     # Compute the common denominator at the interface
-    den_n       = (Δx_s*p.θ[:l_s]/2 + Δx_n*p.θ[:l_n]/2)
+    den_n = (Δx_s*p.θ[:l_s]/2 + Δx_n*p.θ[:l_n]/2)
     # First diffusion coefficient in the negative electrode
-    @views @inbounds second_n    = D_eff_n[1]/(Δx_n*p.θ[:l_n])
+    @views @inbounds second_n = D_eff_n[1]/(Δx_n*p.θ[:l_n])
     # Diffusion coefficient on the interface
-    @views @inbounds first_n     = D_eff_s[end]/den_n
+    @views @inbounds first_n = D_eff_s[end]/den_n
 
     if p.numerics.aging === :R_film
         @assert length(p.θ[:ϵ_n]) === p.N.n
@@ -652,8 +652,8 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
         ]
 
     K = 1.0./ϵ_tot
-    A_ϵ          = zeros(eltype(K), (p.N.p+p.N.s+p.N.n), (p.N.p+p.N.s+p.N.n))
-    ind_0diag    = diagind(A_ϵ)
+    A_ϵ = zeros(eltype(K), (p.N.p+p.N.s+p.N.n), (p.N.p+p.N.s+p.N.n))
+    ind_0diag = diagind(A_ϵ)
     ind_neg1diag = diagind(A_ϵ, -1)
     ind_pos1diag = diagind(A_ϵ, 1)
     A_ϵ[ind_0diag] .= K
@@ -696,9 +696,9 @@ function residuals_j!(res, states, p::AbstractParam)
     Calculate the molar flux density of Li-ions residuals at the electrode-electrolyte interface [mol/(m²•s)]
     """
     c_s_star = states[:c_s_star]
-    c_e      = states[:c_e]
-    T        = states[:T]
-    j        = states[:j_aging]
+    c_e = states[:c_e]
+    T = states[:T]
+    j = states[:j_aging]
 
     η = states[:η]
     U = states[:U]
@@ -720,8 +720,8 @@ function residuals_j_s!(res, states, p)
     """
     Calculate the anode-side molar flux density residuals due to SEI resistance [mol/(m²•s)]
     """
-    j_s       = states[:j_s]
-    T         = states[:T]
+    j_s = states[:j_s]
+    T = states[:T]
     I_density = states[:I][1]
 
     res_j_s = res[:j_s]
@@ -750,7 +750,7 @@ function residuals_j_s!(res, states, p)
 
     # side reaction residuals
     for i in 1:length(res[:j_s])
-        res[:j_s][i] = IfElse.ifelse(
+        res[:j_s][i] = ifelse(
             I_density > 0, 
             j_s[i] .- j_s_calc[i],
             j_s[i],
@@ -795,7 +795,7 @@ function residuals_c_s_avg_Fickian_FDM!(res, states, ∂states, p)
     """
     Calculate the volume-averaged solid particle concentration residuals using a 9th order accurate finite difference method (FDM) [mol/m³]
     """
-    j       = states[:j]
+    j = states[:j]
     c_s_avg = states[:c_s_avg]
 
     ∂c_s_avg = ∂states[:c_s_avg]
@@ -895,8 +895,8 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
     """
     Calculate the volume-averaged solid particle concentration residuals using a spectral method [mol/m³]
     """
-    j         = states[:j]
-    j_p       = states[:j]
+    j = states[:j]
+    j_p = states[:j]
     c_s_avg_n = states[:c_s_avg]
 
     ∂c_s_avg = ∂states[:c_s_avg]
@@ -913,7 +913,7 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
 
         X = repeat(x,1,N+1)
         dX = X .- X'
-        D  = (c*(1.0./c)')./(dX .+ I(N+1)) # off-diagonal entries
+        D = (c*(1.0./c)')./(dX .+ I(N+1)) # off-diagonal entries
         D[diagind(D)]  .-= sum(D', dims=1)[:]
 
         return D, x
@@ -925,8 +925,8 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
     D_sp_eff, D_sn_eff = coeff_solid_diffusion_effective(states, p)
     
     # Initialize the variables
-    rhsCs_p  = eltype(j_p)[]
-    rhsCs_n  = eltype(j_p)[]
+    rhsCs_p = eltype(j_p)[]
+    rhsCs_n = eltype(j_p)[]
 
     DiffMat_p, Rad_position_p = cheb(p.N.r_p-1)
     DiffMat_n, Rad_position_n = cheb(p.N.r_n-1)
@@ -936,9 +936,9 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
         # LIONSIMBA scheme vector: 1 (top) is particle centre, end(bottom) - particle surface
         c_s = c_s_avg.p[(i-1)*p.N.r_p+1:i*p.N.r_p]
         
-        c_s_flipped      = flip(c_s)      # cheb matrices work on [1 to -1] ordering
-        ∂ₓc_s_avg_p      = DiffMat_p*c_s_flipped
-        ∂ₓc_s_avg_p[1]   = -j.p[i]*p.θ[:Rp_p]*0.5/D_sp_eff[i] # modified BC value due to cheb scheme
+        c_s_flipped = flip(c_s)      # cheb matrices work on [1 to -1] ordering
+        ∂ₓc_s_avg_p = DiffMat_p*c_s_flipped
+        ∂ₓc_s_avg_p[1] = -j.p[i]*p.θ[:Rp_p]*0.5/D_sp_eff[i] # modified BC value due to cheb scheme
         ∂ₓc_s_avg_p[end] = 0
         
         # Below line: we compute the RHS of the Fick's law PDE as it appears in LIONSIMBA
@@ -950,7 +950,7 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
         rhs_numerator_p = DiffMat_p*(4*D_sp_eff[i]*((Rad_position_p .+ 1).^2).*∂ₓc_s_avg_p/(p.θ[:Rp_p]^2))
         
         rhs_limit_vector = (4*D_sp_eff[i]/p.θ[:Rp_p]^2)*3*(DiffMat_p*∂ₓc_s_avg_p) # limit at r_tilde tends to -1 (at centre)
-        ∂ₓc_s_avg_p  = flip(∂ₓc_s_avg_p) # flip back to be compatible with LIONSIMBA
+        ∂ₓc_s_avg_p = flip(∂ₓc_s_avg_p) # flip back to be compatible with LIONSIMBA
         rhs_numerator_p = flip(rhs_numerator_p)
         
         append!(rhsCs_p, rhs_limit_vector[end]) # clever trick to apply the L'hopital's rule at particle centre
@@ -961,9 +961,9 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
         # Lionsimba scheme vector: 1 (top) is particle centre, end(bottom) - particle surface
         c_s = c_s_avg.n[(i-1)*p.N.r_n+1:i*p.N.r_n]
         
-        c_s_flipped      = flip(c_s)      # cheb matrices work with [1 to -1] ordering
-        ∂ₓc_s_avg_n      = DiffMat_n*c_s_flipped
-        ∂ₓc_s_avg_n[1]   = -j.n[i]*p.θ[:Rp_n]*0.5/D_sn_eff[i] # modified BC value due to cheb scheme
+        c_s_flipped = flip(c_s)      # cheb matrices work with [1 to -1] ordering
+        ∂ₓc_s_avg_n = DiffMat_n*c_s_flipped
+        ∂ₓc_s_avg_n[1] = -j.n[i]*p.θ[:Rp_n]*0.5/D_sn_eff[i] # modified BC value due to cheb scheme
         ∂ₓc_s_avg_n[end] = 0
         
         # Below line: we compute the RHS of the Fick's law PDE as it appears in LIONSIMBA
@@ -975,7 +975,7 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
         rhs_numerator_n = DiffMat_n*(4*D_sn_eff[i]*((Rad_position_n .+ 1).^2).*∂ₓc_s_avg_n/(p.θ[:Rp_n]^2))
         
         rhs_limit_vector = (4*D_sn_eff[i]/p.θ[:Rp_n]^2)*3*(DiffMat_n*∂ₓc_s_avg_n) # limit at r_tilde tends to -1 (at centre)
-        ∂ₓc_s_avg_n  = flip(∂ₓc_s_avg_n) # flip back to be compatible with LIONSIMBA
+        ∂ₓc_s_avg_n = flip(∂ₓc_s_avg_n) # flip back to be compatible with LIONSIMBA
         rhs_numerator_n = flip(rhs_numerator_n)
         
         append!(rhsCs_n, rhs_limit_vector[end]) # clever trick to apply the L'hopital's rule at particle centre 'end' is used because of cpu time needed for flip
@@ -1063,11 +1063,11 @@ function residuals_T!(res, states, ∂states, p)
     """
     Calculate the 1D temperature residuals
     """
-    c_e       = states[:c_e]
-    Φ_e       = states[:Φ_e]
-    Φ_s       = states[:Φ_s]
-    j         = states[:j]
-    T         = states[:T]
+    c_e = states[:c_e]
+    Φ_e = states[:Φ_e]
+    Φ_s = states[:Φ_s]
+    j = states[:j]
+    T = states[:T]
     I_density = states[:I][1]
 
     Q_rev = states[:Q_rev]
@@ -1088,7 +1088,7 @@ function residuals_T!(res, states, ∂states, p)
     function block_matrix_T(λ, N)
         A_tot = zeros(eltype(λ), N, N)
     
-        ind_0diag    = diagind(A_tot)
+        ind_0diag = diagind(A_tot)
         ind_neg1diag = diagind(A_tot, -1)
         ind_pos1diag = diagind(A_tot, 1)
     
@@ -1146,10 +1146,10 @@ function residuals_T!(res, states, ∂states, p)
 
     # Interface between aluminium current collector & positive electrode. We
     # are in the last volume of the current collector
-    β_a_p   = (Δx_a*p.θ[:l_a]/2)/(Δx_a*p.θ[:l_a]/2+Δx_p*p.θ[:l_p]/2)
-    λ_a_p   = p.θ[:λ_a] * p.θ[:λ_p] /(β_a_p*p.θ[:λ_p] + (1-β_a_p)*p.θ[:λ_a])
+    β_a_p = (Δx_a*p.θ[:l_a]/2)/(Δx_a*p.θ[:l_a]/2+Δx_p*p.θ[:l_p]/2)
+    λ_a_p = p.θ[:λ_a] * p.θ[:λ_p] /(β_a_p*p.θ[:λ_p] + (1-β_a_p)*p.θ[:λ_a])
     den_a_p = Δx_p*p.θ[:l_p]/2 +Δx_a*p.θ[:l_a]/2
-    last_a  = p.θ[:λ_a] / (Δx_a*p.θ[:l_a])
+    last_a = p.θ[:λ_a] / (Δx_a*p.θ[:l_a])
     first_p = λ_a_p/den_a_p
 
     A_tot[p.N.a,p.N.a-1:p.N.a+1] = [last_a -(last_a+first_p) first_p]/(Δx_a*p.θ[:l_a])
@@ -1157,9 +1157,9 @@ function residuals_T!(res, states, ∂states, p)
     # Interface between aluminium current collector & positive electrode. We
     # are in the first volume of the positive electrode
 
-    den_a_p  = Δx_p*p.θ[:l_p]/2 +Δx_a*p.θ[:l_a]/2
+    den_a_p = Δx_p*p.θ[:l_p]/2 +Δx_a*p.θ[:l_a]/2
     second_p = p.θ[:λ_p] / (Δx_p*p.θ[:l_p])
-    first_p  = λ_a_p/den_a_p
+    first_p = λ_a_p/den_a_p
 
     A_tot[p.N.a+1,p.N.a:p.N.a+2] = [first_p -(second_p+first_p) second_p]/(Δx_p*p.θ[:l_p])
 
@@ -1169,16 +1169,16 @@ function residuals_T!(res, states, ∂states, p)
     λ_p_s = p.θ[:λ_s] * p.θ[:λ_p] /(β_p_s*p.θ[:λ_s] + (1-β_p_s)*p.θ[:λ_p])
 
     den_p_s = Δx_p*p.θ[:l_p]/2 +Δx_s*p.θ[:l_s]/2
-    last_p  = p.θ[:λ_p] / (Δx_p*p.θ[:l_p])
+    last_p = p.θ[:λ_p] / (Δx_p*p.θ[:l_p])
     first_s = λ_p_s/den_p_s
 
     A_tot[p.N.a+p.N.p,p.N.a+p.N.p-1:p.N.a+p.N.p+1] = [last_p -(last_p+first_s) first_s]/(Δx_p*p.θ[:l_p])
 
     # Interface between positive electrode & separator. We
     # are in the first volume of the separator
-    den_p_s  = Δx_p*p.θ[:l_p]/2 +Δx_s*p.θ[:l_s]/2
+    den_p_s = Δx_p*p.θ[:l_p]/2 +Δx_s*p.θ[:l_s]/2
     second_s = p.θ[:λ_s] / (Δx_s*p.θ[:l_s])
-    first_s  = λ_p_s/den_p_s
+    first_s = λ_p_s/den_p_s
 
     A_tot[p.N.a+p.N.p+1,p.N.a+p.N.p:p.N.a+p.N.p+2] = [first_s -(second_s+first_s) second_s]/(Δx_s*p.θ[:l_s])
 
@@ -1188,7 +1188,7 @@ function residuals_T!(res, states, ∂states, p)
     λ_s_n = p.θ[:λ_s] * p.θ[:λ_n] /(β_s_n*p.θ[:λ_n] + (1-β_s_n)*p.θ[:λ_s])
 
     den_s_n = Δx_n*p.θ[:l_n]/2 +Δx_s*p.θ[:l_s]/2
-    last_s  = p.θ[:λ_s] / (Δx_s*p.θ[:l_s])
+    last_s = p.θ[:λ_s] / (Δx_s*p.θ[:l_s])
     first_n = λ_s_n/den_s_n
 
     A_tot[p.N.a+p.N.p+p.N.s,p.N.a+p.N.p+p.N.s-1:p.N.a+p.N.p+p.N.s+1] = [last_s -(last_s+first_n) first_n]/(Δx_s*p.θ[:l_s])
@@ -1196,9 +1196,9 @@ function residuals_T!(res, states, ∂states, p)
     # Interface between separator negative electrode. We
     # are in the first volume of the negative electrode
 
-    den_s_n  = Δx_n*p.θ[:l_n]/2 +Δx_s*p.θ[:l_s]/2
+    den_s_n = Δx_n*p.θ[:l_n]/2 +Δx_s*p.θ[:l_s]/2
     second_n = p.θ[:λ_n] / (Δx_n*p.θ[:l_n])
-    first_n  = λ_s_n/den_s_n
+    first_n = λ_s_n/den_s_n
 
     A_tot[p.N.a+p.N.p+p.N.s+1,p.N.a+p.N.p+p.N.s:p.N.a+p.N.p+p.N.s+2] = [first_n -(first_n+second_n) second_n]/(Δx_n*p.θ[:l_n])
 
@@ -1209,7 +1209,7 @@ function residuals_T!(res, states, ∂states, p)
     λ_n_co = p.θ[:λ_z] * p.θ[:λ_n] /(β_n_co*p.θ[:λ_z] + (1-β_n_co)*p.θ[:λ_n])
 
     den_n_co = Δx_n*p.θ[:l_n]/2 +Δx_z*p.θ[:l_z]/2
-    last_n   = p.θ[:λ_n] / (Δx_n*p.θ[:l_n])
+    last_n = p.θ[:λ_n] / (Δx_n*p.θ[:l_n])
     first_co = λ_n_co/den_n_co
 
     A_tot[p.N.a+p.N.p+p.N.s+p.N.n,p.N.a+p.N.p+p.N.s+p.N.n-1:p.N.a+p.N.p+p.N.s+p.N.n+1] = [last_n -(last_n+first_co) first_co]/(Δx_n*p.θ[:l_n])
@@ -1218,9 +1218,9 @@ function residuals_T!(res, states, ∂states, p)
     # Interface between negative electrode & negative current collector. We
     # are in the first volume of the negative current collector
 
-    den_n_co  = Δx_n*p.θ[:l_n]/2 +Δx_z*p.θ[:l_z]/2
+    den_n_co = Δx_n*p.θ[:l_n]/2 +Δx_z*p.θ[:l_z]/2
     second_co = p.θ[:λ_z] / (Δx_z*p.θ[:l_z])
-    first_co  = λ_n_co/den_n_co
+    first_co = λ_n_co/den_n_co
 
     A_tot[p.N.a+p.N.p+p.N.s+p.N.n+1,p.N.a+p.N.p+p.N.s+p.N.n:p.N.a+p.N.p+p.N.s+p.N.n+2] = [first_co -(second_co+first_co) second_co]/(Δx_z*p.θ[:l_z])
 
@@ -1279,14 +1279,14 @@ end
     Evaluates the heat source terms used in the thermal model per section
     """
 
-    Φ_s   = states[:Φ_s]
-    Φ_e   = states[:Φ_e]
-    j     = states[:j]
-    T     = states[:T]
-    c_e   = states[:c_e]
-    U     = states[:U]
-    ∂U∂T  = states[:∂U∂T]
-    η     = states[:η]
+    Φ_s = states[:Φ_s]
+    Φ_e = states[:Φ_e]
+    j = states[:j]
+    T = states[:T]
+    c_e = states[:c_e]
+    U = states[:U]
+    ∂U∂T = states[:∂U∂T]
+    η = states[:η]
     K_eff = states[:K_eff]
 
     F = 96485.3365

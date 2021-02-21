@@ -3,6 +3,8 @@ using Test
 
 @testset "PETLION.jl" begin
 
+    SAVE_SYMBOLIC_FUNCTIONS = false
+
     opts = (
         cathode=LCO,
         anode=LiC6,
@@ -18,16 +20,19 @@ using Test
     # AD matches symbolic
     @test run_model(p, 0:100:3600, I=-1,  SOC=1, outputs=(:t, :V)).V ≈ run_model(p_AD, 0:100:3600, I=-1,  SOC=1, outputs=(:t, :V)).V
     @test run_model(p, 0:100, P=-10, SOC=1).V ≈ run_model(p_AD, 0:100, P=-10, SOC=1).V
-    @test run_model(p, 0:10,  V=3.5, SOC=1).V ≈ run_model(p_AD, 0:10,  V=3.5, SOC=1).V
+    @test run_model(p, 0:10, V=3.5, SOC=1).V ≈ run_model(p_AD, 0:10,  V=3.5, SOC=1).V
 
     # all outputs work
     run_model(p, I=-1, SOC=1, outputs=:all)
 
     # Cfunc is actually working
-    @test run_model(p, I=1, SOC=0).V[end] ≠ run_model(p, I=(u,p,t)->cos(t), SOC=0).V[end]
+    p.opts.SOC=0
+    @test run_model(p, I=1).V[end] ≠ run_model(p, I=(u,p,t)->cos(t)).V[end]
+    @test run_model(p, P=100).V[end] ≠ run_model(p, P=(u,p,t)->100cos(t)).V[end]
 
     # Cfunc matches CC
-    @test all(run_model(p, I=1, SOC=0).V .=== run_model(p, I=(x...)->1, SOC=0).V)
+    p.opts.SOC=0
+    @test all(run_model(p, I=1).V .=== run_model(p, I=(x...)->1).V)
 
     # :hold and I_max stop conditions are working
     model = run_model(p, 100, I=-0.1, SOC=1, outputs=(:t, :V))

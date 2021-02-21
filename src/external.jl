@@ -102,11 +102,11 @@ function build_cache(θ, ind, N, numerics, opts, methods)
         return labels
     end
     
-    θ_tot  = ImmutableDict{Symbol,Vector{Float64}}()
+    θ_tot = ImmutableDict{Symbol,Vector{Float64}}()
     θ_keys = ImmutableDict{Symbol,Vector{Symbol}}()
 
     @inbounds for method in methods
-        θ_tot  = ImmutableDict(θ_tot,  method => Float64[])
+        θ_tot = ImmutableDict(θ_tot,  method => Float64[])
         θ_keys = ImmutableDict(θ_keys, method => Symbol[])
     end
 
@@ -165,7 +165,7 @@ function retrieve_states(Y::AbstractArray, p::AbstractParam)
     if length(Y) < p.N.tot error("Input vector must be ≥ the number of indices.") end
     
     states = Dict{Symbol,Any}()
-    ind    = p.ind
+    ind = p.ind
     vars_in_use = p.cache.vars
     
     vars = p.cache.outputs_tot
@@ -185,7 +185,7 @@ function retrieve_states(Y::AbstractArray, p::AbstractParam)
         
         for section in sections
             section_name = Symbol(var, :_, section)
-            ind_section  = getproperty(ind_var, section)
+            ind_section = getproperty(ind_var, section)
 
             push!(section_values, section ∈ ind_var.sections ? Y[ind_section] : nothing)
         end
@@ -242,11 +242,11 @@ function state_indices(N, numerics)
     e.g., temperature is still used in isothermal simulations
     """
 
-    ind_alg  = 0:0
+    ind_alg = 0:0
     ind_diff = 0:0
-    ind_tot  = 0:0
+    ind_tot = 0:0
     N_diff = 0
-    N_alg  = 0
+    N_alg = 0
 
     function add(var::Symbol, tot, vars::Tuple, var_type::Symbol=:NA;
         radial::Bool = false, replace = 0:0)
@@ -283,35 +283,35 @@ function state_indices(N, numerics)
         :z ∈ vars ? (z = tot[ind_z .+ ind_start]; push!(sections, :z); ind_start += length(ind_z)) : z = replace
 
         start = tot[1]
-        stop  = tot[end]
+        stop = tot[end]
 
         return index_state(start, stop, a, p, s, n, z, (sections...,), var_type)
     end
 
-    c_e_tot     = 1:(N.p+N.s+N.n)
+    c_e_tot = 1:(N.p+N.s+N.n)
     c_s_avg_tot = numerics.solid_diffusion === :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
-    T_tot       = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
-    film_tot    = numerics.aging === :SEI ? (1:N.n) : nothing
-    Q_tot       = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
-    j_tot       = 1:(N.p+N.n)
-    j_s_tot     = numerics.aging ∈ (:SEI, :R_film) ? (1:N.n) : nothing
-    Φ_e_tot     = 1:(N.p+N.s+N.n)
-    Φ_s_tot     = 1:(N.p+N.n)
-    I_tot       = 1
+    T_tot = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
+    film_tot = numerics.aging === :SEI ? (1:N.n) : nothing
+    Q_tot = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
+    j_tot = 1:(N.p+N.n)
+    j_s_tot = numerics.aging ∈ (:SEI, :R_film) ? (1:N.n) : nothing
+    Φ_e_tot = 1:(N.p+N.s+N.n)
+    Φ_s_tot = 1:(N.p+N.n)
+    I_tot = 1
     
     
-    c_e      = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
-    c_s_avg  = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion === :Fickian)
-    T        = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
-    film     = add(:film,    film_tot,    (:n,),                :differential)
-    Q        = add(:Q,       Q_tot,       (:p, :n),             :differential)
-    j        = add(:j,       j_tot,       (:p, :n),             :algebraic)
-    j_s      = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
-    Φ_e      = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
-    Φ_s      = add(:Φ_s,     Φ_s_tot,     (:p, :n),             :algebraic)
-    I        = add(:I,       I_tot,       (),                   :algebraic)
+    c_e = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
+    c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion === :Fickian)
+    T = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
+    film = add(:film,    film_tot,    (:n,),                :differential)
+    Q = add(:Q,       Q_tot,       (:p, :n),             :differential)
+    j = add(:j,       j_tot,       (:p, :n),             :algebraic)
+    j_s = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
+    Φ_e = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
+    Φ_s = add(:Φ_s,     Φ_s_tot,     (:p, :n),             :algebraic)
+    I = add(:I,       I_tot,       (),                   :algebraic)
     
-    N_tot  = N_diff + N_alg
+    N_tot = N_diff + N_alg
     
     # These are the rest of the fields in the model_states struct that, while must be input, are unused
     Y = YP = t = V = P = SOC = index_state()
@@ -329,7 +329,7 @@ end
     `initial_guess.jl`
     """
 
-    Y0  = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
+    Y0 = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
     YP0 = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
 
     states = retrieve_states(Y0, p)
@@ -345,10 +345,10 @@ end
         elseif p.numerics.solid_diffusion === :Fickian
             states[:c_s_avg] .= [repeat([c_s_p₀], p.N.p*p.N.r_p); repeat([c_s_n₀], p.N.n*p.N.r_n)]
         end
-        states[:c_e]  = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
-        states[:T]    = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
+        states[:c_e] = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
+        states[:T] = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
         states[:film] = zeros(p.N.n)
-        states[:Q]    = zeros(p.N.p+p.N.n)
+        states[:Q] = zeros(p.N.p+p.N.n)
     
         return nothing
     
@@ -364,10 +364,10 @@ end
     
         build_OCV!(states, p)
     
-        states[:j]   = 0
+        states[:j] = 0
         states[:Φ_e] = 0
         states[:Φ_s] = states[:U]
-        states[:I]   = X_applied
+        states[:I] = X_applied
     
         if !isempty(states[:j_s]) states[:j_s] .= 0.0 end # totally arbitrary/random value for side-reaction flux
     

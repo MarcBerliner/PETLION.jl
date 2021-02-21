@@ -1,18 +1,20 @@
+const SAVE_SYMBOLIC_FUNCTIONS = true
+
 function load_functions(p::AbstractParam, methods::Tuple)
     
     if     p.numerics.jacobian === :symbolic
-        jac_type  = jacobian_symbolic
+        jac_type = jacobian_symbolic
         load_func = load_functions_symbolic
     elseif p.numerics.jacobian === :AD
-        jac_type  = jacobian_AD
+        jac_type = jacobian_AD
         load_func = load_functions_forward_diff
     end
 
     ## Pre-allocation
-    Y0_alg      = zeros(Float64, p.N.alg)
+    Y0_alg = zeros(Float64, p.N.alg)
     Y0_alg_prev = zeros(Float64, p.N.alg)
-    res         = zeros(Float64, p.N.alg)
-    Y0_diff     = zeros(Float64, p.N.diff)
+    res = zeros(Float64, p.N.alg)
+    Y0_diff = zeros(Float64, p.N.diff)
     
     ## Begin loading functions based on method
     funcs = ImmutableDict{Symbol, functions_model{jac_type}}()
@@ -26,6 +28,10 @@ function load_functions(p::AbstractParam, methods::Tuple)
 
         initial_conditions = init_newtons_method(f_alg!, J_y_alg!, f_diff!, Y0_alg, Y0_alg_prev, Y0_diff, res)
         funcs = ImmutableDict(funcs, method => functions_model{jac_type}(f!, initial_guess!, J_y!, initial_conditions, update_θ!))
+    end
+
+    if p.numerics.jacobian === :symbolic && !SAVE_SYMBOLIC_FUNCTIONS
+        rm(strings_directory_func(p))
     end
     
     return funcs
@@ -52,22 +58,29 @@ function load_functions_symbolic(p::AbstractParam, method::Symbol, YP_cache=noth
     dir = strings_directory_func(p) * "/$method/"
 
     ## residuals
-    initial_guess!  = include(dir * "initial_guess.jl")
-    f!              = include(dir * "f.jl")
-    f_alg!          = include(dir * "f_alg.jl")
-    f_diff!         = include(dir * "f_diff.jl")
+    initial_guess! = include(dir * "initial_guess.jl")
+    f! = include(dir * "f.jl")
+    f_alg! = include(dir * "f_alg.jl")
+    f_diff! = include(dir * "f_diff.jl")
 
     ## Jacobian
-    BSON.@load dir * "J_sp.jl" J_y_sp θ_keys θ_len
+    @load dir * "J_sp.jl" J_y_sp θ_keys θ_len
     
-    J_y!_func     = include(dir * "J_y.jl")
+    J_y!_func = include(dir * "J_y.jl")
     J_y_alg!_func = include(dir * "J_y_alg.jl")
 
-    J_y!_sp     = sparse(J_y_sp...)
+    J_y!_sp = sparse(J_y_sp...)
     J_y_alg!_sp = J_y!_sp[p.N.diff+1:end,p.N.diff+1:end]
     
-    J_y!      = jacobian_symbolic(J_y!_func, J_y!_sp)
-    J_y_alg!  = jacobian_symbolic(J_y_alg!_func, J_y_alg!_sp)
+    J_y! = jacobian_symbolic(J_y!_func, J_y!_sp)
+    J_y_alg! = jacobian_symbolic(J_y_alg!_func, J_y_alg!_sp)
+
+    if !SAVE_SYMBOLIC_FUNCTIONS
+        @inbounds for file in ("initial_guess.jl", "f.jl", "f_alg.jl", "f_diff.jl", "J_sp.jl", "J_y.jl", "J_y_alg.jl")
+            rm(dir * file)
+        end
+        rm(dir)
+    end
 
     return initial_guess!, f!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys, θ_len
 end
@@ -99,7 +112,7 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
 
     θ_sym_slim, θ_keys_slim, θ_len_slim = get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
     
-    _, Y0Func  = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=true, checkbounds=false)
+    _, Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=true, checkbounds=false)
     res_build = zeros(eltype(res), p.N.tot)
     res_build[ind_res] .= res[ind_res]
     _, resFunc = build_function(res_build, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
@@ -128,7 +141,7 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
     
     θ_keys = θ_keys_slim
     θ_len = θ_len_slim
-    BSON.@save dir * "J_sp.jl" J_y_sp θ_keys θ_len
+    @save dir * "J_sp.jl" J_y_sp θ_keys θ_len
 
     println_v("Finished\n")
 
@@ -152,7 +165,7 @@ function load_functions_forward_diff(p::AbstractParam, method::Symbol, YP_cache:
     
     θ_sym_slim, θ_keys_slim, θ_len_slim = get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
     
-    _, Y0Func  = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=true, checkbounds=false)
+    _, Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=true, checkbounds=false)
     _, resFunc = build_function(res, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
     
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method, ind_res)
@@ -171,7 +184,7 @@ function load_functions_forward_diff(p::AbstractParam, method::Symbol, YP_cache:
         jac_cache = SparseDiffTools.ForwardColorJacCache(
             func,
             Y_cache,
-            dx       = similar(Y_cache),
+            dx = similar(Y_cache),
             colorvec = colorvec,
             sparsity = similar(J),
             )
@@ -181,15 +194,15 @@ function load_functions_forward_diff(p::AbstractParam, method::Symbol, YP_cache:
     end
 
     initial_guess! = eval(Y0Func)
-    f!             = eval(resFunc)
-    f_alg!         = eval(res_algFunc)
-    f_diff!        = eval(res_diffFunc)
+    f! = eval(resFunc)
+    f_alg! = eval(res_algFunc)
+    f_diff! = eval(res_diffFunc)
 
-    J_y!     = build_color_jacobian_struct(J_y_sp, f!, p.N.tot)
+    J_y! = build_color_jacobian_struct(J_y_sp, f!, p.N.tot)
     J_y_alg! = build_color_jacobian_struct(J_y_sp_alg, f_alg!, p.N.alg, YP_cache)
 
 
-    @assert size(J_y!.sp)     === (p.N.tot,p.N.tot)
+    @assert size(J_y!.sp) === (p.N.tot,p.N.tot)
     @assert size(J_y_alg!.sp) === (p.N.alg,p.N.alg)
 
     return initial_guess!, f!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys_slim, θ_len_slim
@@ -218,7 +231,7 @@ function _symbolic_residuals(p::AbstractParam, t_sym, x_sym, xp_sym, I_current_s
 end
 
 function _Jacobian_sparsity_pattern(p, res, x_sym, xp_sym)
-    sp_x  = ModelingToolkit.jacobian_sparsity(res, x_sym)
+    sp_x = ModelingToolkit.jacobian_sparsity(res, x_sym)
     sp_xp = ModelingToolkit.jacobian_sparsity(res, xp_sym)
     
     I,J,_ = findnz(sp_x .+ sp_xp)
@@ -284,26 +297,26 @@ function _symbolic_jacobian(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym
     @assert length(Jac.nzval) === length(J_sp.nzval)
 
     # building the sparse jacobian
-    _, jacFunc  = build_function(Jac, x_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
+    _, jacFunc = build_function(Jac, x_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
     
     return Jac, jacFunc, J_sp
 end
 function _symbolic_initial_conditions_res(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method, ind_res)
     
     res_diff = res[1:p.N.diff]
-    res_alg  = zeros(eltype(res), p.N.alg)
+    res_alg = zeros(eltype(res), p.N.alg)
     res_alg[ind_res[p.N.diff+1:end] .- p.N.diff] .= res[ind_res[p.N.diff+1:end]]
     
     _, res_diffFunc = build_function(res_diff, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
-    _, res_algFunc  = build_function(res_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)
+    _, res_algFunc = build_function(res_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)
     
     return res_algFunc, res_diffFunc
 end
 function _symbolic_initial_conditions_jac(p::AbstractParam, Jac, x_sym, xp_sym, θ_sym, θ_sym_slim, method)
     
-    jac_alg  = Jac[p.N.diff+1:end,p.N.diff+1:end]
+    jac_alg = Jac[p.N.diff+1:end,p.N.diff+1:end]
     
-    _, jac_algFunc  = build_function(jac_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)
+    _, jac_algFunc = build_function(jac_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)
     
     return jac_algFunc
 end
@@ -331,23 +344,23 @@ function get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
     end
     sort!(index_params)
 
-    θ_sym_slim  = θ_sym[index_params]
+    θ_sym_slim = θ_sym[index_params]
     
     # remove additional entries due to parameters that are vectors
     θ_keys_extend = Symbol[]
-    θ_len_extend  = Int64[]
+    θ_len_extend = Int64[]
     @inbounds for (key,len) in zip(θ_keys, θ_len)
         append!(θ_keys_extend, repeat([key], len))
         append!(θ_len_extend, repeat([len], len))
     end
     
     θ_keys_slim = θ_keys_extend[index_params]
-    θ_len_slim  = θ_len_extend[index_params]
+    θ_len_slim = θ_len_extend[index_params]
     
     # Vectors of length n will have n-1 duplicates. This removes them
-    unique_ind  = indexin(unique(θ_keys_slim), θ_keys_slim)
+    unique_ind = indexin(unique(θ_keys_slim), θ_keys_slim)
     θ_keys_slim = θ_keys_slim[unique_ind]
-    θ_len_slim  = θ_len_slim[unique_ind]
+    θ_len_slim = θ_len_slim[unique_ind]
     
     return θ_sym_slim, θ_keys_slim, θ_len_slim
 end
@@ -404,7 +417,7 @@ function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVe
 
     exprs = Vector{Num}(undef, length(I))
 
-    iters = show_progress ? ProgressBars.ProgressBar(1:length(I)) : 1:length(I)
+    iters = show_progress ? ProgressBar(1:length(I)) : 1:length(I)
     if multithread
         @inbounds Threads.@threads for iter in iters
             @inbounds exprs[iter] = expand_derivatives(Differential(vars[J[iter]])(ops[I[iter]]), simplify)
@@ -414,6 +427,7 @@ function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVe
             @inbounds exprs[iter] = expand_derivatives(Differential(vars[J[iter]])(ops[I[iter]]), simplify)
         end
     end
+    if show_progress println() end
 
     jac = sparse(I,J, exprs, length(ops), length(vars))
     return jac

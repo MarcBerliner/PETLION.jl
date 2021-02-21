@@ -1,6 +1,6 @@
 @views @inbounds @inline function check_simulation_stop!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
-    Y  = int.u.v
-    t  = int.t
+    Y = int.u.v
+    t = int.t
     tf = run.tf
     
     if t ≥ tf
@@ -99,10 +99,10 @@
         return nothing
     end
 
-    bounds.V_prev     = V
-    bounds.I_prev     = I
-    bounds.SOC_prev   = SOC
-    bounds.T_prev     = T_max
+    bounds.V_prev = V
+    bounds.I_prev = I
+    bounds.SOC_prev = SOC
+    bounds.T_prev = T_max
     bounds.c_s_n_prev = c_s_n_max
 
     return nothing
@@ -142,7 +142,7 @@ check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
     var_keep = opts.var_keep
     
     fields = fieldnames(model_output)
-    types  = fieldtypes(model_output)
+    types = fieldtypes(model_output)
     @inbounds for (field,_type) in zip(fields,types)
         if _type <: AbstractArray{Float64} && getproperty(var_keep, field)
             x = getproperty(model, field)
@@ -158,7 +158,7 @@ end
     then rerun Newton's method and reinitialize at this new time step.
     """
     
-    Y     = int.u.v
+    Y = int.u.v
     t_new = int.t + opts.reltol
 
     value_old = value(run)

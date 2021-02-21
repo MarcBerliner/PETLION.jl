@@ -1,7 +1,7 @@
 @with_kw mutable struct run_info
     exit_reason::String = ""
-    flag::Int64         = -1
-    iterations::Int64   = -1
+    flag::Int64 = -1
+    iterations::Int64 = -1
 end
 
 abstract type AbstractRun end
@@ -30,11 +30,11 @@ end
 @with_kw struct index_state <: AbstractUnitRange{Int64}
     start::Int64 = 0
     stop::Int64 = 0
-    a::UnitRange{Int64}   = 0:0
-    p::UnitRange{Int64}   = 0:0
-    s::UnitRange{Int64}   = 0:0
-    n::UnitRange{Int64}   = 0:0
-    z::UnitRange{Int64}   = 0:0
+    a::UnitRange{Int64} = 0:0
+    p::UnitRange{Int64} = 0:0
+    s::UnitRange{Int64} = 0:0
+    n::UnitRange{Int64} = 0:0
+    z::UnitRange{Int64} = 0:0
     sections::Tuple = ()
     var_type::Symbol = :NA
 end
@@ -81,20 +81,20 @@ struct functions_model{T<:AbstractJacobian}
 end
 
 @with_kw mutable struct boundary_stop_conditions{T1<:Number,T2<:Float64}
-    V_max::T1     = -1.0
-    V_min::T1     = -1.0
-    SOC_max::T1   = -1.0
-    SOC_min::T1   = -1.0
-    T_max::T1     = -1.0
+    V_max::T1 = -1.0
+    V_min::T1 = -1.0
+    SOC_max::T1 = -1.0
+    SOC_min::T1 = -1.0
+    T_max::T1 = -1.0
     c_s_n_max::T1 = -1.0
-    I_max::T1     = NaN
-    I_min::T1     = NaN
+    I_max::T1 = NaN
+    I_min::T1 = NaN
     t_final_interp_frac::T2 = +1.0
-    V_prev::T2              = -1.0
-    SOC_prev::T2            = -1.0
-    T_prev::T2              = -1.0
-    c_s_n_prev::T2          = -1.0
-    I_prev::T2              = -1.0
+    V_prev::T2 = -1.0
+    SOC_prev::T2 = -1.0
+    T_prev::T2 = -1.0
+    c_s_n_prev::T2 = -1.0
+    I_prev::T2 = -1.0
 end
 
 @inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number)
@@ -133,13 +133,13 @@ struct discretizations_per_section
 end
 
 @with_kw mutable struct _funcs_numerical
-    rxn_p::Function   = emptyfunc
-    rxn_n::Function   = emptyfunc
-    OCV_p::Function   = emptyfunc
-    OCV_n::Function   = emptyfunc
+    rxn_p::Function = emptyfunc
+    rxn_n::Function = emptyfunc
+    OCV_p::Function = emptyfunc
+    OCV_n::Function = emptyfunc
     D_s_eff::Function = emptyfunc
-    D_eff::Function   = emptyfunc
-    K_eff::Function   = emptyfunc
+    D_eff::Function = emptyfunc
+    K_eff::Function = emptyfunc
 end
 
 struct options_numerical
@@ -175,21 +175,21 @@ indices_states = model_states{
 
 
 @with_kw mutable struct options_model
-    outputs::Tuple           = (:t, :V)
-    SOC::Number              = 1.0
-    abstol::Float64          = 1e-6
-    reltol::Float64          = 1e-6
-    abstol_init::Float64     = abstol
-    reltol_init::Float64     = reltol
-    maxiters::Int64          = 10_000
-    check_bounds::Bool       = true
-    reinit::Bool             = true
-    verbose::Bool            = false
-    interp_final::Bool       = true
-    tstops::Vector{Float64}  = Float64[]
+    outputs::Tuple = (:t, :V)
+    SOC::Number = 1.0
+    abstol::Float64 = 1e-6
+    reltol::Float64 = 1e-6
+    abstol_init::Float64 = abstol
+    reltol_init::Float64 = reltol
+    maxiters::Int64 = 10_000
+    check_bounds::Bool = true
+    reinit::Bool = true
+    verbose::Bool = false
+    interp_final::Bool = true
+    tstops::Vector{Float64} = Float64[]
     tdiscon::Vector{Float64} = Float64[]
-    interp_bc::Symbol        = :interpolate
-    warm_start::Bool         = false
+    interp_bc::Symbol = :interpolate
+    warm_start::Bool = false
     var_keep::states_logic = model_states_logic()
 end
 
@@ -352,8 +352,8 @@ function Base.show(io::IO, ind::indices_states)
     end
     outputs_tot = (outputs_tot...,)
 
-    vars    = Symbol[]
-    tot     = Int64[]
+    vars = Symbol[]
+    tot = Int64[]
     indices = UnitRange{Int64}[]
 
     for field in outputs_tot
@@ -496,7 +496,7 @@ function _MTK_MatVecProd(A, x; simple::Bool = true)
     """
     n, m = size(A)
 
-    b     = zeros(Num, n)
+    b = zeros(Num, n)
     count = zeros(Int, n)
 
     @inbounds for ind_i in 1:n, ind_j in 1:m

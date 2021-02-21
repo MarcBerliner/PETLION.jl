@@ -1,6 +1,6 @@
 @inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6; init_all::Bool=false, modify!::Function=set_var!) where {R1<:model_output, R2<:param, R3<:Vector{Float64}, R4<:Float64, R5<:AbstractRun, R6<:options_model}
 
-    ind  = p.ind
+    ind = p.ind
     keep = opts.var_keep
 
     # these variables must be calculated, but they may not necessarily be kept
@@ -83,7 +83,7 @@ end
     return model
 end
 @inline function interpolate_variable(x::R1, model::R2, tspan::T1, dummy::Vector{Float64}, interp_bc::Symbol) where {R1<:Vector{Float64},R2<:model_output,T1<:Union{Real,AbstractArray}}
-    spl = Dierckx.Spline1D(model.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))))
+    spl = Spline1D(model.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))))
     out = spl(tspan)
     
     return out
@@ -98,7 +98,7 @@ end
             @inbounds dummy[j] = x[j][i]
         end
 
-        spl = Dierckx.Spline1D(model.t, dummy; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))))
+        spl = Spline1D(model.t, dummy; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))))
 
         @inbounds for (j,t) in enumerate(tspan)
             @inbounds out[j][i] = spl(t)

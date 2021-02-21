@@ -1,21 +1,21 @@
 function firstOrderDerivativeMatrix(xl, xu, n)
-    Δx    = (xu - xl)/(n - 1)
+    Δx = (xu - xl)/(n - 1)
     r8fΔx = 1/(40320*Δx)
-    nm4   = n - 4
+    nm4 = n - 4
 
     mid_block = zeros(Float64, n-8, n)
 
-    first_row 	= [-109584.0 	+322560 	-564480 	+752640 	-705600 	+451584 	-188160 	+46080 	-5040]
-    second_row 	= [-5040.0 	-64224 		+141120 	-141120 	+117600 	-70560 		+28224 		-6720 	+720]
-    third_row 	= [+720.0 	-11520 		-38304 		+80640 		-50400 		+26880 		-10080 		+2304 	-240]
-    fourth_row 	= [-240.0 	+2880 		-20160 		-18144 		+50400 		-20160 		+6720 		-1440 	+144]
-
-    i_th_row 	= [+144.0 	-1536 		+8064 		-32256 		+0 			+32256 		-8064 		+1536 	-144]
-
-    n_min_3_row 	= [-144.0 	+1440 		-6720 		+20160 		-50400 		+18144 		+20160 		-2880 	+240]
-    n_min_2_row 	= [+240.0 	-2304 		+10080 		-26880 		+50400 		-80640 		+38304 		+11520 	-720]
-    n_min_1_row 	= [-720.0 	+6720 		-28224 		+70560 		-117600 	+141120 	-141120 	+64224 	+5040]
-    n_min_0_row 	= [+5040.0 	-46080 		+188160  	-451584 	+705600 	-752640 	+564480 	-322560 +109584]
+    first_row = [-109584.0 +322560 -564480 +752640 -705600 +451584 -188160 +46080 -5040]
+    second_row = [-5040.0 -64224 +141120 -141120 +117600 -70560 +28224 -6720 +720]
+    third_row = [+720.0 -11520 -38304 +80640 -50400 +26880 -10080 +2304 -240]
+    fourth_row = [-240.0 +2880 -20160 -18144 +50400 -20160 +6720 -1440 +144]
+    
+    i_th_row = [+144.0 -1536 +8064 -32256 +0 +32256 -8064 +1536 -144]
+    
+    n_min_3_row = [-144.0 +1440 -6720 +20160 -50400 +18144 +20160 -2880 +240]
+    n_min_2_row = [+240.0 -2304 +10080 -26880 +50400 -80640 +38304 +11520 -720]
+    n_min_1_row = [-720.0 +6720 -28224 +70560 -117600 +141120 -141120 +64224 +5040]
+    n_min_0_row = [+5040.0 -46080 +188160 -451584 +705600 -752640 +564480 -322560 +109584]
 
     first_block = [first_row; second_row; third_row; fourth_row]
     first_block = [first_block zeros(Float64, 4, n-9)]
@@ -33,24 +33,24 @@ function firstOrderDerivativeMatrix(xl, xu, n)
 end
 
 function secondOrderDerivativeMatrix(xl, xu, n)
-    Δx 		= (xu - xl)/(n - 1)
+    Δx = (xu - xl)/(n - 1)
 
-    r12Δxs 	= 1/(12*Δx^2)
+    r12Δxs = 1/(12*Δx^2)
 
     mid_block = zeros(Float64, n - 4, n)
 
-    first_row       = [-415/6   +96     -36     +32/3       -3/2    0]
-    second_row      = [+10.0      -15     -4      +14         -6      +1]
-    i_th_row        = [-1.0       +16     -30     +16         -1]
-    semi_last_row   = [+1.0       -6      +14     -4          -15     +10]
-    last_row        = [0.0   -3/2    +32/3   -36     +96     -415/6]
+    first_row = [-415/6 +96 -36 +32/3 -3/2 0]
+    second_row = [+10.0 -15 -4 +14 -6 +1]
+    i_th_row = [-1.0 +16 -30 +16 -1]
+    semi_last_row = [+1.0 -6 +14 -4 -15 +10]
+    last_row = [0.0 -3/2 +32/3 -36 +96 -415/6]
 
     first_block = [first_row; second_row]
     first_block = [first_block zeros(Float64, 2, n-6)]
 
 
-    last_block 	= [semi_last_row; last_row]
-    last_block 	= [zeros(Float64, 2, n-6) last_block]
+    last_block = [semi_last_row; last_row]
+    last_block = [zeros(Float64, 2, n-6) last_block]
 
     @inbounds for (row_index, i) in enumerate(3:n-2)
         @inbounds mid_block[row_index, row_index:row_index+4] = i_th_row
@@ -62,7 +62,7 @@ function secondOrderDerivativeMatrix(xl, xu, n)
 end
 
 function DerivativeMatrices(N)
-    @inbounds FO_D_i, FO_D_c_i            = firstOrderDerivativeMatrix( 0.0, 1.0, N)
+    @inbounds FO_D_i, FO_D_c_i = firstOrderDerivativeMatrix( 0.0, 1.0, N)
     @inbounds SO_D_i, SO_D_c_i, SO_D_Δx_i = secondOrderDerivativeMatrix(0.0, 1.0, N)
 
     return FO_D_i, FO_D_c_i, SO_D_i, SO_D_c_i, SO_D_Δx_i
@@ -71,37 +71,34 @@ end
 function blockMatrixMaker(p, X, Y, Z)
     A_tot = zeros(eltype(X), (p.N.p+p.N.s+p.N.n), (p.N.p+p.N.s+p.N.n))
 
-    ind_0diag    = diagind(A_tot)
+    ind_0diag = diagind(A_tot)
     ind_neg1diag = diagind(A_tot, -1)
     ind_pos1diag = diagind(A_tot, 1)
 
-    # p
-    @inbounds @views A_tot[ind_0diag[1:p.N.p]]      = X
-    @inbounds @views A_tot[ind_0diag[2:p.N.p]]     += X[1:end-1]
-    @inbounds @views A_tot[ind_neg1diag[1:p.N.p-1]] = -X[1:end-1]
-    @inbounds @views A_tot[ind_pos1diag[1:p.N.p-1]] = -X[1:end-1]
+    function single_block!(A, ind)
+        A_tot[ind_0diag[ind]] = A
+        A_tot[ind_0diag[ind[2:end]]] += A[1:end-1]
+        A_tot[ind_neg1diag[ind[1:end-1]]] = -A[1:end-1]
+        A_tot[ind_pos1diag[ind[1:end-1]] = -A[1:end-1]
+    end
 
-    # s
-    @inbounds @views A_tot[ind_0diag[(1:p.N.s) .+ p.N.p]]      = Y
-    @inbounds @views A_tot[ind_0diag[(2:p.N.s) .+ p.N.p]]     += Y[1:end-1]
-    @inbounds @views A_tot[ind_neg1diag[(1:p.N.s-1) .+ p.N.p]] = -Y[1:end-1]
-    @inbounds @views A_tot[ind_pos1diag[(1:p.N.s-1) .+ p.N.p]] = -Y[1:end-1]
-    # n
-    @inbounds @views A_tot[ind_0diag[(1:p.N.n) .+ (p.N.p + p.N.s)]]      = Z
-    @inbounds @views A_tot[ind_0diag[(2:p.N.n) .+ (p.N.p + p.N.s)]]     += Z[1:end-1]
-    @inbounds @views A_tot[ind_neg1diag[(1:p.N.n-1) .+ (p.N.p + p.N.s)]] = -Z[1:end-1]
-    @inbounds @views A_tot[ind_pos1diag[(1:p.N.n-1) .+ (p.N.p + p.N.s)]] = -Z[1:end-1]
-
+    ind_p = (1:p.N.p)
+    ind_s = (1:p.N.s) .+ (p.N.p)
+    ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
+    single_block!(X, ind_p)
+    single_block!(Y, ind_s)
+    single_block!(Z, ind_n)
+    
     return A_tot
 end
 
 function interpolateElectrolyteConductivities(Keff_p, Keff_s, Keff_n, p)
-    #	interpolateElectrolyteConductivities interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
+    # interpolateElectrolyteConductivities interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 
-    @views @inbounds Keff_i_medio(β_i, Keff_i)                 = Keff_i[1:end-1].*Keff_i[2:end]./(β_i*Keff_i[2:end]+(1-β_i)*Keff_i[1:end-1])
-    @views @inbounds β_i_j(Δx_i, l_i, Δx_j, l_j)               = Δx_i*l_i/2 /(Δx_j*l_j/2+Δx_i*l_i/2)
+    @views @inbounds Keff_i_medio(β_i, Keff_i) = Keff_i[1:end-1].*Keff_i[2:end]./(β_i*Keff_i[2:end]+(1-β_i)*Keff_i[1:end-1])
+    @views @inbounds β_i_j(Δx_i, l_i, Δx_j, l_j) = Δx_i*l_i/2 /(Δx_j*l_j/2+Δx_i*l_i/2)
     @views @inbounds Keff_i_j_interface(β_i_j, Keff_i, Keff_j) = Keff_i[end]*Keff_j[1] / (β_i_j*Keff_j[1] + (1-β_i_j)*Keff_i[end])
 
     ## Positive electrode mean conductivity
@@ -148,7 +145,7 @@ function harmonic_mean(β, x₁, x₂)
 end
 
 function interpolateElectrolyteConcentration(c_e, p)
-    #	interpolateElectrolyteConcentration interpolates the value of electrolyte concentration at the edges of control volumes using harmonic mean.
+    # interpolateElectrolyteConcentration interpolates the value of electrolyte concentration at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 
@@ -179,7 +176,7 @@ function interpolateElectrolyteConcentration(c_e, p)
 end
 
 function interpolateTemperature(T, p)
-    #	interpolateTemperature evaluates the interpolation of the temperature at the edges of control volumes using harmonic mean.
+    # interpolateTemperature evaluates the interpolation of the temperature at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 
@@ -209,7 +206,7 @@ end
 
 
 function interpolateElectrolyteConcetrationFluxes(c_e, p)
-    #	interpolateElectrolyteConcetrationFluxes interpolates the electrolyte concentration flux at the edges of control volumes using harmonic mean.
+    # interpolateElectrolyteConcetrationFluxes interpolates the electrolyte concentration flux at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 

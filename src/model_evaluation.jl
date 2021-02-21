@@ -2,32 +2,32 @@
     p::T1, # initial parameters file
     tspan::T2 = nothing; # a single number (length of the experiment) or a vector (interpolated points)
     model::R1 = model_output(), # using a new model or continuing from previous simulation?
-    I::R2    = nothing, # constant current C-rate. also accepts :rest
-    V::R3    = nothing, # constant voltage. also accepts :hold if continuing simulation
-    P::R4    = nothing, # constant power.   also accepts :hold if continuing simulation
-    SOC::Number             = p.opts.SOC,          # initial SOC of the simulation. only valid if not continuing simulation
-    outputs::R5             = p.opts.outputs,      # model output states
-    abstol::Float64         = p.opts.abstol,       # absolute tolerance in DAE solve
-    reltol::Float64         = p.opts.reltol,       # relative tolerance in DAE solve
-    abstol_init::Float64    = abstol,              # absolute tolerance in initialization
-    reltol_init::Float64    = reltol,              # relative tolerance in initialization
-    maxiters::Int64         = p.opts.maxiters,     # maximum solver iterations
-    check_bounds::Bool      = p.opts.check_bounds, # check if the boundaries (V_min, SOC_max, etc) are satisfied
-    reinit::Bool            = p.opts.reinit,       # reinitialize the initial guess
-    verbose::Bool           = p.opts.verbose,      # print information about the run
-    interp_final::Bool      = p.opts.interp_final, # interpolate the final points if a boundary is hit
-    tstops::AbstractVector  = p.opts.tstops,       # times the solver explicitly solves for
+    I::R2 = nothing, # constant current C-rate. also accepts :rest
+    V::R3 = nothing, # constant voltage. also accepts :hold if continuing simulation
+    P::R4 = nothing, # constant power.   also accepts :hold if continuing simulation
+    SOC::Number = p.opts.SOC,          # initial SOC of the simulation. only valid if not continuing simulation
+    outputs::R5 = p.opts.outputs,      # model output states
+    abstol::Float64 = p.opts.abstol,       # absolute tolerance in DAE solve
+    reltol::Float64 = p.opts.reltol,       # relative tolerance in DAE solve
+    abstol_init::Float64 = abstol,              # absolute tolerance in initialization
+    reltol_init::Float64 = reltol,              # relative tolerance in initialization
+    maxiters::Int64 = p.opts.maxiters,     # maximum solver iterations
+    check_bounds::Bool = p.opts.check_bounds, # check if the boundaries (V_min, SOC_max, etc) are satisfied
+    reinit::Bool = p.opts.reinit,       # reinitialize the initial guess
+    verbose::Bool = p.opts.verbose,      # print information about the run
+    interp_final::Bool = p.opts.interp_final, # interpolate the final points if a boundary is hit
+    tstops::AbstractVector = p.opts.tstops,       # times the solver explicitly solves for
     tdiscon::AbstractVector = p.opts.tdiscon,      # times of known discontinuities in the current function
-    interp_bc::Symbol       = p.opts.interp_bc,    # :interpolate or :extrapolate
-    warm_start::Bool        = p.opts.warm_start,   # warm-start for the initial guess
-    V_max::Number     = p.bounds.V_max,
-    V_min::Number     = p.bounds.V_min,
-    SOC_max::Number   = p.bounds.SOC_max,
-    SOC_min::Number   = p.bounds.SOC_min,
-    T_max::Number     = p.bounds.T_max,
+    interp_bc::Symbol = p.opts.interp_bc,    # :interpolate or :extrapolate
+    warm_start::Bool = p.opts.warm_start,   # warm-start for the initial guess
+    V_max::Number = p.bounds.V_max,
+    V_min::Number = p.bounds.V_min,
+    SOC_max::Number = p.bounds.SOC_max,
+    SOC_min::Number = p.bounds.SOC_min,
+    T_max::Number = p.bounds.T_max,
     c_s_n_max::Number = p.bounds.c_s_n_max,
-    I_max::Number     = p.bounds.I_max,
-    I_min::Number     = p.bounds.I_min,
+    I_max::Number = p.bounds.I_max,
+    I_min::Number = p.bounds.I_min,
     ) where {
         T1<:param,
         T2<:Union{Number,AbstractVector,Nothing},
@@ -46,12 +46,12 @@
         var_keep = p.opts.var_keep
     else
         # Create a new struct that matches the specified outputs
-        p.opts.outputs  = outputs
+        p.opts.outputs = outputs
         p.opts.var_keep = var_keep = model_states_logic(outputs, p.cache.outputs_tot)
     end
 
     # putting opts and bounds into a structure
-    opts   = options_model(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, warm_start, var_keep)
+    opts = options_model(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, warm_start, var_keep)
     bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min)
     
     # getting the initial conditions and run setup
@@ -95,7 +95,7 @@ end
     method = check_method(I, V, P)
     
     cache = p.cache
-    ind   = p.ind
+    ind = p.ind
 
     funcs = p.funcs[method]
     θ_tot = cache.θ_tot[method]
@@ -108,7 +108,7 @@ end
     new_run = isempty(model.results)
 
     ## initializing the states vector Y and time t    
-    Y0  = cache.Y0
+    Y0 = cache.Y0
     YP0 = cache.YP0
     if new_run
         SOC = opts.SOC
@@ -119,8 +119,8 @@ end
 
     else # continue from previous simulation
         Y0  .= @views @inbounds copy(model.Y[end])
-        SOC  = @inbounds model.SOC[end]
-        t0   = @inbounds model.t[end]
+        SOC = @inbounds model.SOC[end]
+        t0 = @inbounds model.t[end]
     end
 
     I1C = calc_I1C(p)
@@ -137,7 +137,7 @@ end
     
     DAEfunc = DAEFunction(
         (res,du,u,p,t) -> f!(res,du,u,p,t,container);
-        jac           = (J,du,u,p,γ,t) -> g!(J,du,u,p,γ,t,container),
+        jac = (J,du,u,p,γ,t) -> g!(J,du,u,p,γ,t,container),
         jac_prototype = funcs.J_y!.sp
     )
 
@@ -165,8 +165,8 @@ end
 
 @inline function solve!(model::R1, int::R2, run::run_constant, p::R3, bounds::R4, opts::R5, container::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
     keep_Y = opts.var_keep.Y
-    Y      = int.u.v
-    YP     = int.du.v
+    Y = int.u.v
+    YP = int.du.v
     
     iter = 1
     status = within_bounds(run)
@@ -197,8 +197,8 @@ end
 
 @inline function solve!(model::R1, int::R2, run::run_function, p::R3, bounds::R4, opts::R5, container::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
     keep_Y = opts.var_keep.Y
-    Y      = int.u.v
-    YP     = int.du.v
+    Y = int.u.v
+    YP = int.du.v
     
     iter = 1
     status = within_bounds(run)
@@ -232,8 +232,8 @@ end
 
 # residuals for DAE with a constant run value
 @inline function f!(res::R1, du::R1, u::R1, params::R1, t::E, container::run_container{T,run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
-    p     = container.p
-    run   = container.run
+    p = container.p
+    run = container.run
     θ_tot = container.θ_tot
 
     container.residuals!(res, u, du, θ_tot)
@@ -244,8 +244,8 @@ end
 end
 # residuals for DAE with a run function
 @inline function f!(res::R1, du::R1, u::R1, params::R1, t::E, container::run_container{T,run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
-    p     = container.p
-    run   = container.run
+    p = container.p
+    run = container.run
     θ_tot = container.θ_tot
 
     @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)
@@ -259,8 +259,8 @@ end
 
 # Jacobian for DAE with a constant run value
 @inline function g!(J::S, du::R1, u::R1, params::R1, γ::E, t::E, container::run_container{T,run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
-    p     = container.p
-    run   = container.run
+    p = container.p
+    run = container.run
     θ_tot = container.θ_tot
 
     container.Jacobian!(J, u, θ_tot)
@@ -274,8 +274,8 @@ end
 
 # Jacobian for DAE with a run function
 @inline function g!(J::S, du::R1, u::R1, params::R1, γ::E, t::E, container::run_container{T,run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
-    p     = container.p
-    run   = container.run
+    p = container.p
+    run = container.run
     θ_tot = container.θ_tot
     
     @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)
@@ -350,7 +350,7 @@ end
 
 @views @inbounds @inline function interp_final_points!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:options_model}
     YP = opts.var_keep.YP ? model.YP[end] : Float64[]
-    t  = bounds.t_final_interp_frac*(int.t - int.tprev) + int.tprev
+    t = bounds.t_final_interp_frac*(int.t - int.tprev) + int.tprev
     
     set_var!(model.Y,  opts.var_keep.Y, bounds.t_final_interp_frac.*(int.u.v .- model.Y[end]) .+ model.Y[end])
     set_vars!(model, p, model.Y[end], YP, t, run, opts; modify! = set_var_last!)
@@ -392,22 +392,22 @@ end
 @inline function newtons_method!(p::param{T}, Y0::R1, YP0::R1, run::AbstractRun, opts::options_model, container::run_container{T}) where {T<:AbstractJacobian,R1<:Vector{Float64}}
 
     itermax = 1000
-    funcs   = container.funcs
-    IC      = funcs.initial_conditions
+    funcs = container.funcs
+    IC = funcs.initial_conditions
     
-    f!      = IC.f_alg!
-    g!      = IC.J_y_alg!
-    θ_tot   = container.θ_tot
+    f! = IC.f_alg!
+    g! = IC.J_y_alg!
+    θ_tot = container.θ_tot
 
     @inbounds @views IC.Y0_alg  .= Y0[(1:p.N.alg) .+ p.N.diff]
     @inbounds @views IC.Y0_diff .= Y0[(1:p.N.diff)]
 
     # retrieving variables from cache
-    Y      = IC.Y0_alg
+    Y = IC.Y0_alg
     Y_diff = IC.Y0_diff
-    Y_old  = IC.Y0_alg_prev
-    res    = IC.res
-    J      = IC.J_y_alg!.sp
+    Y_old = IC.Y0_alg_prev
+    res = IC.res
+    J = IC.J_y_alg!.sp
     
     # starting loop for Newton's method
     iter = 0
@@ -449,13 +449,13 @@ end
     end
 
     value = I*I1C
-    tf    = T1 === Nothing ? 2.0*(3600.0/abs(I)) : (@inbounds Float64(tspan[end]))
+    tf = T1 === Nothing ? 2.0*(3600.0/abs(I)) : (@inbounds Float64(tspan[end]))
 
     return run_constant(value, method, t0, tf, I1C, run_info())
 end
 @inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
-    func  = (x...) -> I1C*I(x...)
-    tf    = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
+    func = (x...) -> I1C*I(x...)
+    tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
     value = [0.0]
 
     run = run_function(func, value, method, t0, tf, I1C, run_info())
@@ -472,7 +472,7 @@ end
         V = Float64(V)
     end
     value = V
-    tf    = @inbounds T1 === Nothing ? 1e10 : Float64(tspan[end])
+    tf = @inbounds T1 === Nothing ? 1e10 : Float64(tspan[end])
 
     return run_constant(value, method, t0, tf, I1C, run_info())
 end
@@ -491,8 +491,8 @@ end
     return run_constant(value, method, t0, tf, I1C, run_info())
 end
 @inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
-    func  = P
-    tf    = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
+    func = P
+    tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
     value = [0.0]
     
     run = run_function(func, value, method, t0, tf, I1C, run_info())

@@ -1,11 +1,3 @@
-export D_s_eff_isothermal, D_s_eff
-export rxn_rate_isothermal, rxn_rate
-export D_eff_linear, D_eff
-export K_eff, K_eff_isothermal
-export OCV_LCO, OCV_NCA, OCV_NCA_rational_fit_to_error, OCV_NCA_Gaussian, OCV_NCA_Cogswell, OCV_NCA_Tesla, OCV_LiC6, OCV_SiC
-export rxn_BV, rxn_MHC, rxn_BV_γMod_01
-
-
 ## Electrolyte functions
 function D_s_eff_isothermal(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractParam)
     """
@@ -94,8 +86,8 @@ function K_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
     func(c_e, T) = @. 1e-4*c_e*((-10.5 + 0.668*1e-3*c_e + 0.494*1e-6*c_e^2) + (0.074 - 1.78*1e-5*c_e - 8.86*1e-10*c_e^2)*T + (-6.96*1e-5 + 2.8*1e-8*c_e)*T^2)^2
 
     K_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p] .* func(c_e_p, T_p)
-	K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* func(c_e_s, T_s)
-	K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* func(c_e_n, T_n)
+ K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* func(c_e_s, T_s)
+ K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* func(c_e_n, T_n)
 
     return K_eff_p, K_eff_s, K_eff_n
 end
@@ -121,10 +113,10 @@ function OCV_LCO(θ_p, T, p)
     T_ref = 25 + 273.15
 
     # Define the OCV for the positive electrode
-    @views U_p      = (-4.656 .+ 88.669θ_p.^2 .- 401.119θ_p.^4 .+ 342.909θ_p.^6 .- 462.471θ_p.^8 .+ 433.434θ_p.^10)./(-1 .+ 18.933θ_p.^2 .- 79.532θ_p.^4 .+ 37.311θ_p.^6 .- 73.083θ_p.^8 .+ 95.96θ_p.^10)
+    @views U_p = (-4.656 .+ 88.669θ_p.^2 .- 401.119θ_p.^4 .+ 342.909θ_p.^6 .- 462.471θ_p.^8 .+ 433.434θ_p.^10)./(-1 .+ 18.933θ_p.^2 .- 79.532θ_p.^4 .+ 37.311θ_p.^6 .- 73.083θ_p.^8 .+ 95.96θ_p.^10)
 
     # Compute the variation of OCV with respect to temperature variations [V/K]
-    ∂U∂T_p   = -0.001(0.199521039 .- 0.928373822θ_p .+ 1.364550689000003θ_p.^2 .- 0.6115448939999998θ_p.^3)./(1 .- 5.661479886999997θ_p +11.47636191θ_p.^2 .- 9.82431213599998θ_p.^3 .+ 3.048755063θ_p.^4)
+    ∂U∂T_p = -0.001(0.199521039 .- 0.928373822θ_p .+ 1.364550689000003θ_p.^2 .- 0.6115448939999998θ_p.^3)./(1 .- 5.661479886999997θ_p +11.47636191θ_p.^2 .- 9.82431213599998θ_p.^3 .+ 3.048755063θ_p.^4)
 
     U_p += (T .- T_ref).*∂U∂T_p
 
@@ -183,9 +175,9 @@ end
 
 function OCV_NCA_Cogswell(θ_p, T, p)
     # Dan Cogswell fit to Samsung battery
-    kB    = 1.38064852
+    kB = 1.38064852
     T_abs = 298.15
-    e     = 1.602176634e-19
+    e = 1.602176634e-19
     F = 96485.3365
     R = 8.31446261815324
 
@@ -220,8 +212,8 @@ function OCV_LiC6(θ_n, T, p)
     T_ref = 25 + 273.15
 
     # Calculate the open circuit voltage of the battery in the negative electrode
-    U_n   = @. 0.7222 + 0.1387*θ_n + 0.029*θ_n.^0.5 - 0.0172./θ_n + 0.0019./θ_n.^1.5 + 0.2808*exp(0.9-15*θ_n)-0.7984*exp(0.4465*θ_n - 0.4108)
-	
+    U_n = @. 0.7222 + 0.1387*θ_n + 0.029*θ_n.^0.5 - 0.0172./θ_n + 0.0019./θ_n.^1.5 + 0.2808*exp(0.9-15*θ_n)-0.7984*exp(0.4465*θ_n - 0.4108)
+ 
     # Compute the variation of OCV with respect to temperature variations [V/K]
     ∂U∂T_n = @. 0.001*(0.005269056 +3.299265709*θ_n-91.79325798*θ_n.^2+1004.911008*θ_n.^3-5812.278127*θ_n.^4 + 19329.7549*θ_n.^5 - 37147.8947*θ_n.^6 + 38379.18127*θ_n.^7-16515.05308*θ_n.^8)
     ∂U∂T_n ./= @. (1-48.09287227*θ_n+1017.234804*θ_n.^2-10481.80419*θ_n.^3+59431.3*θ_n.^4-195881.6488*θ_n.^5 + 374577.3152*θ_n.^6 - 385821.1607*θ_n.^7 + 165705.8597*θ_n.^8)
@@ -264,10 +256,10 @@ function rxn_BV(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p)
 
     else # non-simplified form
         # normalizing the concentrations
-        θ_i      = c_s_star./c_s_max
-        ĉ_e      = c_e./p.θ[:c_e₀]
-        η̂        = η.*(F./(R.*T))
-        act_R    = θ_i./(1.0 .- θ_i)
+        θ_i = c_s_star./c_s_max
+        ĉ_e = c_e./p.θ[:c_e₀]
+        η̂ = η.*(F./(R.*T))
+        act_R = θ_i./(1.0 .- θ_i)
 
         γ_ts = 1.0./(1.0 .- θ_i) # needed for ecd_extras
 
@@ -297,13 +289,13 @@ function rxn_MHC(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p)
     # Convert to "MHC overpotential"
 
     # normalizing the concentrations
-    F        = 96485.3365
-    R        = 8.31446261815324
+    F = 96485.3365
+    R = 8.31446261815324
 
-    η̂        = η.*(F./(R.*T))
-    θ_i      = c_s_star./c_s_max
-    ĉ_e      = c_e./p.θ[:c_e₀]
-    α        = 0.5
+    η̂ = η.*(F./(R.*T))
+    θ_i = c_s_star./c_s_max
+    ĉ_e = c_e./p.θ[:c_e₀]
+    α = 0.5
 
     k₀ = k_i ./ MHC_kfunc(0.0, λ_MHC)
 
@@ -329,14 +321,14 @@ function rxn_MHC(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p)
         k_rd = k₀.*MHC_kfunc(-η_f, λ_MHC)
         k_ox = k₀.*MHC_kfunc(+η_f, λ_MHC)
 
-        act_R    = θ_i./(1.0 .- θ_i)
+        act_R = θ_i./(1.0 .- θ_i)
 
         γ_ts = 1.0./(1.0 .- θ_i) # needed for ecd_extras
 
         ecd_extras = ĉ_e.^(1.0 .- α) .* act_R.^α ./ (γ_ts.*sqrt.(ĉ_e.*θ_i))
 
 
-        j_i   = ecd_extras.*(k_rd.*ĉ_e .- k_ox.*θ_i)
+        j_i = ecd_extras.*(k_rd.*ĉ_e .- k_ox.*θ_i)
         j_i .*= (-p.θ[:c_e₀].^(1.0 .- α).*c_s_max) # need this to match LIONSIMBA dimensional eqn.
 
         j_i = @. (c_s_max - c_s_star)*((p.θ[:c_e₀]*c_s_star*k_ox - c_e*c_s_max*k_rd)*((c_s_star*(c_s_max - c_s_star))/(c_s_max*c_e*p.θ[:c_e₀]))^(1/2))
@@ -351,10 +343,10 @@ function rxn_BV_γMod_01(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p)
     # normalizing the concentrations
     F = 96485.3365
     R = 8.31446261815324
-    θ_i      = c_s_star./c_s_max
-    ĉ_e      = c_e./p.θ[:c_e₀]
-    η̂        = η.*(F./(R.*T))
-    act_R    = θ_i./(1.0 .- θ_i)
+    θ_i = c_s_star./c_s_max
+    ĉ_e = c_e./p.θ[:c_e₀]
+    η̂ = η.*(F./(R.*T))
+    act_R = θ_i./(1.0 .- θ_i)
     α = 0.5
 
     γ_ts = 1.0./(θ_i.*(1.0 .- θ_i)) # needed for ecd_extras
