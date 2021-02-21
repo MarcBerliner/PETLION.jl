@@ -1,7 +1,7 @@
-using PorousElectrodes
+using PETLION
 using Test
 
-@testset "PorousElectrodes.jl" begin
+@testset "PETLION.jl" begin
 
     opts = (
         cathode=LCO,

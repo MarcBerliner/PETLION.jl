@@ -306,7 +306,7 @@ function Base.show(io::IO, p::AbstractParam)
     
     sp = p.numerics.solid_diffusion === :Fickian ? "  " : ""
     str = string(
-    "$(replace(string(typeof(p)), "PorousElectrodes."=>"")):\n",
+    "$(replace(string(typeof(p)), "PETLION."=>"")):\n",
     "  Cathode: $(p.numerics.cathode), $(p.numerics.rxn_p), & $(p.numerics.OCV_p)\n",
     "  Anode:   $(p.numerics.anode), $(p.numerics.rxn_n), & $(p.numerics.OCV_n)\n",
     "  System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), & $(p.numerics.K_eff)\n",

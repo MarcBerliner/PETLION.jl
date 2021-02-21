@@ -1,4 +1,4 @@
-module PorousElectrodes
+module PETLION
 
 cd(@__DIR__ )
 
