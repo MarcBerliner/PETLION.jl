@@ -1,4 +1,4 @@
-# PorousElectrodes
+# PETLION
 
 [![Build Status](https://travis-ci.com/MarcBerliner/PorousElectrodes.jl.svg?branch=master)](https://travis-ci.com/MarcBerliner/PorousElectrodes.jl)
 [![Build Status](https://ci.appveyor.com/api/projects/status/github/MarcBerliner/PorousElectrodes.jl?svg=true)](https://ci.appveyor.com/project/MarcBerliner/PorousElectrodes-jl)
