@@ -1,3 +1,6 @@
+![alt text](docs/logo/PETLION_large.png)
+
+
 # PETLION
 
 [![Build Status](https://travis-ci.com/MarcBerliner/PETLION.jl.svg?branch=master)](https://travis-ci.com/MarcBerliner/PETLION.jl)
