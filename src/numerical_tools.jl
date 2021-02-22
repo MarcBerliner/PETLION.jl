@@ -79,7 +79,7 @@ function blockMatrixMaker(p, X, Y, Z)
         A_tot[ind_0diag[ind]] = A
         A_tot[ind_0diag[ind[2:end]]] += A[1:end-1]
         A_tot[ind_neg1diag[ind[1:end-1]]] = -A[1:end-1]
-        A_tot[ind_pos1diag[ind[1:end-1]] = -A[1:end-1]
+        A_tot[ind_pos1diag[ind[1:end-1]]] = -A[1:end-1]
     end
 
     ind_p = (1:p.N.p)

@@ -143,7 +143,7 @@ end
 
     prob =  DAEProblem(DAEfunc, YP0, Y0, (0.0, run.tf), Float64[], differential_vars=p.cache.id)
 
-    int = init(prob, IDA(linear_solver=:KLU), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
+    int = init(prob, Sundials.IDA(linear_solver=:KLU), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
     
     tstops = sort!(Float64[
         opts.tstops

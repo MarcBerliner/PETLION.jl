@@ -4,7 +4,8 @@ cd(@__DIR__ )
 
 using Base: ImmutableDict
 using Dierckx: Spline1D
-using GeneralizedGenerated: mk_function
+using DifferentialEquations
+using GeneralizedGenerated: mk_function, RuntimeFn
 using IfElse: ifelse
 using LinearAlgebra
 using ModelingToolkit

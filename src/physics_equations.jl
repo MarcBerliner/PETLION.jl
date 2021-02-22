@@ -672,10 +672,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
 
     # Write the RHS of the equation
 
-    # A_tot_mul_c_e = simplify.(A_tot*c_e)
-    A_tot_mul_c_e = A_tot*c_e
-
-    rhsCe = A_tot_mul_c_e
+    rhsCe = A_tot*c_e
     rhsCe .+= K.*(1-p.θ[:t₊]).*a_tot.*j_tot
 
     # Write the residual of the equation

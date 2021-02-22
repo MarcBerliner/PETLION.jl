@@ -273,7 +273,7 @@ function _symbolic_jacobian(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym
     end
     check_semi_explicit(Jacxp)
 
-    Jac_new = @inbounds @views sparsejacobian_multithread(res[ind_new], x_sym;  show_progress = !flag_prev, simplify=false)
+    Jac_new = @inbounds @views sparsejacobian_multithread(res[ind_new], x_sym;  show_progress = !flag_prev, simplify=true)
     
     # For some reason, Jac[ind_new] .= Jac_new doesn't work on linux. This if statement is a temporary workaround
     if !flag_prev
