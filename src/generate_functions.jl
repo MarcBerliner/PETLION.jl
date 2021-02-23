@@ -103,11 +103,11 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
     θ_sym, x_sym, xp_sym, t_sym, SOC_sym, I_current_sym, p_sym, θ_keys, θ_len = get_symbolic_vars(p)
 
     ## Y0 function
-    println_v("Making initial guess function...")
+    println_v("Making initial guess function")
     Y0_sym = _symbolic_initial_guess(p_sym, SOC_sym, θ_sym, I_current_sym)
 
     ## batteryModel function
-    println_v("Making symbolic model...")
+    println_v("Making symbolic model")
     res, ind_res = _symbolic_residuals(p_sym, t_sym, x_sym, xp_sym, I_current_sym, θ_sym, method)
 
     θ_sym_slim, θ_keys_slim, θ_len_slim = get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
@@ -118,11 +118,11 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
     _, resFunc = build_function(res_build, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
 
     ## jacobian
-    println_v("Making symbolic Jacobian. May take a few mins...")
+    println_v("Making symbolic Jacobian. May take a few mins")
     Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method;
         res_prev=res_prev, Jac_prev=Jac_prev, verbose=verbose)
 
-    println_v("Making initial condition functions...")
+    println_v("Making initial condition functions")
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method, ind_res)
 
     jac_algFunc= _symbolic_initial_conditions_jac(p, Jac, x_sym, xp_sym, θ_sym, θ_sym_slim, method)
@@ -297,7 +297,7 @@ function _symbolic_jacobian(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym
     @assert length(Jac.nzval) === length(J_sp.nzval)
 
     # building the sparse jacobian
-    _, jacFunc = build_function(Jac, x_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
+    jacFunc = build_function(Jac, x_sym, θ_sym_slim)[2]
     
     return Jac, jacFunc, J_sp
 end
@@ -307,8 +307,8 @@ function _symbolic_initial_conditions_res(p::AbstractParam, res, x_sym, xp_sym, 
     res_alg = zeros(eltype(res), p.N.alg)
     res_alg[ind_res[p.N.diff+1:end] .- p.N.diff] .= res[ind_res[p.N.diff+1:end]]
     
-    _, res_diffFunc = build_function(res_diff, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
-    _, res_algFunc = build_function(res_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)
+    res_diffFunc = build_function(res_diff, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)[2]
+    res_algFunc = build_function(res_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)[2]
     
     return res_algFunc, res_diffFunc
 end
@@ -316,7 +316,7 @@ function _symbolic_initial_conditions_jac(p::AbstractParam, Jac, x_sym, xp_sym, 
     
     jac_alg = Jac[p.N.diff+1:end,p.N.diff+1:end]
     
-    _, jac_algFunc = build_function(jac_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)
+    jac_algFunc = build_function(jac_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)[2]
     
     return jac_algFunc
 end

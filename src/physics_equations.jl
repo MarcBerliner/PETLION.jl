@@ -313,16 +313,6 @@ function surface_area_to_volume_ratio(p::AbstractParam)
     return a_p, a_n
 end
 
-function surface_concentration_initial(p::AbstractParam)
-    """
-    Initial c_s_star concentration defined as a linear relationship between (θ_min, θ_max) depending on the SOC fraction
-    """
-    c_s_p₀ = (p.opts.SOC*(p.θ[:θ_max_p] - p.θ[:θ_min_p]) + p.θ[:θ_min_p]) .* p.θ[:c_max_p]
-    c_s_n₀ = (p.opts.SOC*(p.θ[:θ_max_n] - p.θ[:θ_min_n]) + p.θ[:θ_min_n]) .* p.θ[:c_max_n]
-
-    return c_s_p₀, c_s_n₀
-end
-
 function coeff_reaction_rate(states, p::AbstractParam)
     """
     Reaction rates (k) of cathode and anode [m^2.5/(m^0.5 s)]
@@ -374,11 +364,11 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     function block_matrix_Φ_s(N::Int, mat_type=Float64)
         A = zeros(mat_type, N, N)
     
-        ind_0diag = diagind(A)
+        ind_diagonal = diagind(A)
         ind_neg1diag = diagind(A, -1)
         ind_pos1diag = diagind(A, 1)
     
-        A[ind_0diag]    .= -2.0
+        A[ind_diagonal]    .= -2.0
         A[ind_pos1diag] .=  1.0
         A[ind_neg1diag] .=  1.0
         A[1,1] = -1.0
@@ -448,9 +438,9 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
 
     # Since the values of K_eff are evaluated at the c_enter of each CV; there is the need to interpolate these quantities
     # & find their values at the edges of the CVs
-    K̂_eff_p, K̂_eff_s, K̂_eff_n = interpolateElectrolyteConductivities(K_eff.p, K_eff.s, K_eff.n, p)
+    K̂_eff_p, K̂_eff_s, K̂_eff_n = interpolate_electrolyte_conductivities(K_eff.p, K_eff.s, K_eff.n, p)
 
-    A_tot = blockMatrixMaker(p, K̂_eff_p, K̂_eff_s, K̂_eff_n)
+    A_tot = block_matrix_maker(p, K̂_eff_p, K̂_eff_s, K̂_eff_n)
 
     # dividing by the length and Δx
     A_tot[(1:p.N.p), (1:p.N.p)] ./= (Δx_p*p.θ[:l_p])
@@ -466,7 +456,11 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     # right now, we have -K_eff [last interior face] + K_eff (last interior
     # face)
     
-    A_tot[end, end-1:end] .= p.numerics.edge_values === :edge ? [-1/3, 1.0] : [0.0, 1.0]
+    if p.numerics.edge_values === :center
+        A_tot[end, end-1:end] .= [0.0, 1.0]
+    elseif p.numerics.edge_values === :edge
+        A_tot[end, end-1:end] .= [-1/3, 1.0]
+    end
     ## Interfaces Positive electrode [last volume of the positive]
 
     # Here we are in the last volume of the positive
@@ -494,14 +488,14 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     ## Electrolyte concentration interpolation
     # Evaluate the interpolation of the electrolyte concentration values at the
     # edges of the control volumes.
-    c̄_e_p, c̄_e_ps, c̄_e_s, c̄_e_sn, c̄_e_n = interpolateElectrolyteConcentration(c_e, p)
+    c̄_e_p, c̄_e_ps, c̄_e_s, c̄_e_sn, c̄_e_n = interpolate_electrolyte_concentration(c_e, p)
     ## Temperature interpolation
     # Evaluate the temperature value at the edges of the control volumes
-    T̄_p, T̄_ps, T̄_s, T̄_sn, T̄_n = interpolateTemperature(T, p)
+    T̄_p, T̄_ps, T̄_s, T̄_sn, T̄_n = interpolate_temperature(T, p)
     ## Electrolyte fluxes
     # Evaluate the interpolation of the electrolyte concentration fluxes at the
     # edges of the control volumes.
-    c_e_flux_p, c_e_flux_ps, c_e_flux_s, c_e_flux_sn, c_e_flux_n = interpolateElectrolyteConcetrationFluxes(c_e, p)
+    c_e_flux_p, c_e_flux_ps, c_e_flux_s, c_e_flux_sn, c_e_flux_n = interpolate_electrolyte_concetration_fluxes(c_e, p)
     ## RHS arrays
     K = 2R*(1.0 - p.θ[:t₊])/F
 
@@ -515,15 +509,13 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     prod_tot = prod_tot[2:end] .- prod_tot[1:end-1]
     prepend!(prod_tot, prop_p_1)
 
-
-    flux_tot = [
-        (Δx_p*p.θ[:l_p]*F*a_p)*j.p
-        zeros(Float64, p.N.s) # p.θ[:a_s] == 0.0 ? zeros(Float64, p.N.s) : repeat([Δx_s*p.θ[:l_s]*F*p.θ[:a_s]], p.N.s)
-        (Δx_n*p.θ[:l_n]*F*a_n)*j.n[1:end-1]
-    ]
-
     f = -K*prod_tot
-    f .+= flux_tot
+
+    ind_p = (1:p.N.p)
+    ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
+
+    f[ind_p] .+= (Δx_p*p.θ[:l_p]*F*a_p)*j.p
+    f[ind_n] .+= (Δx_n*p.θ[:l_n]*F*a_n)*j.n[1:end-1]
 
     # Set the last element of Φ_e to 0 [enforcing BC]
     append!(f, 0.0)
@@ -568,9 +560,9 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     a_p, a_n = surface_area_to_volume_ratio(p)
 
     # Interpolation of the diffusion coefficients, same for electrolyte conductivities
-    D_eff_p, D_eff_s, D_eff_n = interpolateElectrolyteConductivities(D_eff_p, D_eff_s, D_eff_n, p)
+    D_eff_p, D_eff_s, D_eff_n = interpolate_electrolyte_conductivities(D_eff_p, D_eff_s, D_eff_n, p)
 
-    A_tot = blockMatrixMaker(p, -D_eff_p, -D_eff_s, -D_eff_n)
+    A_tot = block_matrix_maker(p, -D_eff_p, -D_eff_s, -D_eff_n)
 
     # dividing by the length and Δx
     @views @inbounds A_tot[(1:p.N.p), (1:p.N.p)] ./= (Δx_p*p.θ[:l_p])^2
@@ -633,18 +625,6 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
         A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] = [first_n; -(first_n+second_n); second_n]/(Δx_n*p.θ[:l_n]*p.θ[:ϵ_n])
     end
 
-    a_tot = [
-        repeat([a_p], p.N.p)
-        zeros(Float64, p.N.s)
-        repeat([a_n], p.N.n)
-        ]
-
-    j_tot = [
-        j.p
-        zeros(Float64, p.N.s)
-        j.n
-        ]
-
     ϵ_tot = [
         ones(p.N.p).*p.θ[:ϵ_p]
         ones(p.N.s).*p.θ[:ϵ_s]
@@ -653,10 +633,10 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
 
     K = 1.0./ϵ_tot
     A_ϵ = zeros(eltype(K), (p.N.p+p.N.s+p.N.n), (p.N.p+p.N.s+p.N.n))
-    ind_0diag = diagind(A_ϵ)
+    ind_diagonal = diagind(A_ϵ)
     ind_neg1diag = diagind(A_ϵ, -1)
     ind_pos1diag = diagind(A_ϵ, 1)
-    A_ϵ[ind_0diag] .= K
+    A_ϵ[ind_diagonal] .= K
 
     # Build porosities matrix
     @views @inbounds A_ϵ[ind_neg1diag] .= K[1:end-1]
@@ -671,9 +651,14 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     A_tot .*= A_ϵ
 
     # Write the RHS of the equation
-
     rhsCe = A_tot*c_e
-    rhsCe .+= K.*(1-p.θ[:t₊]).*a_tot.*j_tot
+    
+    ind_p = (1:p.N.p)
+    ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
+
+    rhsCe[ind_p] .+= K[ind_p].*(1-p.θ[:t₊]).*a_p.*j.p
+    # nothing for the separator since a_s = 0
+    rhsCe[ind_n] .+= K[ind_n].*(1-p.θ[:t₊]).*a_n.*j.n
 
     # Write the residual of the equation
     res_c_e .= rhsCe .- ∂c_e
@@ -800,8 +785,8 @@ function residuals_c_s_avg_Fickian_FDM!(res, states, ∂states, p)
     res_c_s_avg = res[:c_s_avg]
 
     # Matrices needed for first and second order derivatives
-    FO_D_p, FO_D_c_p, SO_D_p, SO_D_c_p, SO_D_Δx_p = DerivativeMatrices(p.N.r_p)
-    FO_D_n, FO_D_c_n, SO_D_n, SO_D_c_n, SO_D_Δx_n = DerivativeMatrices(p.N.r_n)
+    FO_D_p, FO_D_c_p, SO_D_p, SO_D_c_p, SO_D_Δx_p = derivative_matrices_first_and_second_order(p.N.r_p)
+    FO_D_n, FO_D_c_n, SO_D_n, SO_D_c_n, SO_D_Δx_n = derivative_matrices_first_and_second_order(p.N.r_n)
 
     # If the regular diffusion equation is selected; then use FDM to
     # evaluate the complete solution.
@@ -1085,12 +1070,12 @@ function residuals_T!(res, states, ∂states, p)
     function block_matrix_T(λ, N)
         A_tot = zeros(eltype(λ), N, N)
     
-        ind_0diag = diagind(A_tot)
+        ind_diagonal = diagind(A_tot)
         ind_neg1diag = diagind(A_tot, -1)
         ind_pos1diag = diagind(A_tot, 1)
     
-        A_tot[ind_0diag[1:N]]      .= -λ
-        A_tot[ind_0diag[2:N]]     .-= λ
+        A_tot[ind_diagonal[1:N]]      .= -λ
+        A_tot[ind_diagonal[2:N]]     .-= λ
         A_tot[ind_neg1diag[1:N-1]] .= λ
         A_tot[ind_pos1diag[1:N-1]] .= λ
     

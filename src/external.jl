@@ -336,10 +336,10 @@ end
 
     build_T!(states, p)
     build_c_s_star!(states, p)
+    c_s_p₀ = (p.opts.SOC*(p.θ[:θ_max_p] - p.θ[:θ_min_p]) + p.θ[:θ_min_p]) * p.θ[:c_max_p]
+    c_s_n₀ = (p.opts.SOC*(p.θ[:θ_max_n] - p.θ[:θ_min_n]) + p.θ[:θ_min_n]) * p.θ[:c_max_n]
     
     function guess_differential!(states, p::AbstractParam)
-
-        c_s_p₀, c_s_n₀ = surface_concentration_initial(p)
         if p.numerics.solid_diffusion ∈ (:quadratic, :polynomial)
             states[:c_s_avg] .= [repeat([c_s_p₀], p.N.p); repeat([c_s_n₀], p.N.n)]
         elseif p.numerics.solid_diffusion === :Fickian
@@ -351,12 +351,9 @@ end
         states[:Q] = zeros(p.N.p+p.N.n)
     
         return nothing
-    
     end
     
     function guess_algebraic!(states, p::AbstractParam, X_applied)
-        c_s_p₀, c_s_n₀ = surface_concentration_initial(p)
-    
         states[:c_s_star] .= [
             repeat([c_s_p₀], p.N.p)
             repeat([c_s_n₀], p.N.n)

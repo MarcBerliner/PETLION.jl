@@ -1,4 +1,4 @@
-function firstOrderDerivativeMatrix(xl, xu, n)
+function derivative_matrix_first_order(n, xl=0, xu=1)
     Δx = (xu - xl)/(n - 1)
     r8fΔx = 1/(40320*Δx)
     nm4 = n - 4
@@ -32,7 +32,7 @@ function firstOrderDerivativeMatrix(xl, xu, n)
     return derivativeMatrix, r8fΔx
 end
 
-function secondOrderDerivativeMatrix(xl, xu, n)
+function derivative_matrix_second_order(n, xl=0, xu=1)
     Δx = (xu - xl)/(n - 1)
 
     r12Δxs = 1/(12*Δx^2)
@@ -61,23 +61,23 @@ function secondOrderDerivativeMatrix(xl, xu, n)
     return derivativeMatrix, r12Δxs, Δx
 end
 
-function DerivativeMatrices(N)
-    @inbounds FO_D_i, FO_D_c_i = firstOrderDerivativeMatrix( 0.0, 1.0, N)
-    @inbounds SO_D_i, SO_D_c_i, SO_D_Δx_i = secondOrderDerivativeMatrix(0.0, 1.0, N)
+function derivative_matrices_first_and_second_order(N, xl=0, xu=1)
+    FO_D_i, FO_D_c_i = derivative_matrix_first_order(N, xl, xu)
+    SO_D_i, SO_D_c_i, SO_D_Δx_i = derivative_matrix_second_order(N, xl, xu)
 
     return FO_D_i, FO_D_c_i, SO_D_i, SO_D_c_i, SO_D_Δx_i
 end
 
-function blockMatrixMaker(p, X, Y, Z)
+function block_matrix_maker(p, X, Y, Z)
     A_tot = zeros(eltype(X), (p.N.p+p.N.s+p.N.n), (p.N.p+p.N.s+p.N.n))
 
-    ind_0diag = diagind(A_tot)
+    ind_diagonal = diagind(A_tot)
     ind_neg1diag = diagind(A_tot, -1)
     ind_pos1diag = diagind(A_tot, 1)
 
     function single_block!(A, ind)
-        A_tot[ind_0diag[ind]] = A
-        A_tot[ind_0diag[ind[2:end]]] += A[1:end-1]
+        A_tot[ind_diagonal[ind]] = A
+        A_tot[ind_diagonal[ind[2:end]]] += A[1:end-1]
         A_tot[ind_neg1diag[ind[1:end-1]]] = -A[1:end-1]
         A_tot[ind_pos1diag[ind[1:end-1]]] = -A[1:end-1]
     end
@@ -85,6 +85,7 @@ function blockMatrixMaker(p, X, Y, Z)
     ind_p = (1:p.N.p)
     ind_s = (1:p.N.s) .+ (p.N.p)
     ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
+
     single_block!(X, ind_p)
     single_block!(Y, ind_s)
     single_block!(Z, ind_n)
@@ -92,60 +93,58 @@ function blockMatrixMaker(p, X, Y, Z)
     return A_tot
 end
 
-function interpolateElectrolyteConductivities(Keff_p, Keff_s, Keff_n, p)
-    # interpolateElectrolyteConductivities interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
+function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p)
+    # interpolate_electrolyte_conductivities interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 
-    @views @inbounds Keff_i_medio(β_i, Keff_i) = Keff_i[1:end-1].*Keff_i[2:end]./(β_i*Keff_i[2:end]+(1-β_i)*Keff_i[1:end-1])
-    @views @inbounds β_i_j(Δx_i, l_i, Δx_j, l_j) = Δx_i*l_i/2 /(Δx_j*l_j/2+Δx_i*l_i/2)
-    @views @inbounds Keff_i_j_interface(β_i_j, Keff_i, Keff_j) = Keff_i[end]*Keff_j[1] / (β_i_j*Keff_j[1] + (1-β_i_j)*Keff_i[end])
+    Keff_i_medio(β_i, Keff_i) = Keff_i[1:end-1].*Keff_i[2:end]./(β_i*Keff_i[2:end]+(1-β_i)*Keff_i[1:end-1])
+    β_i_j(Δx_i, l_i, Δx_j, l_j) = Δx_i*l_i/2 /(Δx_j*l_j/2+Δx_i*l_i/2)
+    Keff_i_j_interface(β_i_j, Keff_i, Keff_j) = Keff_i[end]*Keff_j[1] / (β_i_j*Keff_j[1] + (1-β_i_j)*Keff_i[end])
 
     ## Positive electrode mean conductivity
     β_p = 0.5
-    @views @inbounds Keff_p_medio = Keff_i_medio(β_p, Keff_p)
+    Keff_p_medio = Keff_i_medio(β_p, Keff_p)
 
     # The last element of Keff_p_medio will be the harmonic mean of the
     # elements at the interface positive-separator
 
-    @views @inbounds β_p_s = β_i_j(Δx_p, p.θ[:l_p], Δx_s, p.θ[:l_s])
+    β_p_s = β_i_j(Δx_p, p.θ[:l_p], Δx_s, p.θ[:l_s])
 
     Keff_p_s_interface = Keff_i_j_interface(β_p_s, Keff_p, Keff_s)
 
-    @inbounds append!(Keff_p_medio, Keff_p_s_interface)
+    append!(Keff_p_medio, Keff_p_s_interface)
 
     ## Separator mean conductivity
     # Compute the harmonic mean values for the separator
     β_s = 0.5
-    @views @inbounds Keff_s_medio = Keff_i_medio(β_s, Keff_s)
+    Keff_s_medio = Keff_i_medio(β_s, Keff_s)
 
     # The last element of Keff_s_medio will be the harmonic mean of the
     # elements at the interface separator-negative
 
-    @views @inbounds β_s_n = β_i_j(Δx_s, p.θ[:l_s], Δx_n, p.θ[:l_n])
+    β_s_n = β_i_j(Δx_s, p.θ[:l_s], Δx_n, p.θ[:l_n])
 
     Keff_s_n_interface = Keff_i_j_interface(β_s_n, Keff_s, Keff_n)
 
-    @inbounds append!(Keff_s_medio, Keff_s_n_interface)
+    append!(Keff_s_medio, Keff_s_n_interface)
 
     ## Negative electrode mean conductivity
     # Compute the harmonic mean values for the negative electrode
 
     β_n = 0.5
-    @views @inbounds Keff_n_medio = Keff_i_medio(β_n, Keff_n)
+    Keff_n_medio = Keff_i_medio(β_n, Keff_n)
 
-    @inbounds append!(Keff_n_medio, 0.0) # the cc interface is not used. The zero is only to match the dimensions
+    append!(Keff_n_medio, 0.0) # the cc interface is not used. The zero is only to match the dimensions
 
     return Keff_p_medio, Keff_s_medio, Keff_n_medio
 
 end
 
-function harmonic_mean(β, x₁, x₂)
-    x₁.*x₂ ./ (β*x₂ + (1.0 - β)*x₁)
-end
+harmonic_mean(β, x₁, x₂) = x₁.*x₂ ./ (β*x₂ + (1.0 - β)*x₁)
 
-function interpolateElectrolyteConcentration(c_e, p)
-    # interpolateElectrolyteConcentration interpolates the value of electrolyte concentration at the edges of control volumes using harmonic mean.
+function interpolate_electrolyte_concentration(c_e, p)
+    # interpolate_electrolyte_concentration interpolates the value of electrolyte concentration at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 
@@ -175,8 +174,8 @@ function interpolateElectrolyteConcentration(c_e, p)
 
 end
 
-function interpolateTemperature(T, p)
-    # interpolateTemperature evaluates the interpolation of the temperature at the edges of control volumes using harmonic mean.
+function interpolate_temperature(T, p)
+    # interpolate_temperature evaluates the interpolation of the temperature at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 
@@ -205,8 +204,8 @@ return T̄_p, T̄_ps, T̄_s, T̄_sn, T̄_n
 end
 
 
-function interpolateElectrolyteConcetrationFluxes(c_e, p)
-    # interpolateElectrolyteConcetrationFluxes interpolates the electrolyte concentration flux at the edges of control volumes using harmonic mean.
+function interpolate_electrolyte_concetration_fluxes(c_e, p)
+    # interpolate_electrolyte_concetration_fluxes interpolates the electrolyte concentration flux at the edges of control volumes using harmonic mean.
 
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
 
@@ -226,7 +225,6 @@ function interpolateElectrolyteConcetrationFluxes(c_e, p)
     @inbounds @views c_e_flux_n = (c_e[p.N.p+p.N.s+2:end] .- c_e[p.N.p+p.N.s+1:end-1])/(Δx_n*p.θ[:l_n])
 
     return c_e_flux_p, c_e_flux_ps, c_e_flux_s, c_e_flux_sn, c_e_flux_n
-
 end
 
 function Δx(p)
@@ -238,5 +236,4 @@ function Δx(p)
     Δx_z = 1.0/p.N.z
 
     return Δx_p, Δx_s, Δx_n, Δx_a, Δx_z
-
 end
