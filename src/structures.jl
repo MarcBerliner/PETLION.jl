@@ -7,7 +7,7 @@ end
 abstract type AbstractRun end
 
 struct run_constant <: AbstractRun
-    value::Float64
+    value::Vector{Float64}
     method::Symbol
     t0::Float64
     tf::Float64
@@ -24,7 +24,7 @@ struct run_function <: AbstractRun
     I1C::Float64
     info::run_info
 end
-@inline value(run::run_constant) = run.value
+@inline value(run::run_constant) = @inbounds run.value[1]
 @inline value(run::run_function) = @inbounds run.value[1]
 
 @with_kw struct index_state <: AbstractUnitRange{Int64}
@@ -78,6 +78,7 @@ struct functions_model{T<:AbstractJacobian}
     J_y!::T
     initial_conditions::init_newtons_method{T}
     update_θ!::RuntimeFn
+    int::Vector{Sundials.IDAIntegrator}
 end
 
 @with_kw mutable struct boundary_stop_conditions{T1<:Number,T2<:Float64}
@@ -164,7 +165,7 @@ end
 states_logic = model_states{
     Bool,
     Bool,
-    Nothing
+    Tuple
 }
 
 indices_states = model_states{
@@ -274,7 +275,7 @@ function Plots.plot(model::model_output, x_name::Symbol=:V; legend=false, ylabel
         time_unit = "s"
     end
     
-    plot(model.t./time_scale, x;
+    Plots.plot(model.t./time_scale, x;
         legend = legend,
         ylabel = x_name,
         xlabel = haskey(kwargs, :xlabel) ? kwargs[:xlabel] : "t ($(time_unit))",

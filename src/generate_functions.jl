@@ -27,7 +27,7 @@ function load_functions(p::AbstractParam, methods::Tuple)
         append!(p.cache.θ_tot[method],  zeros(sum(θ_len)))
 
         initial_conditions = init_newtons_method(f_alg!, J_y_alg!, f_diff!, Y0_alg, Y0_alg_prev, Y0_diff, res)
-        funcs = ImmutableDict(funcs, method => functions_model{jac_type}(f!, initial_guess!, J_y!, initial_conditions, update_θ!))
+        funcs = ImmutableDict(funcs, method => functions_model{jac_type}(f!, initial_guess!, J_y!, initial_conditions, update_θ!, Sundials.IDAIntegrator[]))
     end
 
     if p.numerics.jacobian === :symbolic && !SAVE_SYMBOLIC_FUNCTIONS
@@ -331,7 +331,6 @@ function get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
         append!(used_params_tot, ModelingToolkit.get_variables(Y))
         append!(used_params_tot, ModelingToolkit.get_variables(r))
     end
-
     index_params = Int64[]
 
     dummy = BitArray{1}(undef, length(θ_sym))
@@ -345,6 +344,11 @@ function get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
     sort!(index_params)
 
     θ_sym_slim = θ_sym[index_params]
+
+    # for some reason, sometimes the above script does not remove all duplicates
+    unique_ind = indexin(unique(θ_sym_slim), θ_sym_slim)
+    θ_sym_slim = θ_sym_slim[unique_ind]
+    index_params = index_params[unique_ind]
     
     # remove additional entries due to parameters that are vectors
     θ_keys_extend = Symbol[]
