@@ -333,47 +333,46 @@ end
     YP0 = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
 
     states = retrieve_states(Y0, p)
-
-    build_T!(states, p)
-    build_c_s_star!(states, p)
-    c_s_p₀ = (p.opts.SOC*(p.θ[:θ_max_p] - p.θ[:θ_min_p]) + p.θ[:θ_min_p]) * p.θ[:c_max_p]
-    c_s_n₀ = (p.opts.SOC*(p.θ[:θ_max_n] - p.θ[:θ_min_n]) + p.θ[:θ_min_n]) * p.θ[:c_max_n]
     
-    function guess_differential!(states, p::AbstractParam)
-        if p.numerics.solid_diffusion ∈ (:quadratic, :polynomial)
-            states[:c_s_avg] .= [repeat([c_s_p₀], p.N.p); repeat([c_s_n₀], p.N.n)]
-        elseif p.numerics.solid_diffusion === :Fickian
-            states[:c_s_avg] .= [repeat([c_s_p₀], p.N.p*p.N.r_p); repeat([c_s_n₀], p.N.n*p.N.r_n)]
-        end
+    build_T!(states, p)
+
+    states[:c_s_avg].p .= p.θ[:c_max_p] * (p.opts.SOC*(p.θ[:θ_max_p] - p.θ[:θ_min_p]) + p.θ[:θ_min_p])
+    states[:c_s_avg].n .= p.θ[:c_max_n] * (p.opts.SOC*(p.θ[:θ_max_n] - p.θ[:θ_min_n]) + p.θ[:θ_min_n])
+    
+    build_c_s_star!(states, p)
+
+    build_OCV!(states, p)
+    
+    function guess_differential!()
+        
         states[:c_e] = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
+        
         states[:T] = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
+        
         states[:film] = zeros(p.N.n)
+        
         states[:Q] = zeros(p.N.p+p.N.n)
     
         return nothing
     end
     
-    function guess_algebraic!(states, p::AbstractParam, X_applied)
-        states[:c_s_star] .= [
-            repeat([c_s_p₀], p.N.p)
-            repeat([c_s_n₀], p.N.n)
-            ]
-    
-        build_OCV!(states, p)
-    
+    function guess_algebraic!()
         states[:j] = 0
+        
         states[:Φ_e] = 0
+        
         states[:Φ_s] = states[:U]
+        
         states[:I] = X_applied
     
         if !isempty(states[:j_s]) states[:j_s] .= 0.0 end # totally arbitrary/random value for side-reaction flux
-    
+
         return nothing
     end
 
     # creating initial guess vectors Y and YP
-    guess_differential!(states, p)
-    guess_algebraic!(states, p, X_applied)
+    guess_differential!()
+    guess_algebraic!()
 
     build_residuals!(Y0, states, p)
 

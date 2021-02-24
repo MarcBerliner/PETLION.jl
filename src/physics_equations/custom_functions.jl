@@ -109,7 +109,6 @@ end
 
 ## OCV – Positive Electrodes
 function OCV_LCO(θ_p, T, p)
-
     T_ref = 25 + 273.15
 
     # Define the OCV for the positive electrode
@@ -118,7 +117,14 @@ function OCV_LCO(θ_p, T, p)
     # Compute the variation of OCV with respect to temperature variations [V/K]
     ∂U∂T_p = -0.001(0.199521039 .- 0.928373822θ_p .+ 1.364550689000003θ_p.^2 .- 0.6115448939999998θ_p.^3)./(1 .- 5.661479886999997θ_p +11.47636191θ_p.^2 .- 9.82431213599998θ_p.^3 .+ 3.048755063θ_p.^4)
 
-    U_p += (T .- T_ref).*∂U∂T_p
+    # if T == T_ref exactly (which may be true for isothermal runs), don't calculate ∂U∂T
+    @inbounds for i in eachindex(U_p)
+        U_p[i] = IfElse.ifelse(
+            T[i] == T_ref,
+            U_p[i],
+            (T[i] - T_ref) * ∂U∂T_p[i]
+        )
+    end
 
     return U_p, ∂U∂T_p
 end
@@ -217,9 +223,15 @@ function OCV_LiC6(θ_n, T, p)
     # Compute the variation of OCV with respect to temperature variations [V/K]
     ∂U∂T_n = @. 0.001*(0.005269056 +3.299265709*θ_n-91.79325798*θ_n.^2+1004.911008*θ_n.^3-5812.278127*θ_n.^4 + 19329.7549*θ_n.^5 - 37147.8947*θ_n.^6 + 38379.18127*θ_n.^7-16515.05308*θ_n.^8)
     ∂U∂T_n ./= @. (1-48.09287227*θ_n+1017.234804*θ_n.^2-10481.80419*θ_n.^3+59431.3*θ_n.^4-195881.6488*θ_n.^5 + 374577.3152*θ_n.^6 - 385821.1607*θ_n.^7 + 165705.8597*θ_n.^8)
-
-    U_n   .+= @. (T - T_ref) * ∂U∂T_n
-
+    
+    @inbounds for i in eachindex(U_n)
+        U_n[i] = IfElse.ifelse(
+            T[i] == T_ref,
+            U_n[i],
+            (T[i] - T_ref) * ∂U∂T_n[i]
+        )
+    end
+    
     return U_n, ∂U∂T_n
 end
 

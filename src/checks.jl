@@ -168,7 +168,7 @@ end
         Y[p.ind.I] .= value_new
         YP = int.du.v
         
-        initialize_algebraic_states!(p, Y, YP, run, opts, container)
+        initialize_states!(p, Y, YP, run, opts, container)
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
     end

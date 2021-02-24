@@ -1,5 +1,27 @@
-@inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6; init_all::Bool=false, modify!::Function=set_var!) where {R1<:model_output, R2<:param, R3<:Vector{Float64}, R4<:Float64, R5<:AbstractRun, R6<:options_model}
-
+@inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6;
+    modify!::Function=set_var!,
+    init_all::Bool=false
+    ) where {
+        R1<:model_output,
+        R2<:param,
+        R3<:Vector{Float64},
+        R4<:Float64,
+        R5<:AbstractRun,
+        R6<:options_model
+        }
+    """
+    Sets all the outputs for the model. There are three kinds of variable outputs:
+    
+    1. `keep.x = true`: The variable is calculated and saved on every iteration
+    
+    2. `keep.x = false` WITHOUT the check `if keep.x ... end`: These variables  MUST be
+        calculated to ensure that `check_simulation_stop!` works properly (e.g., check if
+        `V > V_max` or `SOC > SOC_max`), but they are not saved on every iteration
+    
+    3. `keep.x = false` WITH the check `if keep.x ... end`: These variables are not
+        evaluated at all and may not even be calculable (e.g., `T` if there is no
+        temperature enabled)
+    """
     ind = p.ind
     keep = opts.var_keep
 
@@ -34,7 +56,7 @@ end
         @inbounds x[1] = x_val
     end
 end
-@inline function set_var!(x::T1, append::Bool, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector}
+@inline function set_var!(x::T1, append::Bool, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
     if append
         push!(x, x_val)
     else
@@ -45,7 +67,7 @@ end
 @inline function set_var_last!(x::T1, append::Bool, x_val::T2) where {T1<:Vector{Float64},T2<:Float64}
     @inbounds x[end] = x_val
 end
-@inline function set_var_last!(x::T1, append::Bool, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector}
+@inline function set_var_last!(x::T1, append::Bool, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
     @inbounds x[end] .= x_val
 end
 
@@ -88,7 +110,6 @@ end
     
     return out
 end
-
 @inline function interpolate_variable(x::R1, model::R2, tspan::T1, dummy::Vector{Float64}, interp_bc::Symbol) where {R1<:Union{VectorOfArray{Float64,2,Array{Array{Float64,1},1}},Vector{Vector{Float64}}},R2<:model_output,T1<:Union{Real,AbstractArray}}
     @inbounds out = [copy(x[1]) for _ in tspan]
 
