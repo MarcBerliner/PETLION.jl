@@ -215,38 +215,38 @@ function build_heat_generation_rates!(states, p::AbstractParam)
     F = 96485.3365
     R = 8.31446261815324
 
-    # Retrieve effective electrolyte conductivity coefficients.
+    c_e_p = c_e.p
+    c_e_s = c_e.s
+    c_e_n = c_e.n
+
+    T_p = T.p
+    T_s = T.s
+    T_n = T.n
+
     a_p, a_n = surface_area_to_volume_ratio(p)
     σ_eff_p, σ_eff_n = conductivity_effective(p)
 
-    # Evaluate the derivatives used in Q_ohm calculations
-    function build_thermal_derivatives()
-        """
-        For each of the numerical derivatives computed below; the first & last control
-        volumes are evaluated with first order accuracy (forward & backward difference 
-        schemes respectively) while the middle control volume approximations use a second
-        order accuracy (central difference scheme).
-        """
+    function thermal_derivatives(Φ_s, Φ_e, c_e, p)
+
+        # For each of the numerical derivatives computed below; the first & last control volumes are evaluated with first
+        # order accuracy [forward & backward difference schemes respectively]
+        # while the middle control volume approximations use a second order accuracy [central difference scheme].
     
         Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
     
         ## Solid potential derivatives
-        function stencil(N)
-            A = zeros(N,N)
-            A[diagind(N,N,-1)] .= -1 # central
-            A[diagind(N,N,+1)] .= +1 # central
-
-            A[1,1:3] .= [-3, 4, -1]        # forward
-            A[end,end-2:end] .= [1, -4, 3] # backward
-
-            return A
-        end
-
+    
         # Positive Electrode
-        dΦ_sp = stencil(p.N.p)*Φ_s.p./(2*Δx_p*p.θ[:l_p])
+        dΦ_sp = [(-3*Φ_s[1]+4*Φ_s[2]-Φ_s[3])/(2*Δx_p*p.θ[:l_p]);           					# Forward differentiation scheme
+            (Φ_s[3:p.N.p]-Φ_s[1:p.N.p-2]) / (2*Δx_p*p.θ[:l_p]);						# Central differentiation scheme
+            (3*Φ_s[p.N.p]-4*Φ_s[p.N.p-1]+Φ_s[p.N.p-2]) / (2*Δx_p*p.θ[:l_p])		# Backward differentiation scheme
+            ]
     
         # Negative Electrode
-        dΦ_sn = stencil(p.N.n)*Φ_s.n./(2*Δx_n*p.θ[:l_n])
+        dΦ_sn = [(-3*Φ_s[p.N.p+1]+4*Φ_s[p.N.p+2]-Φ_s[p.N.p+3])/(2*Δx_n*p.θ[:l_n]); 	# Forward differentiation scheme
+            (Φ_s[p.N.p+3:end]-Φ_s[p.N.p+1:end-2]) / (2*Δx_n*p.θ[:l_n]); 					# Central differentiation scheme
+            (3*Φ_s[end]-4*Φ_s[end-1]+Φ_s[end-2]) / (2*Δx_n*p.θ[:l_n]) 						# Backward differentiation scheme
+            ]
     
         dΦ_s = [
             dΦ_sp
@@ -256,82 +256,93 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         ## Electrolyte potential derivatives
     
         # Positive Electrode
-        dΦ_ep = stencil(p.N.p)*Φ_e.p./(2*Δx_p*p.θ[:l_p])
+    
+        dΦ_ep = [ (-3*Φ_e[1]+4*Φ_e[2]-Φ_e[3])/(2*Δx_p*p.θ[:l_p]);		# Forward differentiation scheme
+            (Φ_e[3:p.N.p]-Φ_e[1:p.N.p-2])/(2*Δx_p*p.θ[:l_p])	  	# Central differentiation scheme
+            ]
     
         # Attention! The last volume of the positive electrode will involve one volume of the
         # separator for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the positive electrode: derivative approximation with a central scheme
-        dΦ_ep[end] = 2*(Φ_e.s[1]-Φ_e.p[end-1])/(3 * Δx_p*p.θ[:l_p] + Δx_s*p.θ[:l_s])
+        dΦ_e_last_p = 2*(Φ_e[p.N.p+1]-Φ_e[p.N.p-1])/(3 * Δx_p*p.θ[:l_p] + Δx_s*p.θ[:l_s])
     
         # Separator
     
         # Attention! The first volume of the separator will involve one volume of the
         # positive section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
-        
-        # Central difference scheme
-        dΦ_es = stencil(p.N.s)*Φ_e.s./(2*Δx_s*p.θ[:l_s])
-        
+    
         # First CV in the separator: derivative approximation with a central difference scheme
-        dΦ_es[1] = 2*(Φ_e.s[2]-Φ_e.p[end])/(Δx_p*p.θ[:l_p] + 3* Δx_s*p.θ[:l_s])
+        dΦ_e_first_s = 2*(Φ_e[p.N.p+2]-Φ_e[p.N.p])/(Δx_p*p.θ[:l_p] + 3* Δx_s*p.θ[:l_s])
+    
+        # Central difference scheme
+        dΦ_es =  (Φ_e[p.N.p+3:p.N.p+p.N.s]-Φ_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx_s*p.θ[:l_s])
     
         # Attention! The last volume of the separator will involve one volume of the
         # negative section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the separator: derivative approximation with a central scheme
-        dΦ_es[end] = 2*(Φ_e.n[1]-Φ_e.s[end-1])/( Δx_n*p.θ[:l_n] + 3*Δx_s*p.θ[:l_s])
+        dΦ_e_last_s = 2*(Φ_e[p.N.p+p.N.s+1]-Φ_e[p.N.p+p.N.s-1])/( Δx_n*p.θ[:l_n] + 3*Δx_s*p.θ[:l_s])
     
         # Negative electrode
     
         # Attention! The first volume of the negative electrode will involve one volume of the
         # separator section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
-        
-        # Central difference scheme
-        dΦ_en = stencil(p.N.n)*Φ_e.n./(2*Δx_n*p.θ[:l_n])
-        
+    
         # First CV in the negative electrode: derivative approximation with a central scheme
-        dΦ_en[1] = 2*(Φ_e.n[2]-Φ_e.s[end])/(3 * Δx_n*p.θ[:l_n] + Δx_s*p.θ[:l_s])
-        
+        dΦ_e_first_n = 2*(Φ_e[p.N.p+p.N.s+2]-Φ_e[p.N.p+p.N.s])/(3 * Δx_n*p.θ[:l_n] + Δx_s*p.θ[:l_s])
+    
+        # Central difference scheme
+        dΦ_en = [(Φ_e[p.N.p+p.N.s+3:end]-Φ_e[p.N.p+p.N.s+1:end-2])/(2*Δx_n*p.θ[:l_n]);
+            (3*Φ_e[end]-4*Φ_e[end-1]+Φ_e[end-2])/(2*Δx_n*p.θ[:l_n])
+            ]
         dΦ_e = [
             dΦ_ep
+            dΦ_e_last_p
+            dΦ_e_first_s
             dΦ_es
+            dΦ_e_last_s
+            dΦ_e_first_n
             dΦ_en
         ]
     
         ## Electrolyte concentration derivatives
     
         # Positive Electrode
-        dc_ep = stencil(p.N.p)*c_e.p./(2*Δx_p*p.θ[:l_p])
+    
+        dc_ep = [ (-3*c_e[1]+4*c_e[2]-c_e[3])/(2*Δx_p*p.θ[:l_p]); 		# Forward differentiation scheme
+            (c_e[3:p.N.p]-c_e[1:p.N.p-2])/(2*Δx_p*p.θ[:l_p]) 	# Central differentiation scheme
+            ]
     
         # Attention! The last volume of the positive electrode will involve one volume of the
         # separator for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the positive electrode: derivative approximation with a central scheme
-        dc_ep[end] = 2*(c_e.s[1]-c_e.p[end-1])/(3 * Δx_p*p.θ[:l_p] + Δx_s*p.θ[:l_s])
+        dc_e_last_p = 2*(c_e[p.N.p+1]-c_e[p.N.p-1])/(3 * Δx_p*p.θ[:l_p] + Δx_s*p.θ[:l_s])
     
         # Separator
     
         # Attention! The first volume of the separator will involve one volume of the
         # positive section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
-        
-        # Central differentiation scheme
-        dc_es = stencil(p.N.s)*c_e.s./(2*Δx_s*p.θ[:l_s])
-        
+    
         # First CV in the separator: derivative approximation with a central scheme
-        dc_es[1] = 2*(c_e.s[2]-c_e.p[end])/(3* Δx_s*p.θ[:l_s] + Δx_p*p.θ[:l_p])
+        dc_e_first_s = 2*(c_e[p.N.p+2]-c_e[p.N.p])/( Δx_p*p.θ[:l_p] + 3* Δx_s*p.θ[:l_s])
+    
+        # Central differentiation scheme
+        dc_es = (c_e[p.N.p+3:p.N.p+p.N.s]-c_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx_s*p.θ[:l_s])
     
         # Attention! The last volume of the separator will involve one volume of the
         # negative section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the separator: derivative approximation with a central scheme
-        dc_es[end] = 2*(c_e.n[1]-c_e.s[end-1])/( Δx_n*p.θ[:l_n] + 3*Δx_s*p.θ[:l_s])
+        dc_e_last_s = 2*(c_e[p.N.p+p.N.s+1]-c_e[p.N.p+p.N.s-1])/( Δx_n*p.θ[:l_n] + 3*Δx_s*p.θ[:l_s])
     
         # Negative electrode
     
@@ -339,46 +350,57 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # separator section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
     
-        dc_en = stencil(p.N.n)*c_e.n./(2*Δx_n*p.θ[:l_n])
-        
         # First CV in the negative electrode: derivative approximation with a central scheme
-        dc_en[1] = 2*(c_e.n[2]-c_e.s[end])/(3 * Δx_n*p.θ[:l_n] + Δx_s*p.θ[:l_s])
+        dc_e_first_n = 2*(c_e[p.N.p+p.N.s+2]-c_e[p.N.p+p.N.s])/(3 * Δx_n*p.θ[:l_n] + Δx_s*p.θ[:l_s])
+    
+        dc_en = [(c_e[p.N.p+p.N.s+3:end]-c_e[p.N.p+p.N.s+1:end-2])/(2*Δx_p*p.θ[:l_p]); 	# Central differentiation scheme
+            (3*c_e[end]-4*c_e[end-1]+c_e[end-2])/(2*Δx_n*p.θ[:l_n]) 						# Backward differentiation scheme
+            ]
     
         dc_e = [
             dc_ep
+            dc_e_last_p
+            dc_e_first_s
             dc_es
+            dc_e_last_s
+            dc_e_first_n
             dc_en
         ]
-
-        dΦ_s = state_new(dΦ_s, (:p, :n), p)
-        dΦ_e = state_new(dΦ_e, (:p, :s, :n), p)
-        dc_e = state_new(dc_e, (:p, :s, :n), p)
     
         return dΦ_s, dΦ_e, dc_e
     end
 
-    dΦ_s, dΦ_e, dc_e = build_thermal_derivatives()
+    # Evaluate the derivatives used in Q_ohm calculations
+    dΦ_s, dΦ_e, dc_e = thermal_derivatives(Φ_s, Φ_e, c_e, p)
 
     ## Reversible heat generation rate
 
     # Positive electrode
-    Q_rev_p = @. F*a_p*j.p*T.p*∂U∂T.p
+    @views @inbounds Q_rev_p = F*a_p*j[1:p.N.p].*T[p.N.a+1:p.N.a+p.N.p].*∂U∂T.p
 
     # Negative Electrode
-    Q_rev_n = @. F*a_n*j.n*T.n*∂U∂T.n
+    @views @inbounds Q_rev_n = F*a_n*j[p.N.p+1:end].*T[p.N.a+p.N.p+p.N.s+1:p.N.a+p.N.p+p.N.s+p.N.n].*∂U∂T.n
 
     ## Reaction heat generation rate
-    @views @inbounds Q_rxn_p = @. F*a_p*j.p.*η.p
-    @views @inbounds Q_rxn_n = @. F*a_n*j.n.*η.n
+
+    # Positive overpotential
+    @views @inbounds η_p = @. (Φ_s[1:p.N.p]-Φ_e[1:p.N.p]-U.p)
+    # Positive reaction heat generation rate
+    @views @inbounds Q_rxn_p = F*a_p*j[1:p.N.p].*η.p
+
+    # Negative overpotential
+    @views @inbounds η_n = @. (Φ_s[p.N.p+1:end]-Φ_e[p.N.p+p.N.s+1:end]-U.n)
+    # Negative reaction heat generation rate
+    @views @inbounds Q_rxn_n = F*a_n*j[p.N.p+1:end].*η.n
 
     ## Ohmic heat generation rate
     # Positive electrode ohmic generation rate
-    Q_ohm_p = σ_eff_p * (dΦ_s.p).^2 + K_eff.p.*(dΦ_e.p).^2 + 2*R*K_eff.p.*T.p*(1-p.θ[:t₊])/F.*dc_e.p.*1.0./c_e.p.*dΦ_e.p
+    @views @inbounds Q_ohm_p = σ_eff_p * (dΦ_s[1:p.N.p]).^2 + K_eff.p.*(dΦ_e[1:p.N.p]).^2 + 2*R*K_eff.p.*T[p.N.a+1:p.N.a+p.N.p]*(1-p.θ[:t₊])/F.*dc_e[1:p.N.p].*1.0./c_e[1:p.N.p].*dΦ_e[1:p.N.p]
     # Separator ohmic generation rate
-    Q_ohm_s =                         K_eff.s.*(dΦ_e.s).^2 + 2*R*K_eff.s.*T.s*(1-p.θ[:t₊])/F.*dc_e.s.*1.0./c_e.s.*dΦ_e.s
+    @views @inbounds Q_ohm_s = K_eff.s.*(dΦ_e[p.N.p+1:p.N.p+p.N.s]).^2 + 2*R*K_eff.s.*T[p.N.a+p.N.p+1:p.N.a+p.N.p+p.N.s]*(1-p.θ[:t₊])/F.*dc_e[p.N.p+1:p.N.p+p.N.s].*1.0./c_e[p.N.p+1:p.N.p+p.N.s].*dΦ_e[p.N.p+1:p.N.p+p.N.s]
     # Negative electrode ohmic generation rate
-    Q_ohm_n = σ_eff_n * (dΦ_s.n).^2 + K_eff.n.*(dΦ_e.n).^2 + 2*R*K_eff.n.*T.n*(1-p.θ[:t₊])/F.*dc_e.n.*1.0./c_e.n.*dΦ_e.n
-
+    Q_ohm_n = σ_eff_n * (dΦ_s[p.N.p+1:end]).^2 +K_eff.n.*(dΦ_e[p.N.p+p.N.s+1:end]).^2 + 2*R*K_eff.n.*T[p.N.a+p.N.p+p.N.s+1:p.N.a+p.N.p+p.N.s+p.N.n]*(1-p.θ[:t₊])/F.*dc_e[p.N.p+p.N.s+1:end].*1.0./c_e[p.N.p+p.N.s+1:end].*dΦ_e[p.N.p+p.N.s+1:end]
+    
     Q_rev = [Q_rev_p; Q_rev_n]
     Q_rxn = [Q_rxn_p; Q_rxn_n]
     Q_ohm = [Q_ohm_p; Q_ohm_s; Q_ohm_n]
@@ -541,7 +563,7 @@ end
     return P
 end
 
-@inline function calc_SOC(c_s_avg::Vector{Float64}, p::param)
+@inline function calc_SOC(c_s_avg::AbstractVector{Float64}, p::param)
     """
     Calculate the SOC (dimensionless fraction)
     """

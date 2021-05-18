@@ -1,7 +1,6 @@
-const SAVE_SYMBOLIC_FUNCTIONS = true
+SAVE_SYMBOLIC_FUNCTIONS = true
 
 function load_functions(p::AbstractParam, methods::Tuple)
-    
     if     p.numerics.jacobian === :symbolic
         jac_type = jacobian_symbolic
         load_func = load_functions_symbolic
@@ -85,6 +84,19 @@ function load_functions_symbolic(p::AbstractParam, method::Symbol, YP_cache=noth
     return initial_guess!, f!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys, θ_len
 end
 
+function _fix_sparse_matrix_build_function(J)
+    """
+    The newest version of ModelingToolkit (5.6.4) causes my machine to use CartesianIndices
+    instead of .nzval for the sparse matrix. This is a hacky workaround
+    """
+    
+    eqns = J.args[2].args[3].args[2].args[2].args[3].args[2:end-2]
+
+    @inbounds for x in eqns
+        x.args[1].args[1] = Symbol(x.args[1].args[1], ".nzval")
+    end
+end
+
 function generate_functions_symbolic(p::AbstractParam, method::Symbol;
     verbose=true,
     # if this function has previously been evaluated, this will make the next one quicker
@@ -112,10 +124,10 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
 
     θ_sym_slim, θ_keys_slim, θ_len_slim = get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
     
-    _, Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=true, checkbounds=false)
+    Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=false, checkbounds=false)[2]
     res_build = zeros(eltype(res), p.N.tot)
     res_build[ind_res] .= res[ind_res]
-    _, resFunc = build_function(res_build, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
+    resFunc = build_function(res_build, x_sym, xp_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
 
     ## jacobian
     println_v("Making symbolic Jacobian. May take a few mins")
@@ -125,16 +137,16 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol;
     println_v("Making initial condition functions")
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method, ind_res)
 
-    jac_algFunc= _symbolic_initial_conditions_jac(p, Jac, x_sym, xp_sym, θ_sym, θ_sym_slim, method)
+    jac_algFunc = _symbolic_initial_conditions_jac(p, Jac, x_sym, xp_sym, θ_sym, θ_sym_slim, method)
     
     dir = strings_directory_func(p; create_dir=true) * "/$method/"
     mkdir(dir)
-        
+    
     write(dir * "initial_guess.jl", string(Y0Func))
     write(dir * "f.jl",             string(resFunc))
-    write(dir * "J_y.jl",           string(jacFunc))
+    write(dir * "J_y.jl",           replace(string(jacFunc), ".nzval\"" => "\".nzval"))
     write(dir * "f_alg.jl",         string(res_algFunc))
-    write(dir * "J_y_alg.jl",       string(jac_algFunc))
+    write(dir * "J_y_alg.jl",       replace(string(jac_algFunc), ".nzval\"" => "\".nzval"))
     write(dir * "f_diff.jl",        string(res_diffFunc))
         
     J_y_sp = (findnz(J_sp)..., p.N.tot, p.N.tot)
@@ -159,14 +171,14 @@ function load_functions_forward_diff(p::AbstractParam, method::Symbol, YP_cache:
     Y0_sym = _symbolic_initial_guess(p_sym, SOC_sym, θ_sym, I_current_sym)
 
     ## batteryModel function
-    res, _ = _symbolic_residuals(p_sym, t_sym, x_sym, xp_sym, I_current_sym, θ_sym, method)
+    res = _symbolic_residuals(p_sym, t_sym, x_sym, xp_sym, I_current_sym, θ_sym, method)[1]
 
     ind_res = 1:length(res)
     
     θ_sym_slim, θ_keys_slim, θ_len_slim = get_only_θ_used_in_model(θ_sym, res, Y0_sym, θ_keys, θ_len)
     
-    _, Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=true, checkbounds=false)
-    _, resFunc = build_function(res, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)
+    Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, I_current_sym, fillzeros=false, checkbounds=false)[2]
+    resFunc = build_function(res, x_sym, xp_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
     
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method, ind_res)
 
@@ -273,7 +285,7 @@ function _symbolic_jacobian(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym
     end
     check_semi_explicit(Jacxp)
 
-    Jac_new = @inbounds @views sparsejacobian_multithread(res[ind_new], x_sym;  show_progress = !flag_prev, simplify=true)
+    Jac_new = @inbounds @views sparsejacobian_multithread(res[ind_new], x_sym;  show_progress=false&&!flag_prev, simplify=false)
     
     # For some reason, Jac[ind_new] .= Jac_new doesn't work on linux. This if statement is a temporary workaround
     if !flag_prev
@@ -295,10 +307,12 @@ function _symbolic_jacobian(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym
     end
     
     @assert length(Jac.nzval) === length(J_sp.nzval)
-
+    
     # building the sparse jacobian
     jacFunc = build_function(Jac, x_sym, θ_sym_slim)[2]
     
+    # _fix_sparse_matrix_build_function(jacFunc)
+
     return Jac, jacFunc, J_sp
 end
 function _symbolic_initial_conditions_res(p::AbstractParam, res, x_sym, xp_sym, θ_sym, θ_sym_slim, method, ind_res)
@@ -307,8 +321,8 @@ function _symbolic_initial_conditions_res(p::AbstractParam, res, x_sym, xp_sym, 
     res_alg = zeros(eltype(res), p.N.alg)
     res_alg[ind_res[p.N.diff+1:end] .- p.N.diff] .= res[ind_res[p.N.diff+1:end]]
     
-    res_diffFunc = build_function(res_diff, x_sym, xp_sym, θ_sym_slim, fillzeros=true, checkbounds=false)[2]
-    res_algFunc = build_function(res_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)[2]
+    res_diffFunc = build_function(res_diff, x_sym, xp_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
+    res_algFunc = build_function(res_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=false, checkbounds=false)[2]
     
     return res_algFunc, res_diffFunc
 end
@@ -316,7 +330,9 @@ function _symbolic_initial_conditions_jac(p::AbstractParam, Jac, x_sym, xp_sym, 
     
     jac_alg = Jac[p.N.diff+1:end,p.N.diff+1:end]
     
-    jac_algFunc = build_function(jac_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=true, checkbounds=false)[2]
+    jac_algFunc = build_function(jac_alg,  x_sym[p.N.diff+1:end], x_sym[1:p.N.diff], θ_sym_slim, fillzeros=false, checkbounds=false)[2]
+
+    # _fix_sparse_matrix_build_function(jac_algFunc)
     
     return jac_algFunc
 end
@@ -431,7 +447,6 @@ function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVe
             @inbounds exprs[iter] = expand_derivatives(Differential(vars[J[iter]])(ops[I[iter]]), simplify)
         end
     end
-    if show_progress println() end
 
     jac = sparse(I,J, exprs, length(ops), length(vars))
     return jac

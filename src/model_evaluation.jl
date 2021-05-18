@@ -31,7 +31,7 @@
     ) where {
         T1<:param,
         T2<:Union{Number,AbstractVector,Nothing},
-        R1<:model_output,
+        R1<:Union{model_output,Vector{Float64}},
         R2<:Union{Number,Function,Symbol,Nothing},
         R3<:Union{Number,Nothing,Symbol},
         R4<:Union{Number,Function,Symbol,Nothing},
@@ -49,15 +49,15 @@
         p.opts.outputs = outputs
         p.opts.var_keep = var_keep = model_states_logic(outputs, p.cache.outputs_tot)
     end
-
+    
     # putting opts and bounds into a structure
     opts = options_model(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, warm_start, var_keep)
     bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min)
     
     # getting the initial conditions and run setup
-    int, run, container = initialize_model!(model, p, tspan, I, V, P, bounds, opts)
+    int, run, container, model = initialize_model!(model, p, tspan, I, V, P, bounds, opts)
 
-    if !(within_bounds(run))
+    if !within_bounds(run)
         if verbose @warn "Instantly hit simulation stop conditions: $(run.info.exit_reason)" end
         instant_hit_bounds(model, opts)
         return model
@@ -76,10 +76,7 @@
 
     return model
 end
-@inline function run_model!(model_input::T, x...; model::Nothing=nothing, kwargs...) where T<:model_output
-    # same function as run_model except the kwarg model is removed in favor of model_input
-    return run_model(x...; model=model_input, kwargs...)
-end
+@inline run_model!(_model, x...; model::Nothing=nothing, kw...) = run_model(x...; model=_model, kw...)
 
 @inline within_bounds(run::AbstractRun) = run.info.flag === -1
 
@@ -91,7 +88,7 @@ struct run_container{T1<:AbstractJacobian,T2<:AbstractRun}
     Jacobian!::T1
     θ_tot::Vector{Float64}
 end
-@inline function initialize_model!(model::R1, p::param, tspan::T1, I::R2, V::R3, P::R4, bounds::boundary_stop_conditions, opts::options_model) where {T1<:Union{Number,AbstractArray,Nothing},R1<:model_output,R2<:Union{Number,Function,Symbol,Nothing},R3<:Union{Number,Nothing,Symbol},R4<:Union{Number,Function,Symbol,Nothing}}
+@inline function initialize_model!(model::R1, p::param, tspan::T1, I::R2, V::R3, P::R4, bounds::boundary_stop_conditions, opts::options_model) where {T1<:Union{Number,AbstractArray,Nothing},R1<:Union{model_output,Vector{Float64}},R2<:Union{Number,Function,Symbol,Nothing},R3<:Union{Number,Nothing,Symbol},R4<:Union{Number,Function,Symbol,Nothing}}
     method = check_method(I, V, P)
     
     cache = p.cache
@@ -105,12 +102,17 @@ end
     check_errors_parameters_runtime(p, opts, tspan)
     
     # if this is a new model?
-    new_run = isempty(model.results)
+    new_run = R1 === Array{Float64,1} || isempty(model.results)
 
     ## initializing the states vector Y and time t    
     Y0 = cache.Y0
     YP0 = cache.YP0
-    if new_run
+    if R1 === Array{Float64,1}
+        Y0 = deepcopy(model)
+        model = model_output()
+        SOC = calc_SOC((@views @inbounds Y0[p.ind.c_s_avg]), p)
+        t0 = 0.0
+    elseif new_run
         SOC = opts.SOC
         if opts.reinit
             funcs.initial_guess!(Y0, SOC, θ_tot, 0.0)
@@ -136,16 +138,43 @@ end
     initialize_states!(p, Y0, YP0, run, opts, container, SOC)
     
     int = retrieve_integrator(run, p, container, Y0, YP0, opts)
-
+    
     set_vars!(model, p, Y0, YP0, int.t, run, opts; init_all=new_run)
     set_var!(model.Y, new_run, Y0)
     
     check_simulation_stop!(model, int, run, p, bounds, opts)
     
-    return int, run, container
+    return int, run, container, model
 end
 
-@inline function retrieve_integrator_new(run::AbstractRun, p::R1, container::R2, Y0::R3, YP0::R3, opts::options_model) where {T1<:AbstractJacobian,T2<:AbstractRun,R1<:param{T1},R2<:run_container{T1,T2},R3<:Vector{Float64}}
+@inline function retrieve_integrator(run::run_constant, p::R1, container::R2, Y0::R3, YP0::R3, opts::options_model) where {T1<:AbstractJacobian,T2<:AbstractRun,R1<:param{T1},R2<:run_container{T1,T2},R3<:Vector{Float64}}
+    """
+    If the model has previously been evaluated for a constant run simulation, you can reuse
+    the integrator function with its cache instead of creating a new one
+    """
+    
+    if isempty(container.funcs.int)
+        int = create_integrator(run, p, container, Y0, YP0, opts)
+        
+        # so the integrator is only created once
+        push!(container.funcs.int, int)
+    else
+        # reuse the integrator cache
+        int = @inbounds container.funcs.int[1]
+
+        # reinitialize at t = 0 with new Y0/YP0 and tolerances
+        Sundials.IDASStolerances(int.mem, opts.reltol, opts.abstol)
+        Sundials.IDAReInit(int.mem, 0.0, Y0, YP0)
+        int.t = 0.0
+
+        postfix_integrator!(int, run, opts)
+    end
+
+    return int
+end
+@inline retrieve_integrator(run::run_function, x...) = create_integrator(run, x...)
+
+@inline function create_integrator(run::T2, p::R1, container::R2, Y0::R3, YP0::R3, opts::options_model) where {T1<:AbstractJacobian,T2<:AbstractRun,R1<:param{T1},R2<:run_container{T1,T2},R3<:Vector{Float64}}
     DAEfunc = DAEFunction(
         (res,du,u,p,t) -> f!(res,du,u,p,t,container);
         jac = (J,du,u,p,γ,t) -> g!(J,du,u,p,γ,t,container),
@@ -154,7 +183,7 @@ end
 
     prob =  DAEProblem(DAEfunc, YP0, Y0, (0.0, run.tf), container.θ_tot, differential_vars=p.cache.id)
 
-    int = init(prob, Sundials.IDA(linear_solver=:KLU), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
+    int = DiffEqBase.init(prob, Sundials.IDA(linear_solver=:KLU), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
 
     postfix_integrator!(int, run, opts)
 
@@ -173,24 +202,6 @@ end
 
     return nothing
 end
-@inline function retrieve_integrator(run::run_constant, p::R1, container::R2, Y0::R3, YP0::R3, opts::options_model) where {T1<:AbstractJacobian,T2<:AbstractRun,R1<:param{T1},R2<:run_container{T1,T2},R3<:Vector{Float64}}
-    if isempty(container.funcs.int)
-        int = retrieve_integrator_new(run, p, container, Y0, YP0, opts)
-        push!(container.funcs.int, int)
-    else
-        # reuse the integrator cache
-        int = @inbounds container.funcs.int[1]
-
-        # reinitialize at t = 0 with new Y0/YP0 and tolerances
-        Sundials.IDASStolerances(int.mem, opts.reltol, opts.abstol)
-        Sundials.IDAReInit(int.mem, 0.0, Y0, YP0)
-        int.t = 0.0
-
-        postfix_integrator!(int, run, opts)
-    end
-    return int
-end
-@inline retrieve_integrator(run::run_function, x...) = retrieve_integrator_new(run, x...)
 
 @inline function solve!(model::R1, int::R2, run::run_constant, p::R3, bounds::R4, opts::R5, container::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
     keep_Y = opts.var_keep.Y
@@ -247,8 +258,8 @@ end
             set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
             
             # check to see if the run needs to be reinitialized
-            if t - int.tprev < opts.reltol
-                check_reinitialization!(int, run, p, bounds, opts, container)
+            if t - int.tprev < 1e-3opts.reltol
+                check_reinitialization!(model, int, run, p, bounds, opts, container)
             end
         else # no errors and run.info.flag ≠ -1
             status = false
@@ -267,7 +278,7 @@ end
     container.residuals!(res, u, du, θ_tot)
 
     fix_res!(res, u, p, run)
-
+    
     return nothing
 end
 # residuals for DAE with a run function
@@ -275,7 +286,7 @@ end
     p = container.p
     run = container.run
 
-    @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)
+    @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)::Float64
     
     container.residuals!(res, u, du, θ_tot)
 
@@ -303,7 +314,7 @@ end
     p = container.p
     run = container.run
     
-    @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)
+    @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)::Float64
 
     container.Jacobian!(J, u, θ_tot)
     
@@ -385,10 +396,11 @@ end
     return nothing
 end
 
-@inline function warm_start_init!(Y0::Vector{Float64}, model::model_output, run::AbstractRun, p::param, SOC::Float64=(@inbounds model.SOC[end]))
+@inline function warm_start_init!(Y0::Vector{Float64}, run::AbstractRun, p::param, SOC::Float64)
     key = warm_start_info(
+        run.method,
         round(SOC, digits=4),
-        round(calc_I(Y0, model, run, p), digits=4),
+        round(value(run), digits=4),
     )
 
     warm_start_dict = p.cache.warm_start_dict
@@ -400,9 +412,9 @@ end
     
     return key, key_exists
 end
-@inline function initialize_states!(p::param{T}, Y0::R1, YP0::R1, run::AbstractRun, opts::options_model, container::run_container{T}, SOC::Float64=(@inbounds model.SOC[end])) where {T<:AbstractJacobian,R1<:Vector{Float64}}
+@inline function initialize_states!(p::param{T}, Y0::R1, YP0::R1, run::AbstractRun, opts::options_model, container::run_container{T}, SOC::Float64) where {T<:AbstractJacobian,R1<:Vector{Float64}}
     if opts.warm_start
-        key, key_exists = warm_start_init!(Y0, model, run, p, SOC)
+        key, key_exists = warm_start_init!(Y0, run, p, SOC)
         
         newtons_method!(p, Y0, YP0, run, opts, container)
         
@@ -474,18 +486,18 @@ end
         I = Float64(I)
     end
 
-    value = [I*I1C]
+    value = I*I1C
     tf = T1 === Nothing ? 2.0*(3600.0/abs(I)) : (@inbounds Float64(tspan[end]))
 
     return run_constant(value, method, t0, tf, I1C, run_info())
 end
 @inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
-    func = (x...) -> I1C*I(x...)
+    func(x...) = I1C*I(x...)
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
     value = [0.0]
 
     run = run_function(func, value, method, t0, tf, I1C, run_info())
-    value .= func(Y0, p, t0)
+    value .= func(Y0, p, t0)::Float64
     return run
 end
 @inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::N, V::Y, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
@@ -497,7 +509,7 @@ end
     else
         V = Float64(V)
     end
-    value = [V]
+    value = V
     tf = @inbounds T1 === Nothing ? 1e10 : Float64(tspan[end])
 
     return run_constant(value, method, t0, tf, I1C, run_info())
@@ -510,7 +522,7 @@ end
             P = @inbounds model.P[end]
         end
     end
-    value = [P]
+    value = P
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
 
     return run_constant(value, method, t0, tf, I1C, run_info())
@@ -521,6 +533,6 @@ end
     value = [0.0]
     
     run = run_function(func, value, method, t0, tf, I1C, run_info())
-    value .= func(Y0, p, t0)
+    value .= func(Y0, p, t0)::Float64
     return run
 end

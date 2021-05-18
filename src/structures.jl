@@ -7,7 +7,7 @@ end
 abstract type AbstractRun end
 
 struct run_constant <: AbstractRun
-    value::Vector{Float64}
+    value::Float64
     method::Symbol
     t0::Float64
     tf::Float64
@@ -24,7 +24,7 @@ struct run_function <: AbstractRun
     I1C::Float64
     info::run_info
 end
-@inline value(run::run_constant) = @inbounds run.value[1]
+@inline value(run::run_constant) = run.value
 @inline value(run::run_function) = @inbounds run.value[1]
 
 @with_kw struct index_state <: AbstractUnitRange{Int64}
@@ -195,8 +195,9 @@ indices_states = model_states{
 end
 
 struct warm_start_info
+    method::Symbol
     SOC::Float64 # rounded to 3rd decimal place
-    I::Float64   # rounded to 3rd decimal place
+    I::Float64 # rounded to 3rd decimal place
 end
 
 struct cache_run
@@ -234,6 +235,7 @@ model_output = model_states{
 }
 (model::model_output)(t::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate) = interpolate_model(model, t, interp_bc)
 Base.length(model::model_output) = sum(result.info.iterations for result in model.results)
+Base.isempty(model::model_output) = isempty(model.results)
 
 abstract type AbstractParam end
 
@@ -282,6 +284,30 @@ function Plots.plot(model::model_output, x_name::Symbol=:V; legend=false, ylabel
         kwargs...
     )
 
+end
+
+function C_rate_string(I::Number;digits::Int64=4)
+    I_rat = rationalize(Float64(I))
+    num = I_rat.num
+    den = I_rat.den
+
+    if den > 100
+        return "$(round(I;digits=digits))C"
+    end
+    
+    str = I < 0 ? "-" : ""
+    
+    if isone(abs(num)) && !isone(abs(den))
+        str *= "C"
+    else
+        str *= "$(abs(num))C"
+    end
+    
+    if !isone(den)
+        str *= "/$den"
+    end
+    
+    return str
 end
 
 function Base.show(io::IO, p::AbstractParam)
@@ -387,7 +413,7 @@ function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
     str = "Results for $(run.method) "
     if T === run_constant
         if     run.method === :I
-            str *= "= $(fix(value(run)/run.I1C))C"
+            str *= "= $(C_rate_string(value(run)/run.I1C;digits=2))"
         elseif run.method === :V
             str *= "= $(fix(value(run))) V"
         elseif run.method === :P
@@ -406,7 +432,7 @@ end
     fix(x,digits=2) = round(x, digits=2)
     if T === run_constant
         if     run.method === :I
-            str *= "= $(fix(value(run)/run.I1C))C"
+            str *= "= $(C_rate_string(value(run)/run.I1C;digits=2))"
         elseif run.method === :V
             str *= "= $(fix(value(run))) V"
         elseif run.method === :P
@@ -454,15 +480,15 @@ end
         return str
     end
     
-    title = "PET.jl model"
+    title = "PETLION model"
     if length(model.results) ≥ 1
         str = @views @inbounds string(
                 "$title\n",
                 "  --------\n",
                 str_runs(),
-                "  Time:    $(round(model.t[end];   digits = 4)) s\n",
+                "  Time:    $(round(model.t[end];   digits = 2)) s\n",
                 "  Voltage: $(round(model.V[end];   digits = 4)) V\n",
-                "  Current: $(round(model.I[end];   digits = 4)) C\n",
+                "  Current: $(C_rate_string(model.I[end];digits=4))\n",
                 "  Power:   $(round(model.P[end];   digits = 4)) W\n",
                 "  SOC:     $(round(model.SOC[end]; digits = 4))\n",
                 length(model.T) > 0 ? 

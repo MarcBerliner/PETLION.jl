@@ -9,7 +9,7 @@
     end
 
     # continue checking the bounds or return after only evaluating the time
-    opts.check_bounds ? nothing : (return nothing)
+    !opts.check_bounds && (return nothing)
     
     V = model.V[end]
     I = model.I[end]
@@ -50,15 +50,15 @@
         return nothing
     end
     
-    if p.numerics.temperature && (T_max = maximum(model.T[end])) > bounds.T_max
+    if p.numerics.temperature && (T = maximum(model.T[end])) > bounds.T_max
         run.info.flag = 5
         run.info.exit_reason = "Above maximum permitted temperature"
         
-        bounds.t_final_interp_frac = min((bounds.T_prev - bounds.T_max)/(bounds.T_prev - T_max), bounds.t_final_interp_frac)
+        bounds.t_final_interp_frac = min((bounds.T_prev - bounds.T_max)/(bounds.T_prev - T), bounds.t_final_interp_frac)
         
         return nothing
     else
-        T_max = -1.0
+        T = -1.0
     end
     
     c_s_avg = model.c_s_avg[end]
@@ -70,11 +70,11 @@
             c_s_n_max = maximum(c_s_avg[(p.N.p)+1:end])
         end
         
-        if c_s_n_max > bounds.c_s_n_max*(p.θ[:c_max_n]*p.θ[:θ_max_n])
+        if c_s_n_max > bounds.c_s_n_max*(p.θ[:c_max_n]::Float64*p.θ[:θ_max_n]::Float64)
             run.info.flag = 6
             run.info.exit_reason = "Above c_s_n saturation threshold"
         
-            bounds.t_final_interp_frac = min((bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]*p.θ[:θ_max_n]))/(bounds.c_s_n_prev - c_s_n_max), bounds.t_final_interp_frac)
+            bounds.t_final_interp_frac = min((bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]::Float64*p.θ[:θ_max_n]::Float64))/(bounds.c_s_n_prev - c_s_n_max), bounds.t_final_interp_frac)
             
             return nothing
         end
@@ -102,7 +102,7 @@
     bounds.V_prev = V
     bounds.I_prev = I
     bounds.SOC_prev = SOC
-    bounds.T_prev = T_max
+    bounds.T_prev = T
     bounds.c_s_n_prev = c_s_n_max
 
     return nothing
@@ -151,7 +151,7 @@ check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
     end
 end
 
-@inline function check_reinitialization!(int::R2, run::R3, p::R4, bounds::R5, opts::R6, container::R7) where {R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model,R7<:run_container}
+@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, container::R7) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model,R7<:run_container}
     """
     Checking the current function for discontinuities.
     If there is a significant change in current after a step size of dt = reltol,
@@ -162,13 +162,13 @@ end
     t_new = int.t + opts.reltol
 
     value_old = value(run)
-    value_new = run.func(Y, p, t_new)
+    value_new = run.func(Y, p, t_new)::Float64
     
     if !≈(value_old, value_new, atol=opts.abstol, rtol=opts.reltol)
-        Y[p.ind.I] .= value_new
+        @inbounds Y[p.ind.I] .= value_new
         YP = int.du.v
         
-        initialize_states!(p, Y, YP, run, opts, container)
+        initialize_states!(p, Y, YP, run, opts, container, @inbounds model.SOC[end])
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
     end
@@ -178,10 +178,10 @@ end
 @inline function check_errors_parameters_runtime(p::R1,opts::R2,tspan::R3) where {R1<:param,R2<:options_model,R3<:Union{Number,AbstractArray,Nothing}}
     ϵ_sp, ϵ_sn = active_material(p)
 
-    if ( ϵ_sp > 1 )                             error("ϵ_p + ϵ_fp must be ∈ [0, 1)") end
-    if ( ϵ_sn > 1 )                             error("ϵ_n + ϵ_fn must be ∈ [0, 1)") end
-    if ( p.θ[:θ_max_p] > p.θ[:θ_min_p] )        error("θ_max_p must be < θ_min_p") end
-    if ( p.θ[:θ_min_n] > p.θ[:θ_max_n] )        error("θ_min_n must be < θ_max_n") end
+    if ( ϵ_sp > 1 ) error("ϵ_p + ϵ_fp must be ∈ [0, 1)") end
+    if ( ϵ_sn > 1 ) error("ϵ_n + ϵ_fn must be ∈ [0, 1)") end
+    if ( p.θ[:θ_max_p]::Float64 > p.θ[:θ_min_p]::Float64 ) error("θ_max_p must be < θ_min_p") end
+    if ( p.θ[:θ_min_n]::Float64 > p.θ[:θ_max_n]::Float64 ) error("θ_min_n must be < θ_max_n") end
     if ( R3 === Nothing && !opts.check_bounds ) error("Must specify a tspan when `check_bounds = false`") end
 
     return nothing
