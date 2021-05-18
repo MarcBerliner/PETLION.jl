@@ -23,6 +23,7 @@ Sundials = "c3572dad-4567-51f8-b174-8c6c989267f4"
 
 [compat]
 ModelingToolkit = "4.5.0"
+Plots = "1.15"
 julia = "1"
 
 [extras]
