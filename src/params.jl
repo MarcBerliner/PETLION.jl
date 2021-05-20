@@ -195,28 +195,6 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     return θ, bounds, opts, N, numerics, methods
 end
 
-## systems
-function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla); θ_type::DataType = Float64)
-
-    opts.abstol = 1e-8
-    opts.reltol = 1e-8
-
-    θ[:D_s] = 2e-10
-
-    θ[:ϵ_s] = 1-0.46
-    θ[:ϵ_fs] = 0.0
-
-    θ[:brugg_s] = 1.5
-
-    θ[:t₊] = 0.460
-    θ[:h_cell] = 1.0
-
-    θ[:c_e₀] = 1200.0
-    θ[:T₀] = 25 + 273.15
-
-    return θ, N, bounds, opts
-end
-
 function LCO(θ, funcs)
     ## parameters section
     # everything here can be modified without regenerating the model/jacobian.
