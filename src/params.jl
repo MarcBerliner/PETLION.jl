@@ -106,8 +106,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     # Reaction rate function
     rxn_rate = rxn_rate_isothermal,
     # Effective electrolyte diffusion coefficient function
-    #D_eff = D_eff_EC_EMC_DMC,
-    D_eff = D_eff_linear_one_term,
+    D_eff = D_eff_EC_EMC_DMC,
     # Effective electrolyte conductivity function
     K_eff = K_eff_EC_EMC_DMC,
     # By default, this will use the reaction defined by the cathode

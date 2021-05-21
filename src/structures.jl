@@ -1,3 +1,6 @@
+const const_Faradays  = 96485.3365
+const const_Ideal_Gas = 8.31446261815324
+
 @with_kw mutable struct run_info
     exit_reason::String = ""
     flag::Int64 = -1

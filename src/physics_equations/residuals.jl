@@ -908,8 +908,8 @@ end
     Evaluates the heat source terms used in the thermal model per section
     """
 
-    F = 96485.3365
-    R = 8.31446261815324
+    F = const_Faradays
+    R = const_Ideal_Gas
 
     c_e_p = c_e[(1:p.N.p)]
     c_e_s = c_e[(1:p.N.s) .+ (p.N.p)]
@@ -1145,8 +1145,8 @@ function residuals_j_s!(res, states, p::AbstractParam)
 
     η = states[:η]
 
-    F = 96485.3365
-    R = 8.31446261815324
+    F = const_Faradays
+    R = const_Ideal_Gas
     
     if p.numerics.aging === :R_film
         I1C = (F/3600.0)*p.θ[:c_max_n]*(p.θ[:θ_max_n] - p.θ[:θ_min_n])*(1.0 - p.θ[:ϵ_n][1] - p.θ[:ϵ_fn])*p.θ[:l_n]
@@ -1194,8 +1194,8 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
     a_p, a_n = surface_area_to_volume_ratio(p)
     
-    R = 8.31446261815324
-    F = 96485.3365
+    R = const_Ideal_Gas
+    F = const_Faradays
 
     # Since the values of K_eff are evaluated at the c_enter of each CV; there is the need to interpolate these quantities
     # & find their values at the edges of the CVs
@@ -1298,7 +1298,7 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
 
     res_Φ_s = res[:Φ_s]
 
-    F = 96485.3365
+    F = const_Faradays
     Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
     
     ## Positive electrode

@@ -92,7 +92,6 @@ end
     method = check_method(I, V, P)
     
     cache = p.cache
-    ind = p.ind
 
     funcs = p.funcs[method]
     θ_tot = cache.θ_tot[method]
@@ -274,7 +273,7 @@ end
 @inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
     p = container.p
     run = container.run
-
+    
     container.residuals!(res, u, du, θ_tot)
 
     fix_res!(res, u, p, run)
@@ -298,8 +297,7 @@ end
 # Jacobian for DAE with a constant run value
 @inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
     p = container.p
-    run = container.run
-
+    
     container.Jacobian!(J, u, θ_tot)
     
     @inbounds for i in 1:p.N.diff

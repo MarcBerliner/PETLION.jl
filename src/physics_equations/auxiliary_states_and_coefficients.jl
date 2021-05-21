@@ -170,8 +170,8 @@ function build_η!(states, p::AbstractParam)
     j_s = states[:j_s]
     film = states[:film]
 
-    F = 96485.3365
-    R = 8.31446261815324
+    F = const_Faradays
+    R = const_Ideal_Gas
 
     η_p = @. Φ_s.p - Φ_e.p - U.p
     η_n = @. Φ_s.n - Φ_e.n - U.n
@@ -212,8 +212,8 @@ function build_heat_generation_rates!(states, p::AbstractParam)
     η = states[:η]
     K_eff = states[:K_eff]
 
-    F = 96485.3365
-    R = 8.31446261815324
+    F = const_Faradays
+    R = const_Ideal_Gas
 
     c_e_p = c_e.p
     c_e_s = c_e.s
@@ -491,6 +491,25 @@ function coeff_electrolyte_diffusion_effective(states::Dict, p::AbstractParam)
     return p.numerics.D_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 end
 
+function calc_j(Y, p::AbstractParam)
+
+    T_p = repeat([p.θ[:T₀]],p.N.p)
+    T_n = repeat([p.θ[:T₀]],p.N.n)
+
+    c_s_avg_p = Y[p.ind.c_s_avg.p]
+    c_s_avg_n = Y[p.ind.c_s_avg.n]
+
+    c_s_star_p = Y[p.ind.c_s_avg.p[p.N.r_p:p.N.r_p:p.N.r_p*p.N.p]]
+    c_s_star_n = Y[p.ind.c_s_avg.n[p.N.r_n:p.N.r_n:p.N.r_n*p.N.n]]
+
+    # Calculate the reaction rates
+    k_p_eff, k_n_eff = p.numerics.rxn_rate(T_p, T_n, c_s_avg_p, c_s_avg_n, p)
+    
+    j_p_calc = p.numerics.rxn_p(c_s_star_p, Y[p.ind.c_e.p], T_p, Y[p.ind.Φ_s.p] .- Y[p.ind.Φ_e.p] .- p.numerics.OCV_p(c_s_star_p./p.θ[:c_max_p])[1], k_p_eff, p.θ[:λ_MHC_p], p.θ[:c_max_p], p)
+    j_n_calc = p.numerics.rxn_n(c_s_star_n, Y[p.ind.c_e.n], T_n, Y[p.ind.Φ_s.n] .- Y[p.ind.Φ_e.n] .- p.numerics.OCV_n(c_s_star_n./p.θ[:c_max_n])[1], k_n_eff, p.θ[:λ_MHC_n], p.θ[:c_max_n], p)
+
+    return [j_p_calc; j_n_calc]
+end
 
 """
 Calculations which are primarily used in `set_vars!`. Denoted by the prefix `calc_`.
@@ -501,7 +520,7 @@ to denote the type of each variable for performance
     """
     Calculate the 1C current density (A/m²)
     """
-    F = 96485.3365
+    F = const_Faradays
     θ = p.θ
 
     if p.numerics.aging === :R_film
