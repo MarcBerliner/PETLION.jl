@@ -76,7 +76,13 @@
 
     return model
 end
-@inline run_model!(_model, x...; model::Nothing=nothing, kw...) = run_model(x...; model=_model, kw...)
+@inline run_model!(_model, p, t; model::Nothing=nothing, kw...) = run_model(x...; model=_model, kw...)
+
+@inline function run_model(x...;T::Union{Number,Symbol}=nothing,kw...)
+    kw_dict = Dict(kw)
+    kw_tuple = NamedTuple{Tuple(keys(kw_dict))}(values(kw_dict))
+    kw_tuple[:check_bounds] = false
+end
 
 @inline within_bounds(run::AbstractRun) = run.info.flag === -1
 
