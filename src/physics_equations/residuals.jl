@@ -58,7 +58,7 @@ function residuals_PET!(residuals, t, x, ẋ, method::Symbol, p::AbstractParam;
     residuals_j!(res, states, p)
     
     # Residuals for ionic flux with aging, j_s
-    if p.numerics.aging ∈ (:SEI, :R_film)
+    if p.numerics.aging ∈ (:SEI, :R_aging)
         residuals_j_s!(res, states, p)
     end
 
@@ -156,7 +156,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     # Diffusion coefficient on the interface
     @views @inbounds first_n = D_eff_s[end]/den_n
 
-    if p.numerics.aging === :R_film
+    if p.numerics.aging === :R_aging
         @assert length(p.θ[:ϵ_n]) === p.N.n
 
         A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] = [first_n; -(first_n+second_n); second_n]/(Δx_n*p.θ[:l_n]*p.θ[:ϵ_n][1])
@@ -1148,7 +1148,7 @@ function residuals_j_s!(res, states, p::AbstractParam)
     F = const_Faradays
     R = const_Ideal_Gas
     
-    if p.numerics.aging === :R_film
+    if p.numerics.aging === :R_aging
         I1C = (F/3600.0)*p.θ[:c_max_n]*(p.θ[:θ_max_n] - p.θ[:θ_min_n])*(1.0 - p.θ[:ϵ_n][1] - p.θ[:ϵ_fn])*p.θ[:l_n]
     else
         I1C = (F/3600.0)*p.θ[:c_max_n]*(p.θ[:θ_max_n] - p.θ[:θ_min_n])*(1.0 - p.θ[:ϵ_n] - p.θ[:ϵ_fn])*p.θ[:l_n]
@@ -1159,7 +1159,7 @@ function residuals_j_s!(res, states, p::AbstractParam)
     if p.numerics.aging === :SEI
         # Tafel equation for the side reaction flux.
         j_s_calc = -p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w].*(exp.(-α.*η.n))./F
-    elseif p.numerics.aging === :R_film
+    elseif p.numerics.aging === :R_aging
         # Tafel equation for the side reaction flux.
         α = 0.5.*F./(R.*T.n)
         j_s_calc = -p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w].*(exp.(-α.*η.n))./F

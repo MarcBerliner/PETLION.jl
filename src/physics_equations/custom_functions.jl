@@ -1,3 +1,5 @@
+temperature_switch(a,b,c,p::AbstractParam) = p.numerics.temperature === false ? IfElse.ifelse.(a,b,c) : c
+
 ## Electrolyte functions
 function D_s_eff_isothermal(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractParam)
     """
@@ -22,8 +24,8 @@ function D_s_eff(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractParam)
     T_ref = 298.15
 
     # oftentimes T == T_ref for isothermal experiments. the if statement prevents unnecessary calculations
-    D_sp_eff = p.θ[:D_sp] .* IfElse.ifelse.( T_p .== T_ref, 1, exp.(-p.θ[:Ea_D_sp]/R*(1.0./T_p .- 1.0./T_ref)) )
-    D_sn_eff = p.θ[:D_sn] .* IfElse.ifelse.( T_n .== T_ref, 1, exp.(-p.θ[:Ea_D_sn]/R*(1.0./T_n .- 1.0./T_ref)) )
+    D_sp_eff = p.θ[:D_sp] .* temperature_switch( T_p .== T_ref, 1, exp.(-p.θ[:Ea_D_sp]/R*(1.0./T_p .- 1.0./T_ref)), p )
+    D_sn_eff = p.θ[:D_sn] .* temperature_switch( T_n .== T_ref, 1, exp.(-p.θ[:Ea_D_sn]/R*(1.0./T_n .- 1.0./T_ref)), p )
 
     return D_sp_eff, D_sn_eff
 end
@@ -48,8 +50,8 @@ function rxn_rate(T_p, T_n, c_s_avg_p, c_s_avg_n, p::AbstractParam)
     T_ref = 298.15
 
     # oftentimes T == T_ref for isothermal experiments. the if statement prevents unnecessary calculations
-    k_p = p.θ[:k_p] .* IfElse.ifelse.( T_p .== T_ref, 1, exp.(-(p.θ[:Ea_k_p]./R) .* (1.0./T_p .- 1.0./T_ref)) )
-    k_n = p.θ[:k_n] .* IfElse.ifelse.( T_n .== T_ref, 1, exp.(-(p.θ[:Ea_k_n]./R) .* (1.0./T_n .- 1.0./T_ref)) )
+    k_p = p.θ[:k_p] .* temperature_switch( T_p .== T_ref, 1, exp.(-(p.θ[:Ea_k_p]./R) .* (1.0./T_p .- 1.0./T_ref)), p )
+    k_n = p.θ[:k_n] .* temperature_switch( T_n .== T_ref, 1, exp.(-(p.θ[:Ea_k_n]./R) .* (1.0./T_n .- 1.0./T_ref)), p )
 
     return k_p, k_n
 end
@@ -172,7 +174,7 @@ function OCV_LCO(θ_p, T=298.15, p=nothing)
     ∂U∂T_p = -0.001(0.199521039 .- 0.928373822θ_p .+ 1.364550689000003θ_p.^2 .- 0.6115448939999998θ_p.^3)./(1 .- 5.661479886999997θ_p +11.47636191θ_p.^2 .- 9.82431213599998θ_p.^3 .+ 3.048755063θ_p.^4)
 
     # if T == T_ref exactly (which may be true for isothermal runs), don't calculate ∂U∂T
-    U_p += IfElse.ifelse.(T .== T_ref, 0, ∂U∂T_p.*(T .- T_ref))
+    U_p += temperature_switch( T .== T_ref, 0, ∂U∂T_p.*(T .- T_ref), p )
 
     return U_p, ∂U∂T_p
 end
@@ -251,7 +253,7 @@ function OCV_LiC6(θ_n, T=298.15, p=nothing)
     ∂U∂T_n = @. 0.001*(0.005269056 +3.299265709*θ_n-91.79325798*θ_n.^2+1004.911008*θ_n.^3-5812.278127*θ_n.^4 + 19329.7549*θ_n.^5 - 37147.8947*θ_n.^6 + 38379.18127*θ_n.^7-16515.05308*θ_n.^8)
     ∂U∂T_n ./= @. (1-48.09287227*θ_n+1017.234804*θ_n.^2-10481.80419*θ_n.^3+59431.3*θ_n.^4-195881.6488*θ_n.^5 + 374577.3152*θ_n.^6 - 385821.1607*θ_n.^7 + 165705.8597*θ_n.^8)
     
-    U_n += IfElse.ifelse.(T .== T_ref, 0, ∂U∂T_n.*(T .- T_ref))
+    U_n += temperature_switch( T .== T_ref, 0, ∂U∂T_n.*(T .- T_ref), p )
     
     return U_n, ∂U∂T_n
 end
@@ -348,7 +350,8 @@ function rxn_MHC(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p;
 
     k₀ = k_i ./ MHC_kfunc(0.0, λ_MHC)
 
-    η_f = η̂ .+ log.(ĉ_e./θ_i)
+    log_ReLU(x;minval=0) = log(max(minval,x))
+    η_f = η̂ .+ log_ReLU.(ĉ_e./θ_i;minval=1e-4)
 
     if α == 0.5
 
@@ -358,13 +361,13 @@ function rxn_MHC(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p;
         
         coeff_rd_ox = @. k₀*((1.0 - erf((λ_MHC - sqrt((a) + η_f ^ 2)) / (2.0 * sqrt(λ_MHC)))))
 
-        j_i = @. coeff_rd_ox * (1.0/(1.0 + exp(-η_f))*p.θ[:c_e₀]*c_s_star - 1.0/(1.0 + exp(+η_f))*c_e*c_s_max) * sqrt((1.0 - c_s_star/c_s_max)/p.θ[:c_e₀])
+        j_i = @. coeff_rd_ox * (1.0/(1.0 + exp(-η_f))*p.θ[:c_e₀]*c_s_star - 1.0/(1.0 + exp(+η_f))*c_e*c_s_max) * sqrt_ReLU((1.0 - c_s_star/c_s_max)/p.θ[:c_e₀])
     elseif false
 
         k_rd = k₀.*MHC_kfunc(-η_f, λ_MHC)
         k_ox = k₀.*MHC_kfunc(+η_f, λ_MHC)
 
-        j_i = @. (k_ox*p.θ[:c_e₀]*c_s_star - k_rd*c_e*c_s_max)*sqrt((c_s_max - c_s_star)/(p.θ[:c_e₀] * c_s_max))
+        j_i = @. (k_ox*p.θ[:c_e₀]*c_s_star - k_rd*c_e*c_s_max)*sqrt_ReLU((c_s_max - c_s_star)/(p.θ[:c_e₀] * c_s_max))
     else
 
         k_rd = k₀.*MHC_kfunc(-η_f, λ_MHC)
@@ -380,7 +383,7 @@ function rxn_MHC(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p;
         j_i = ecd_extras.*(k_rd.*ĉ_e .- k_ox.*θ_i)
         j_i .*= (-p.θ[:c_e₀].^(1.0 .- α).*c_s_max) # need this to match LIONSIMBA dimensional eqn.
 
-        j_i = @. (c_s_max - c_s_star)*((p.θ[:c_e₀]*c_s_star*k_ox - c_e*c_s_max*k_rd)*((c_s_star*(c_s_max - c_s_star))/(c_s_max*c_e*p.θ[:c_e₀]))^(1/2))
+        j_i = @. (c_s_max - c_s_star)*((p.θ[:c_e₀]*c_s_star*k_ox - c_e*c_s_max*k_rd)*sqrt_ReLU((c_s_star*(c_s_max - c_s_star))/(c_s_max*c_e*p.θ[:c_e₀])))
     end
 
     return j_i

@@ -294,7 +294,7 @@ function C_rate_string(I::Number;digits::Int64=4)
     num = I_rat.num
     den = I_rat.den
 
-    if den > 100
+    if den > 100 || (abs(num) ≥ 10 && den ≥ 10)
         return "$(round(I;digits=digits))C"
     end
     
@@ -409,41 +409,37 @@ function Base.show(io::IO, ind::indices_states)
     print(io, str[1:end-1])
 end
 
-function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
-    
+function method_string(run::T) where {T<:AbstractRun}
     fix(x, digits=2) = round(x, digits=digits)
-    run = result.run
-    str = "Results for $(run.method) "
-    if T === run_constant
+    if     T === run_constant
         if     run.method === :I
-            str *= "= $(C_rate_string(value(run)/run.I1C;digits=2))"
+            #return "= $(C_rate_string(value(run)/run.I1C;digits=2))"
+            return "= $(C_rate_string(value(run);digits=2))"
         elseif run.method === :V
-            str *= "= $(fix(value(run))) V"
+            return "= $(fix(value(run))) V"
         elseif run.method === :P
-            str *= "= $(fix(value(run))) W"
+            return "= $(fix(value(run))) W"
         end
     elseif T === run_function
-        str *= "function"
+        return "function"
     end
-    str *= " from ($(fix(result.tspan[1])) s, $(fix(result.tspan[2])) s)"
+end
+
+function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
+    run = result.run
+    tspan = result.tspan
+
+    fix(x, digits=2) = round(x, digits=digits)
+    str = method_string(run)
+    str *= " from ($(fix(tspan[1])) s, $(fix(tspan[2])) s)"
 
     print(io, str)
 end
 
-@inbounds @views function Base.show(io::IO, run::T) where {T<:AbstractRun}
+function Base.show(io::IO, run::T) where {T<:AbstractRun}
     str = "Run for $(run.method) "
-    fix(x,digits=2) = round(x, digits=2)
-    if T === run_constant
-        if     run.method === :I
-            str *= "= $(C_rate_string(value(run)/run.I1C;digits=2))"
-        elseif run.method === :V
-            str *= "= $(fix(value(run))) V"
-        elseif run.method === :P
-            str *= "= $(fix(value(run))) W"
-        end
-    elseif T === run_function
-        str *= "function"
-    end
+    fix(x,digits=2) = round(x, digits=digits)
+    str *= method_name(run)
     if !isempty(run.info.exit_reason)
         str *= " with exit: $(run.info.exit_reason)"
     end
@@ -451,7 +447,7 @@ end
     print(io, str)
 end
 
-@inbounds @views function Base.show(io::IO, model::model_output)
+function Base.show(io::IO, model::model_output)
     results = model.results
     function str_runs()
     

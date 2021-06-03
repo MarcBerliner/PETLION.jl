@@ -44,7 +44,9 @@ function LiC6_Tesla(θ, funcs)
     θ[:Ea_D_sn] = 5000.0
     θ[:Ea_k_n] = 5000.0
 
-    # Initial SEI resistance value [Ohm m^2]
+    θ[:R_film_n] = 0.002 # [Ω⋅m²]
+
+    # Initial SEI resistance value [Ω⋅m²]
     θ[:R_SEI] = 0.01
     #Molar weight                               [kg/mol]
     #ATTENTION: In Development of First Principles Capacity Fade Model
@@ -54,14 +56,14 @@ function LiC6_Tesla(θ, funcs)
     θ[:M_n] = 73e-3
     # Admittance                                [S/m]
     θ[:k_n_aging] = 3.79e-7
-    # Side reaction current density             [A/m^2]
+    # Side reaction current density             [A/m²]
     θ[:i_0_jside] = 0.80e-10
     # Open circuit voltage for side reaction    [V]
     θ[:Uref_s] = 0.4
     # Weigthing factor used in the aging dynamics. See the definition of side
     # reaction current density in the ionicFlux.m file.
     θ[:w] = 2.0
-    θ[:R_film] = 1.0 # not sure what to set this to
+    θ[:R_aging] = 1.0 # not sure what to set this to
 
     funcs.rxn_n = rxn_BV
     funcs.OCV_n = OCV_SiC
@@ -94,7 +96,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     solid_diffusion = :Fickian,
     # if solid_diffusion = :Fickian, then this can either be (:finite_difference) or (:spectral)
     Fickian_method = :finite_difference,
-    # (false) off, (:SEI) SEI resistance, (:R_film) constant film
+    # (false) off, (:SEI) SEI resistance, (:R_aging) constant film
     aging = false,
     # The voltage can be evaluated either at the (:center) center of the finite volume or (:edge) the edge of the finite volume
     edge_values =  :center,
@@ -174,7 +176,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     opts.SOC = SOC # defined above
     opts.outputs = (:t, :V)
     opts.abstol = 1e-8
-    opts.reltol = 1e-6
+    opts.reltol = 0.5e-3
     opts.maxiters = 10_000
     opts.check_bounds = true
     opts.reinit = true
@@ -257,7 +259,7 @@ function LiC6(θ, funcs)
     # Weigthing factor used in the aging dynamics. See the definition of side
     # reaction current density in the ionicFlux.m file.
     θ[:w] = 2.0
-    θ[:R_film] = 1.0 # not sure what to set this to
+    θ[:R_aging] = 1.0 # not sure what to set this to
 
     funcs.rxn_n = rxn_BV
     funcs.OCV_n = OCV_LiC6
@@ -290,7 +292,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     solid_diffusion = :Fickian,
     # if solid_diffusion = :Fickian, then this can either be (:finite_difference) or (:spectral)
     Fickian_method = :finite_difference,
-    # (false) off, (:SEI) SEI resistance, (:R_film) constant film
+    # (false) off, (:SEI) SEI resistance, (:R_aging) constant film
     aging =  false,
     # The voltage can be evaluated either at the (:center) center of the finite volume or (:edge) the edge of the finite volume
     edge_values =  :center,

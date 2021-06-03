@@ -146,7 +146,9 @@ check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
     @inbounds for (field,_type) in zip(fields,types)
         if _type <: AbstractArray{Float64} && getproperty(var_keep, field)
             x = getproperty(model, field)
-            deleteat!(x, length(x))
+            if length(x) > 1
+                deleteat!(x, length(x))
+            end
         end
     end
 end
@@ -188,7 +190,7 @@ end
 end
 
 function check_errors_initial(θ, numerics, N)
-    if numerics.aging === :R_film && length(θ[:ϵ_n]) === 1
+    if numerics.aging === :R_aging && length(θ[:ϵ_n]) === 1
         θ[:ϵ_n] = θ[:ϵ_n][1] .* ones(N.n)
     end
 

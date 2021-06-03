@@ -71,7 +71,7 @@ function build_j_aging!(states, p::AbstractParam)
     j_s = states[:j_s]
 
     j_aging = copy(j)
-    if p.numerics.aging ∈ (:SEI, :R_film)
+    if p.numerics.aging ∈ (:SEI, :R_aging)
         j_aging[p.N.p+1:end] = j_aging[p.N.p+1:end] .+ j_s
     end
 
@@ -175,10 +175,15 @@ function build_η!(states, p::AbstractParam)
 
     η_p = @. Φ_s.p - Φ_e.p - U.p
     η_n = @. Φ_s.n - Φ_e.n - U.n
+
+    if haskey(p.θ, :R_film_n)
+        η_n .+= -j.n.*p.θ[:R_film_n]
+    end
+
     if     p.numerics.aging === :SEI
         η_n .+= @. - F*(j.n + j_s)*(p.θ[:R_SEI] + film/p.θ[:k_n_aging])
-    elseif p.numerics.aging === :R_film
-        η_n .+= @. - F*(j.n + j_s)*p.θ[:R_film]
+    elseif p.numerics.aging === :R_aging
+        η_n .+= @. - F*(j.n + j_s)*p.θ[:R_aging]
     end
 
     states[:η] = state_new([η_p; η_n], (:p, :n), p)
@@ -434,7 +439,7 @@ function active_material(p::AbstractParam)
     Electrode active material fraction [-]
     """
     ϵ_sp = (1.0 - p.θ[:ϵ_p] - p.θ[:ϵ_fp])
-    if p.numerics.aging === :R_film
+    if p.numerics.aging === :R_aging
         ϵ_sn = (1.0 - p.θ[:ϵ_n][1] - p.θ[:ϵ_fn])
     else
         ϵ_sn = (1.0 - p.θ[:ϵ_n] - p.θ[:ϵ_fn])
@@ -523,7 +528,7 @@ to denote the type of each variable for performance
     F = const_Faradays
     θ = p.θ
 
-    if p.numerics.aging === :R_film
+    if p.numerics.aging === :R_aging
         @inbounds @views I1C = (F/3600.0)*min(
             θ[:c_max_n]::Float64*(θ[:θ_max_n] - θ[:θ_min_n]::Float64)*(1.0 - (θ[:ϵ_n][1])::Float64 - θ[:ϵ_fn]::Float64)*θ[:l_n]::Float64,
             θ[:c_max_p]::Float64*(θ[:θ_min_p] - θ[:θ_max_p]::Float64)*(1.0 - θ[:ϵ_p]::Float64      - θ[:ϵ_fp]::Float64)*θ[:l_p]::Float64,

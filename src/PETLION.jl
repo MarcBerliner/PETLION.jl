@@ -1,7 +1,5 @@
 module PETLION
 
-cd(@__DIR__ )
-
 using Base: ImmutableDict
 using Dierckx: Spline1D
 using DifferentialEquations

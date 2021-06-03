@@ -294,7 +294,7 @@ function state_indices(N, numerics)
     film_tot = numerics.aging === :SEI ? (1:N.n) : nothing
     Q_tot = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
     j_tot = 1:(N.p+N.n)
-    j_s_tot = numerics.aging ∈ (:SEI, :R_film) ? (1:N.n) : nothing
+    j_s_tot = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
     Φ_e_tot = 1:(N.p+N.s+N.n)
     Φ_s_tot = 1:(N.p+N.n)
     I_tot = 1
