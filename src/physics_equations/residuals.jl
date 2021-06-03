@@ -1400,7 +1400,7 @@ function residuals_I_V_P!(res, states, p::AbstractParam)
     res_I = res[:I]
 
     if     states[:method] === :I
-        res_I .= I # - input value in `fix_res!`
+        res_I .= I/calc_I1C(p) # - input value in `fix_res!`
     elseif states[:method] === :V
         res_I .= V # - input value in `fix_res!`
     elseif states[:method] === :P

@@ -76,7 +76,7 @@
 
     return model
 end
-@inline run_model!(_model, p, t; model::Nothing=nothing, kw...) = run_model(x...; model=_model, kw...)
+@inline run_model!(_model, x...; model::Nothing=nothing, kw...) = run_model(x...; model=_model, kw...)
 
 @inline function run_model(x...;T::Union{Number,Symbol}=nothing,kw...)
     kw_dict = Dict(kw)
@@ -130,11 +130,7 @@ end
         t0 = @inbounds model.t[end]
     end
 
-    I1C = calc_I1C(p)
-    bounds.I_min *= I1C
-    bounds.I_max *= I1C
-
-    run = run_determination(p, model, t0, tspan, I1C, Y0, method, I, V, P)
+    run = run_determination(p, model, t0, tspan, Y0, method, I, V, P)
     @inbounds Y0[p.ind.I] .= value(run)
 
     container = run_container(p, funcs, run, funcs.f!, funcs.J_y!, θ_tot)
@@ -365,12 +361,6 @@ end
         run_index = (1:run.info.iterations) .+ iterations_start
     end
 
-    # convert the current in A/m² to C-rate
-    if opts.var_keep.I
-        @inbounds model.I[run_index] ./= run.I1C
-    else
-        model.I ./= run.I1C
-    end
     tspan = (run.t0, @inbounds model.t[end])
 
     results = run_results(
@@ -477,7 +467,7 @@ end
     return nothing
 end
 
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
     if Y === Symbol
         if     I === :rest
             I = 0.0
@@ -490,21 +480,21 @@ end
         I = Float64(I)
     end
 
-    value = I*I1C
+    value = I
     tf = T1 === Nothing ? 2.0*(3600.0/abs(I)) : (@inbounds Float64(tspan[end]))
 
-    return run_constant(value, method, t0, tf, I1C, run_info())
+    return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
-    func(x...) = I1C*I(x...)
+@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+    func = I
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
     value = [0.0]
 
-    run = run_function(func, value, method, t0, tf, I1C, run_info())
+    run = run_function(func, value, method, t0, tf, run_info())
     value .= func(Y0, p, t0)::Float64
     return run
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::N, V::Y, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::Y, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
     if Y === Symbol
         if isempty(model.results)
             error("`CV = :hold` can only be used with a previous model")
@@ -516,9 +506,9 @@ end
     value = V
     tf = @inbounds T1 === Nothing ? 1e10 : Float64(tspan[end])
 
-    return run_constant(value, method, t0, tf, I1C, run_info())
+    return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
     if Y === Symbol
         if isempty(model.results)
             error("`CP = :hold` can only be used with a previous model")
@@ -529,14 +519,14 @@ end
     value = P
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
 
-    return run_constant(value, method, t0, tf, I1C, run_info())
+    return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, I1C::Float64, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
     func = P
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
     value = [0.0]
     
-    run = run_function(func, value, method, t0, tf, I1C, run_info())
+    run = run_function(func, value, method, t0, tf, run_info())
     value .= func(Y0, p, t0)::Float64
     return run
 end
