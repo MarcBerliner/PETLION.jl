@@ -14,7 +14,6 @@ struct run_constant <: AbstractRun
     method::Symbol
     t0::Float64
     tf::Float64
-    I1C::Float64
     info::run_info
 end
 
@@ -24,7 +23,6 @@ struct run_function <: AbstractRun
     method::Symbol
     t0::Float64
     tf::Float64
-    I1C::Float64
     info::run_info
 end
 @inline value(run::run_constant) = run.value
@@ -413,7 +411,6 @@ function method_string(run::T) where {T<:AbstractRun}
     fix(x, digits=2) = round(x, digits=digits)
     if     T === run_constant
         if     run.method === :I
-            #return "= $(C_rate_string(value(run)/run.I1C;digits=2))"
             return "= $(C_rate_string(value(run);digits=2))"
         elseif run.method === :V
             return "= $(fix(value(run))) V"

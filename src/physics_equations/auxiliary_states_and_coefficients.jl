@@ -37,6 +37,8 @@ function build_I_V_P!(states, p::AbstractParam)
 
     Φ_s = states[:Φ_s]
 
+    I1C = calc_I1C(p)
+
     if p.numerics.edge_values === :center
         V = Φ_s[1] - Φ_s[end]
     else # interpolated edges
@@ -46,7 +48,7 @@ function build_I_V_P!(states, p::AbstractParam)
     states[:V] = state_new([V], (), p)
 
     if states[:method] ∈ (:I, :V)
-        I = states[:I][1]
+        I = states[:I][1]*I1C
         P = I*V
 
         states[:P] = state_new([P], (), p)
@@ -55,10 +57,10 @@ function build_I_V_P!(states, p::AbstractParam)
         states[:P] = states[:I]
 
         P = states[:P][1]
-        I = P/V
-
-        states[:I] = state_new([I], (), p)
+        I = P/V*I1C
     end
+
+    states[:I] = state_new([I], (), p)
 
     return nothing
 end
@@ -521,24 +523,20 @@ Calculations which are primarily used in `set_vars!`. Denoted by the prefix `cal
 Since p.θ is a dictionary which may contain `Float64` or `Vector{Float64}`, it is important
 to denote the type of each variable for performance
 """
-@inline function calc_I1C(p::param)
+@inline function calc_I1C(p::AbstractParam)
     """
     Calculate the 1C current density (A/m²)
     """
     F = const_Faradays
     θ = p.θ
 
-    if p.numerics.aging === :R_aging
-        @inbounds @views I1C = (F/3600.0)*min(
-            θ[:c_max_n]::Float64*(θ[:θ_max_n] - θ[:θ_min_n]::Float64)*(1.0 - (θ[:ϵ_n][1])::Float64 - θ[:ϵ_fn]::Float64)*θ[:l_n]::Float64,
-            θ[:c_max_p]::Float64*(θ[:θ_min_p] - θ[:θ_max_p]::Float64)*(1.0 - θ[:ϵ_p]::Float64      - θ[:ϵ_fp]::Float64)*θ[:l_p]::Float64,
+    ϵ_s_p = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
+    ϵ_s_n = 1.0 - (θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? θ[:ϵ_n][1] : θ[:ϵ_n]))
+
+    I1C = (F/3600.0)*min(
+        θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p])*ϵ_s_p*θ[:l_p],
+        θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n])*ϵ_s_n*θ[:l_n],
         )
-    else
-        @inbounds @views I1C = (F/3600.0)*min(
-            θ[:c_max_n]::Float64*(θ[:θ_max_n] - θ[:θ_min_n]::Float64)*(1.0 - θ[:ϵ_n]::Float64 - θ[:ϵ_fn]::Float64)*θ[:l_n]::Float64,
-            θ[:c_max_p]::Float64*(θ[:θ_min_p] - θ[:θ_max_p]::Float64)*(1.0 - θ[:ϵ_p]::Float64 - θ[:ϵ_fp]::Float64)*θ[:l_p]::Float64,
-        )
-    end
 
     return I1C
 end
