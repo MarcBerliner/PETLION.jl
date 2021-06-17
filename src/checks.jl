@@ -161,6 +161,41 @@ check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
     end
 end
 
+@inline function check_solve(run::run_constant, model::R1, int::R2, p::R3, bounds::R4, opts::R5, container::R6, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
+    if t === int.tprev
+        error("Model failed to converge at t = $(t)")
+    elseif iter === opts.maxiters
+        error("Reached max iterations of $(opts.maxiters) at t = $(t)")
+    elseif within_bounds(run)
+        # update Y only after checking the stop conditions. this is done to store a copy of the
+        # previous model run in case any back-interpolation is needed
+        set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
+
+        return true
+    else # no errors and run.info.flag ≠ -1
+        return false
+    end
+end
+
+@inline function check_solve(run::run_function, model::R1, int::R2, p::R3, bounds::R4, opts::R5, container::R6, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
+    if iter === opts.maxiters
+        error("Reached max iterations of $(opts.maxiters) at t = $(int.t)")
+    elseif within_bounds(run)
+        # update Y only after checking the stop conditions. this is done to store a copy of the
+        # previous model run in case any back-interpolation is needed
+        set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
+        
+        # check to see if the run needs to be reinitialized
+        if t - int.tprev < 1e-3opts.reltol
+            check_reinitialization!(model, int, run, p, bounds, opts, container)
+        end
+
+        return true
+    else # no errors and run.info.flag ≠ -1
+        return false
+    end
+end
+
 @inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, container::R7) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model,R7<:run_container}
     """
     Checking the current function for discontinuities.

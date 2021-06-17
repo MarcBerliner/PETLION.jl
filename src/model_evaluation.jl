@@ -195,7 +195,7 @@ end
     return nothing
 end
 
-@inline function solve!(model::R1, int::R2, run::run_constant, p::R3, bounds::R4, opts::R5, container::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
+@inline function solve!(model::R1, int::R2, run::AbstractRun, p::R3, bounds::R4, opts::R5, container::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
     keep_Y = opts.var_keep.Y
     Y = int.u.v
     YP = int.du.v
@@ -208,104 +208,42 @@ end
         t = int.t
         
         set_vars!(model, p, Y, YP, t, run, opts)
+        
         check_simulation_stop!(model, int, run, p, bounds, opts)
         
-        if t === int.tprev
-            error("Model failed to converge at t = $(t)")
-        elseif iter === opts.maxiters
-            error("Reached max iterations of $(opts.maxiters) at t = $(t)")
-        elseif within_bounds(run)
-            # update Y only after checking the stop conditions. this is done to store a copy of the
-            # previous model run in case any back-interpolation is needed
-            set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
-        else # no errors and run.info.flag ≠ -1
-            status = false
-        end
+        status = check_solve(run, model, int, p, bounds, opts, container, keep_Y, iter, Y, t)
     end
     
     run.info.iterations = iter
     return nothing
 end
 
-@inline function solve!(model::R1, int::R2, run::run_function, p::R3, bounds::R4, opts::R5, container::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
-    keep_Y = opts.var_keep.Y
-    Y = int.u.v
-    YP = int.du.v
-    
-    iter = 1
-    status = within_bounds(run)
-    @inbounds while status
-        step!(int)
-        iter += 1
-        t = int.t
-        
-        set_vars!(model, p, Y, YP, t, run, opts)
-        check_simulation_stop!(model, int, run, p, bounds, opts)
-        
-        if iter === opts.maxiters
-            error("Reached max iterations of $(opts.maxiters) at t = $(int.t)")
-        elseif within_bounds(run)
-            # update Y only after checking the stop conditions. this is done to store a copy of the
-            # previous model run in case any back-interpolation is needed
-            set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
-            
-            # check to see if the run needs to be reinitialized
-            if t - int.tprev < 1e-3opts.reltol
-                check_reinitialization!(model, int, run, p, bounds, opts, container)
-            end
-        else # no errors and run.info.flag ≠ -1
-            status = false
-        end
-    end
-    
-    run.info.iterations = iter
-    return nothing
-end
-
-# residuals for DAE with a constant run value
-@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,<:run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
-    p = container.p
-    run = container.run
-    
-    container.residuals!(res, u, du, θ_tot)
-
-    fix_res!(res, u, p, run)
-    
-    return nothing
-end
-# residuals for DAE with a run function
-@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,<:run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
-    p = container.p
-    run = container.run
-
+function fix_final_val!(run::run_function, u::Vector{Float64}, p::param, t::Float64)
     @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)::Float64
+    return nothing
+end
+fix_final_val!(::run_constant,x...) = nothing
+
+# residuals for DAE with a run function
+@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,<:AbstractRun}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
+    p = container.p
+    run = container.run
+    
+    fix_final_val!(run,u,p,t)
     
     container.residuals!(res, u, du, θ_tot)
 
     fix_res!(res, u, p, run)
-
-    return nothing
-end
-
-# Jacobian for DAE with a constant run value
-@inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,<:run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
-    p = container.p
-    
-    container.Jacobian!(J, u, θ_tot)
-    
-    @inbounds for i in 1:p.N.diff
-        @inbounds J[i,i] -= γ
-    end
 
     return nothing
 end
 
 # Jacobian for DAE with a run function
-@inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,<:run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
+@inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,<:AbstractRun}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
     p = container.p
     run = container.run
     
-    @inbounds run.value .= u[p.ind.I] .= run.func(u, p, t)::Float64
+    fix_final_val!(run,u,p,t)
 
     container.Jacobian!(J, u, θ_tot)
     
@@ -316,17 +254,17 @@ end
     return nothing
 end
 
-@inline fix_res!(::W, ::W, ::param{T}, ::AbstractRun{Q}; kw...) where {Q<:AbstractMethod,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}} = nothing
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{Q}; offset::Int=0) where {Q<:run_voltage,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}}
+@inline fix_res!(::W, ::W, ::param{T}, ::AbstractRun{method}; kw...) where {method<:AbstractMethod,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}} = nothing
+@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:run_voltage,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}}
     @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
     return nothing
 end
 
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{Q}; offset::Int=0) where {Q<:run_voltage,T<:jacobian_AD,E<:Float64,W<:Vector{E}}
+@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:run_voltage,T<:jacobian_AD,E<:Float64,W<:Vector{E}}
     @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
     return nothing
 end
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{Q}; offset::Int=0) where {Q<:Union{run_current,run_power},T<:jacobian_AD,E<:Float64,W<:Vector{E}}
+@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:Union{run_current,run_power},T<:jacobian_AD,E<:Float64,W<:Vector{E}}
     @inbounds res[p.ind.I[1]+offset] = 0.0
     return nothing
 end
