@@ -2,9 +2,9 @@
     p::T1, # initial parameters file
     tspan::T2 = nothing; # a single number (length of the experiment) or a vector (interpolated points)
     model::R1 = model_output(), # using a new model or continuing from previous simulation?
-    I::R2 = nothing, # constant current C-rate. also accepts :rest
-    V::R3 = nothing, # constant voltage. also accepts :hold if continuing simulation
-    P::R4 = nothing, # constant power.   also accepts :hold if continuing simulation
+    I = nothing, # constant current C-rate. also accepts :rest
+    V = nothing, # constant voltage. also accepts :hold if continuing simulation
+    P = nothing, # constant power.   also accepts :hold if continuing simulation
     SOC::Number = p.opts.SOC, # initial SOC of the simulation. only valid if not continuing simulation
     outputs::R5 = p.opts.outputs, # model output states
     abstol::Float64 = p.opts.abstol, # absolute tolerance in DAE solve
@@ -32,15 +32,12 @@
         T1<:param,
         T2<:Union{Number,AbstractVector,Nothing},
         R1<:Union{model_output,Vector{Float64}},
-        R2<:Union{Number,Function,Symbol,Nothing},
-        R3<:Union{Number,Nothing,Symbol},
-        R4<:Union{Number,Function,Symbol,Nothing},
         R5<:Union{Tuple,Symbol}
-        }
-
+    }
+        
     # Force the outputs into a Tuple
     if (R5 === Symbol) outputs = (outputs,) end
-    
+        
     # Check if the outputs are the same as in the cache
     if outputs === p.opts.var_keep.results
         var_keep = p.opts.var_keep
@@ -49,13 +46,14 @@
         p.opts.outputs = outputs
         p.opts.var_keep = var_keep = model_states_logic(outputs, p.cache.outputs_tot)
     end
-    
+        
     # putting opts and bounds into a structure
+    method_struct = get_method(I, V, P)
     opts = options_model(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, warm_start, var_keep)
     bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min)
     
     # getting the initial conditions and run setup
-    int, run, container, model = initialize_model!(model, p, tspan, I, V, P, bounds, opts)
+    int, run, container, model = initialize_model!(model, p, tspan, method_struct, bounds, opts)
 
     if !within_bounds(run)
         if verbose @warn "Instantly hit simulation stop conditions: $(run.info.exit_reason)" end
@@ -78,12 +76,6 @@
 end
 @inline run_model!(_model, x...; model::Nothing=nothing, kw...) = run_model(x...; model=_model, kw...)
 
-@inline function run_model(x...;T::Union{Number,Symbol}=nothing,kw...)
-    kw_dict = Dict(kw)
-    kw_tuple = NamedTuple{Tuple(keys(kw_dict))}(values(kw_dict))
-    kw_tuple[:check_bounds] = false
-end
-
 @inline within_bounds(run::AbstractRun) = run.info.flag === -1
 
 struct run_container{T1<:AbstractJacobian,T2<:AbstractRun}
@@ -94,13 +86,12 @@ struct run_container{T1<:AbstractJacobian,T2<:AbstractRun}
     Jacobian!::T1
     θ_tot::Vector{Float64}
 end
-@inline function initialize_model!(model::R1, p::param, tspan::T1, I::R2, V::R3, P::R4, bounds::boundary_stop_conditions, opts::options_model) where {T1<:Union{Number,AbstractArray,Nothing},R1<:Union{model_output,Vector{Float64}},R2<:Union{Number,Function,Symbol,Nothing},R3<:Union{Number,Nothing,Symbol},R4<:Union{Number,Function,Symbol,Nothing}}
-    method = check_method(I, V, P)
-    
+@inline function initialize_model!(model::R1, p::param, tspan::T1, method_struct::method_and_value{method,T}, bounds::boundary_stop_conditions, opts::options_model) where {T1<:Union{Number,AbstractArray,Nothing},R1<:Union{model_output,Vector{Float64}},method<:AbstractMethod,T}
     cache = p.cache
-
-    funcs = p.funcs[method]
-    θ_tot = cache.θ_tot[method]
+    
+    method_sym = method_symbol(method)
+    funcs = p.funcs[method_sym]
+    θ_tot = cache.θ_tot[method_sym]
     
     # update the θ_tot vector from the dict p.θ
     funcs.update_θ!(θ_tot, p.θ)
@@ -130,7 +121,7 @@ end
         t0 = @inbounds model.t[end]
     end
 
-    run = run_determination(p, model, t0, tspan, Y0, method, I, V, P)
+    run = run_determination(method_struct, p, model, t0, tspan, Y0)
     @inbounds Y0[p.ind.I] .= value(run)
 
     container = run_container(p, funcs, run, funcs.f!, funcs.J_y!, θ_tot)
@@ -272,7 +263,7 @@ end
 end
 
 # residuals for DAE with a constant run value
-@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
+@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,<:run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
     p = container.p
     run = container.run
     
@@ -283,7 +274,7 @@ end
     return nothing
 end
 # residuals for DAE with a run function
-@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
+@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,<:run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
     p = container.p
     run = container.run
 
@@ -297,7 +288,7 @@ end
 end
 
 # Jacobian for DAE with a constant run value
-@inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
+@inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,<:run_constant}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
     p = container.p
     
     container.Jacobian!(J, u, θ_tot)
@@ -310,7 +301,7 @@ end
 end
 
 # Jacobian for DAE with a run function
-@inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
+@inline function g!(J::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,<:run_function}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
     p = container.p
     run = container.run
     
@@ -325,18 +316,19 @@ end
     return nothing
 end
 
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun; offset::Int=0) where {T<:jacobian_symbolic,E<:Float64,W<:Vector{E}}
-    if run.method === :V # modify the residual for CV mode
-        @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
-    end
+@inline fix_res!(::W, ::W, ::param{T}, ::AbstractRun{Q}; kw...) where {Q<:AbstractMethod,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}} = nothing
+@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{Q}; offset::Int=0) where {Q<:run_voltage,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}}
+    @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
     return nothing
 end
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun; offset::Int=0) where {T<:jacobian_AD,E<:Float64,W<:Vector{E}}
-    if run.method === :V # modify the residual for CV mode
-        @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
-    elseif run.method ∈ (:I, :P)
-        @inbounds res[p.ind.I[1]+offset] = 0.0
-    end
+
+@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{Q}; offset::Int=0) where {Q<:run_voltage,T<:jacobian_AD,E<:Float64,W<:Vector{E}}
+    @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
+    return nothing
+end
+@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{Q}; offset::Int=0) where {Q<:Union{run_current,run_power},T<:jacobian_AD,E<:Float64,W<:Vector{E}}
+    @inbounds res[p.ind.I[1]+offset] = 0.0
+    return nothing
 end
 
 @inline function f_IC!(res::T1, Y_alg::T1, Y_diff::T1, p::param, run::AbstractRun, f!::Function, θ_tot::T1) where {T1<:Vector{Float64}}
@@ -467,7 +459,10 @@ end
     return nothing
 end
 
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:run_current,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+    method = method_struct.method
+    I      = method_struct.value
+
     if Y === Symbol
         if     I === :rest
             I = 0.0
@@ -485,7 +480,10 @@ end
 
     return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::Y, V::N, P::N) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:run_current,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+    method = method_struct.method
+    I      = method_struct.value
+
     func = I
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
     value = [0.0]
@@ -494,7 +492,10 @@ end
     value .= func(Y0, p, t0)::Float64
     return run
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::Y, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:run_voltage,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+    method = method_struct.method
+    V      = method_struct.value
+
     if Y === Symbol
         if isempty(model.results)
             error("`V = :hold` can only be used with a previous model")
@@ -508,20 +509,28 @@ end
 
     return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:run_power,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+    method = method_struct.method
+    P      = method_struct.value
+
     if Y === Symbol
         if isempty(model.results)
             error("`P = :hold` can only be used with a previous model")
         else
             P = @inbounds model.P[end]
         end
+    else
+        P = Float64(P)
     end
     value = P
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
 
     return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:run_power,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+    method = method_struct.method
+    P      = method_struct.value
+
     func = P
     tf = T1 === Nothing ? 1e10 : (@inbounds Float64(tspan[end]))
     value = [0.0]

@@ -1,4 +1,4 @@
-@views @inbounds @inline function check_simulation_stop!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
+@views @inbounds @inline function check_simulation_stop!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator, method<:AbstractMethod, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
     Y = int.u.v
     t = int.t
     tf = run.tf
@@ -13,7 +13,7 @@
     
     V = model.V[end]
     I = model.I[end]
-    if !(run.method === :V)
+    if !(method === run_voltage)
         if V ≤ bounds.V_min && I < 0
             run.info.flag = 1
             run.info.exit_reason = "Below minimum voltage limit"
@@ -82,7 +82,7 @@
         c_s_n_max = -1.0
     end
 
-    if (!(run.method === :I) && R3 === run_constant) && I > bounds.I_max
+    if (!(method === run_current) && R3 === run_constant) && I > bounds.I_max
         run.info.flag = 7
         run.info.exit_reason = "Above maximum permitted C-rate"
         
@@ -90,7 +90,7 @@
 
         return nothing
     end
-    if (!(run.method === :I) && R3 === run_constant) && I < bounds.I_min
+    if (!(method === run_current) && R3 === run_constant) && I < bounds.I_min
         run.info.flag = 8
         run.info.exit_reason = "Below minimum permitted C-rate"
         
@@ -122,18 +122,26 @@ function get_corrected_methods(methods)
     return methods
 end
 
-@inline function check_method(I::R1, V::R2, P::R3) where {R1<:Union{Number,Function,Symbol,Nothing},R2<:Union{Number,Nothing,Symbol},R3<:Union{Number,Function,Symbol,Nothing}}
+@inline function get_method(I::current, V::voltage, P::power) where {
+    current<:Union{Number,Symbol,Nothing,Function},
+    voltage<:Union{Number,Symbol,Nothing},
+    power  <:Union{Number,Symbol,Nothing,Function},
+    }
+
+    if !( sum(!(method === Nothing) for method in (current,voltage,power)) === 1 )
+        error("Cannot select more than one input")
+    end
+
     if     !isnothing(I)
-        method = :I
+        method, value = run_current(), I
     elseif !isnothing(V)
-        method = :V
+        method, value = run_voltage(), V
     elseif !isnothing(P)
-        method = :P
+        method, value = run_power(), P
     else
         error("Method not supported")
     end
-
-    return method
+    return method_and_value(method, value)
 end
 
 check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)

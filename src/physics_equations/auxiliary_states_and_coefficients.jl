@@ -53,7 +53,7 @@ function build_I_V_P!(states, p::AbstractParam)
     elseif states[:method] === :P
         # What is currently I should really be P. I is not defined yet
         P = states[:I][1]
-        I = P/V*I1C
+        I = P/V
     end
 
     states[:P] = state_new([P], (), p)
@@ -527,6 +527,23 @@ to denote the type of each variable for performance
     F = const_Faradays
     θ = p.θ
 
+    ϵ_s_p = 1.0 - (θ[:ϵ_fp]::Float64 + θ[:ϵ_p]::Float64)
+    ϵ_s_n = 1.0 - (θ[:ϵ_fn]::Float64 + (p.numerics.aging === :R_aging ? (θ[:ϵ_n]::Vector{Float64})[1] : θ[:ϵ_n]::Float64))
+
+    I1C = (F/3600.0)*min(
+        θ[:c_max_p]::Float64*(θ[:θ_min_p]::Float64 - θ[:θ_max_p]::Float64)*ϵ_s_p*θ[:l_p]::Float64,
+        θ[:c_max_n]::Float64*(θ[:θ_max_n]::Float64 - θ[:θ_min_n]::Float64)*ϵ_s_n*θ[:l_n]::Float64,
+        )
+
+    return I1C
+end
+@inline function calc_I1C(p::param_no_funcs)
+    """
+    Calculate the 1C current density (A/m²)
+    """
+    F = const_Faradays
+    θ = p.θ
+
     ϵ_s_p = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
     ϵ_s_n = 1.0 - (θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? θ[:ϵ_n][1] : θ[:ϵ_n]))
 
@@ -538,49 +555,24 @@ to denote the type of each variable for performance
     return I1C
 end
 
-@inline function calc_V(Y::Vector{Float64}, p::param, run::AbstractRun, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}}
+@inline calc_V(Y::Vector{Float64}, p::param, run::AbstractRun{<:run_voltage}, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}} = value(run)
+@inline function calc_V(Y::Vector{Float64}, p::param, ::AbstractRun{<:AbstractMethod}, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}}
     """
     Calculate the voltage (V)
     """
-    if run.method === :V
-        V = value(run)
-    else
-        if p.numerics.edge_values === :center
-            V = @views @inbounds Y[ind_Φ_s[1]] - Y[ind_Φ_s[end]]
-        else # interpolated edges
-            V = @views @inbounds (1.5*Y[ind_Φ_s[1]] - 0.5*Y[ind_Φ_s[2]]) - (1.5*Y[ind_Φ_s[end]] - 0.5*Y[ind_Φ_s[end-1]])
-        end
+    if p.numerics.edge_values === :center
+        return @views @inbounds Y[ind_Φ_s[1]] - Y[ind_Φ_s[end]]
+    else # interpolated edges
+        return @views @inbounds (1.5*Y[ind_Φ_s[1]] - 0.5*Y[ind_Φ_s[2]]) - (1.5*Y[ind_Φ_s[end]] - 0.5*Y[ind_Φ_s[end-1]])
     end
-    return V
 end
 
-@inline function calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun, p::param)
-    """
-    Calculate the current (C-rate)
-    """
-    if run.method === :I
-        I = @inbounds value(run)
-    elseif  run.method === :V
-        I = @inbounds Y[p.ind.I[1]]
-    elseif run.method === :P
-        I = @inbounds value(run)/model.V[end]
-    end
-    
-    return I
-end
+@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_current}, p::param) = value(run)
+@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_voltage}, p::param) = @inbounds Y[p.ind.I[1]]
+@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power},   p::param) = @inbounds value(run)/model.V[end]/calc_I1C(p)
 
-@inline function calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun, p::param)
-    """
-    Calculate the power (W)
-    """
-    if run.method === :I || run.method === :V
-        P = @views @inbounds model.I[end]*model.V[end]
-    elseif run.method === :P
-        P = value(run)
-    end
-
-    return P
-end
+@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:AbstractMethod}, p::param) = @views @inbounds model.I[end]*model.V[end]*calc_I1C(p)
+@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power}, p::param) = value(run)
 
 @inline function calc_SOC(c_s_avg::AbstractVector{Float64}, p::param)
     """

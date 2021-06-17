@@ -6,21 +6,30 @@ const const_Ideal_Gas = 8.31446261815324
     flag::Int64 = -1
     iterations::Int64 = -1
 end
+abstract type AbstractMethod end
 
-abstract type AbstractRun end
+struct run_current <: AbstractMethod end
+struct run_voltage <: AbstractMethod end
+struct run_power <: AbstractMethod end
 
-struct run_constant <: AbstractRun
+abstract type AbstractRun{T<:AbstractMethod} end
+
+struct method_and_value{Q<:AbstractMethod,T<:Union{Number,Symbol,Nothing,Function}}
+    method::Q
+    value::T
+end
+
+struct run_constant{T<:AbstractMethod} <: AbstractRun{T}
     value::Float64
-    method::Symbol
+    method::T
     t0::Float64
     tf::Float64
     info::run_info
 end
-
-struct run_function <: AbstractRun
+struct run_function{T<:AbstractMethod} <: AbstractRun{T}
     func::Function
     value::Vector{Float64}
-    method::Symbol
+    method::T
     t0::Float64
     tf::Float64
     info::run_info
@@ -195,8 +204,8 @@ indices_states = model_states{
     var_keep::states_logic = model_states_logic()
 end
 
-struct warm_start_info
-    method::Symbol
+struct warm_start_info{T<:AbstractMethod}
+    method::T
     SOC::Float64 # rounded to 3rd decimal place
     I::Float64 # rounded to 3rd decimal place
 end
@@ -292,7 +301,7 @@ function C_rate_string(I::Number;digits::Int64=4)
     num = I_rat.num
     den = I_rat.den
 
-    if den > 100 || (abs(num) ≥ 10 && den ≥ 10)
+    if den > 100 || (abs(num) > 10 && den > 10)
         return "$(round(I;digits=digits))C"
     end
     
@@ -334,7 +343,7 @@ function Base.show(io::IO, p::AbstractParam)
     
     sp = p.numerics.solid_diffusion === :Fickian ? "  " : ""
     str = string(
-    "$(replace(string(typeof(p)), "PETLION."=>"")):\n",
+    "$(replace(replace(string(typeof(p)), "PETLION."=>""),"{param_no_funcs}"=>"")):\n",
     "  Cathode: $(p.numerics.cathode), $(p.numerics.rxn_p), & $(p.numerics.OCV_p)\n",
     "  Anode:   $(p.numerics.anode), $(p.numerics.rxn_n), & $(p.numerics.OCV_n)\n",
     "  System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), & $(p.numerics.K_eff)\n",
@@ -397,30 +406,28 @@ function Base.show(io::IO, ind::indices_states)
 
     pad = maximum(length.(String.(vars)))+2
 
-    str = "indices_states:\n"
-    for (i,var) in enumerate(vars)
-        index = indices[i]
-        str *= "  " * rpad("$(var): ", pad)
-        str *= "$(length(index) > 1 ? index : index[1])\n"
-    end
-
-    print(io, str[1:end-1])
+    str = [
+        "indices_states:";
+        ["  " * rpad("$(var): ", pad) * "$(length(index) > 1 ? index : index[1])" for (index,var) in zip(indices,vars)]
+    ]
+    
+    print(io, join(str, "\n"))
 end
+method_symbol(::Type{run_current}) = :I
+method_symbol(::Type{run_voltage}) = :V
+method_symbol(::Type{run_power})   = :P
 
-function method_string(run::T) where {T<:AbstractRun}
-    fix(x, digits=2) = round(x, digits=digits)
-    if     T === run_constant
-        if     run.method === :I
-            return "= $(C_rate_string(value(run);digits=2))"
-        elseif run.method === :V
-            return "= $(fix(value(run))) V"
-        elseif run.method === :P
-            return "= $(fix(value(run))) W"
-        end
-    elseif T === run_function
-        return "function"
-    end
-end
+method_name(::run_constant{run_current};  shorthand::Bool=false) = shorthand ? "I"      : "current"
+method_name(::run_constant{run_voltage};  shorthand::Bool=false) = shorthand ? "V"      : "voltage"
+method_name(::run_constant{run_power};    shorthand::Bool=false) = shorthand ? "P"      : "power"
+method_name(::run_function{run_current};  shorthand::Bool=false) = shorthand ? "I func" : "current function"
+method_name(::run_function{run_voltage};  shorthand::Bool=false) = shorthand ? "V func" : "voltage function"
+method_name(::run_function{run_power};    shorthand::Bool=false) = shorthand ? "P func" : "power function"
+
+method_string(run::run_constant{run_current}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(C_rate_string(value(run);digits=2))"
+method_string(run::run_constant{run_voltage}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) V"
+method_string(run::run_constant{run_power};   shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) W"
+method_string(run::run_function{<:AbstractMethod}; kw...) = method_name(run;kw...)
 
 function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
     run = result.run
@@ -434,9 +441,7 @@ function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
 end
 
 function Base.show(io::IO, run::T) where {T<:AbstractRun}
-    str = "Run for $(run.method) "
-    fix(x,digits=2) = round(x, digits=digits)
-    str *= method_name(run)
+    str = "Run for $(method_string(run;shorthand=true))"
     if !isempty(run.info.exit_reason)
         str *= " with exit: $(run.info.exit_reason)"
     end
@@ -451,12 +456,7 @@ function Base.show(io::IO, model::model_output)
         str = length(results) === 1 ? "  Run: " : "  Runs:"
         str *= " "^4
 
-        methods = string.([result.run.method for result in results])
-        @inbounds for (i,result) in enumerate(results)
-            if result.run isa run_function
-                    methods[i] *= "func"
-            end
-        end
+        methods = method_name.([result.run for result in results];shorthand=true)
 
         counts = ones(Int64, length(methods))
 
