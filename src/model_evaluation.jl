@@ -449,13 +449,13 @@ end
         g!(J, Y, Y_diff, θ_tot)
 
         Y_old .= Y
-        Y   .-= J\res
+        Y .-= J\res
 
         iter += 1
         if norm(Y_old .- Y) < opts.reltol_init || maximum(abs, res) < opts.abstol_init
             @inbounds Y0[(1:p.N.alg) .+ p.N.diff] .= Y
             break
-        elseif iter == itermax
+        elseif iter === itermax
             error("Could not initialize DAE in $itermax iterations.")
         end
     end
@@ -474,7 +474,7 @@ end
         elseif I === :hold
             I = @inbounds model.I[end]
         else
-            error("CC can only be a `:rest`, `:hold`, or a number")
+            error("I can only be a `:rest`, `:hold`, or a number")
         end
     else
         I = Float64(I)
@@ -497,7 +497,7 @@ end
 @inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::Y, P::N) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
     if Y === Symbol
         if isempty(model.results)
-            error("`CV = :hold` can only be used with a previous model")
+            error("`V = :hold` can only be used with a previous model")
         end
         V = @inbounds model.V[end]
     else
@@ -511,7 +511,7 @@ end
 @inline function run_determination(p::param, model::R1, t0::Float64, tspan::T1, Y0::R2, method::Symbol, I::N, V::N, P::Y) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},N<:Nothing, R1<:model_output, R2<:Vector{Float64}}
     if Y === Symbol
         if isempty(model.results)
-            error("`CP = :hold` can only be used with a previous model")
+            error("`P = :hold` can only be used with a previous model")
         else
             P = @inbounds model.P[end]
         end

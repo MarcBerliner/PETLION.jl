@@ -50,16 +50,13 @@ function build_I_V_P!(states, p::AbstractParam)
     if states[:method] ∈ (:I, :V)
         I = states[:I][1]*I1C
         P = I*V
-
-        states[:P] = state_new([P], (), p)
     elseif states[:method] === :P
         # What is currently I should really be P. I is not defined yet
-        states[:P] = states[:I]
-
-        P = states[:P][1]
+        P = states[:I][1]
         I = P/V*I1C
     end
 
+    states[:P] = state_new([P], (), p)
     states[:I] = state_new([I], (), p)
 
     return nothing
@@ -128,8 +125,8 @@ function build_c_s_star!(states, p::AbstractParam)
         p_indices = p.N.r_p:p.N.r_p:p.N.r_p*p.N.p
         n_indices = p.N.r_n:p.N.r_n:p.N.r_n*p.N.n
         
-        c_s_star_p = @views @inbounds c_s_avg.p[p_indices]
-        c_s_star_n = @views @inbounds c_s_avg.n[n_indices]
+        c_s_star_p = c_s_avg.p[p_indices]
+        c_s_star_n = c_s_avg.n[n_indices]
     end
     # Return the residuals
     c_s_star = [c_s_star_p; c_s_star_n]
