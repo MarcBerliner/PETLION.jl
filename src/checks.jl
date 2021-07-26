@@ -15,48 +15,49 @@
     I = model.I[end]
     if !(method === run_voltage)
         if V ≤ bounds.V_min && I < 0
-            run.info.flag = 1
-            run.info.exit_reason = "Below minimum voltage limit"
-
-            bounds.t_final_interp_frac = min((bounds.V_prev - bounds.V_min)/(bounds.V_prev - V), bounds.t_final_interp_frac)
-
-            return nothing
+            t_frac = (bounds.V_prev - bounds.V_min)/(bounds.V_prev - V)
+            if t_frac < bounds.t_final_interp_frac
+                bounds.t_final_interp_frac = t_frac
+                run.info.flag = 1
+                run.info.exit_reason = "Below minimum voltage limit"
+            end
         end
+
         if V ≥ bounds.V_max && I > 0
-            run.info.flag = 2
-            run.info.exit_reason = "Above maximum voltage limit"
-
-            bounds.t_final_interp_frac = min((bounds.V_prev - bounds.V_max)/(bounds.V_prev - V), bounds.t_final_interp_frac)
-
-            return nothing
+            t_frac = (bounds.V_prev - bounds.V_max)/(bounds.V_prev - V)
+            if t_frac < bounds.t_final_interp_frac
+                bounds.t_final_interp_frac = t_frac
+                run.info.flag = 2
+                run.info.exit_reason = "Above maximum voltage limit"
+            end
         end
     end
     
     SOC = model.SOC[end]
     if SOC < bounds.SOC_min && I < 0
-        run.info.flag = 3
-        run.info.exit_reason = "Below minimum SOC limit"
-        
-        bounds.t_final_interp_frac = min((bounds.SOC_prev - bounds.SOC_min)/(bounds.SOC_prev - SOC), bounds.t_final_interp_frac)
-        
-        return nothing
+        t_frac = (bounds.SOC_prev - bounds.SOC_min)/(bounds.SOC_prev - SOC)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 3
+            run.info.exit_reason = "Below minimum SOC limit"
+        end
     end
     if SOC > bounds.SOC_max && I > 0
-        run.info.flag = 4
-        run.info.exit_reason = "Above maximum SOC limit"
-        
-        bounds.t_final_interp_frac = min((bounds.SOC_prev - bounds.SOC_max)/(bounds.SOC_prev - SOC), bounds.t_final_interp_frac)
-        
-        return nothing
+        t_frac = (bounds.SOC_prev - bounds.SOC_max)/(bounds.SOC_prev - SOC)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 4
+            run.info.exit_reason = "Above maximum SOC limit"
+        end
     end
     
     if p.numerics.temperature && (T = maximum(model.T[end])) > bounds.T_max
-        run.info.flag = 5
-        run.info.exit_reason = "Above maximum permitted temperature"
-        
-        bounds.t_final_interp_frac = min((bounds.T_prev - bounds.T_max)/(bounds.T_prev - T), bounds.t_final_interp_frac)
-        
-        return nothing
+        t_frac = (bounds.T_prev - bounds.T_max)/(bounds.T_prev - T)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 5
+            run.info.exit_reason = "Above maximum permitted temperature"
+        end 
     else
         T = -1.0
     end
@@ -71,31 +72,35 @@
         end
         
         if c_s_n_max > bounds.c_s_n_max*(p.θ[:c_max_n]::Float64*p.θ[:θ_max_n]::Float64)
-            run.info.flag = 6
-            run.info.exit_reason = "Above c_s_n saturation threshold"
-        
-            bounds.t_final_interp_frac = min((bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]::Float64*p.θ[:θ_max_n]::Float64))/(bounds.c_s_n_prev - c_s_n_max), bounds.t_final_interp_frac)
-            
-            return nothing
+            t_frac = (bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]::Float64*p.θ[:θ_max_n]::Float64))/(bounds.c_s_n_prev - c_s_n_max)
+            if t_frac < bounds.t_final_interp_frac
+                bounds.t_final_interp_frac = t_frac
+                run.info.flag = 6
+                run.info.exit_reason = "Above c_s_n saturation threshold"
+            end
         end
     else
         c_s_n_max = -1.0
     end
 
     if (!(method === run_current) && R3 === run_constant) && I > bounds.I_max
-        run.info.flag = 7
-        run.info.exit_reason = "Above maximum permitted C-rate"
-        
-        bounds.t_final_interp_frac = min((bounds.I_prev - bounds.I_max)/(bounds.I_prev - I), bounds.t_final_interp_frac)
-
-        return nothing
+        t_frac = (bounds.I_prev - bounds.I_max)/(bounds.I_prev - I)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 7
+            run.info.exit_reason = "Above maximum permitted C-rate"
+        end
     end
     if (!(method === run_current) && R3 === run_constant) && I < bounds.I_min
-        run.info.flag = 8
-        run.info.exit_reason = "Below minimum permitted C-rate"
-        
-        bounds.t_final_interp_frac = min((bounds.I_prev - bounds.I_min)/(bounds.I_prev - I), bounds.t_final_interp_frac)
+        t_frac = (bounds.I_prev - bounds.I_min)/(bounds.I_prev - I)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 8
+            run.info.exit_reason = "Below minimum permitted C-rate"
+        end
+    end
 
+    if !within_bounds(run)
         return nothing
     end
 

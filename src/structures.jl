@@ -244,8 +244,14 @@ model_output = model_states{
     Array{run_results,1},
 }
 (model::model_output)(t::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate) = interpolate_model(model, t, interp_bc)
-Base.length(model::model_output) = sum(result.info.iterations for result in model.results)
+Base.length(model::model_output) = length(model.results)
 Base.isempty(model::model_output) = isempty(model.results)
+function Base.getindex(model::T, i1::Int) where T<:model_output
+    ind = model.results[i1].run_index
+    T([fields === :results ? [model.results[i1]] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
+end
+Base.lastindex(model::T) where T<:model_output = length(model)
+Base.firstindex(::T) where T<:model_output = 1
 
 abstract type AbstractParam end
 
@@ -477,7 +483,7 @@ function Base.show(io::IO, model::model_output)
     end
     
     title = "PETLION model"
-    if length(model.results) ≥ 1
+    if !isempty(model)
         str = @views @inbounds string(
                 "$title\n",
                 "  --------\n",

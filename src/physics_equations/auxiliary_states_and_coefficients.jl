@@ -2,13 +2,13 @@ function build_auxiliary_states!(states, p::AbstractParam)
     """
     Calculates necessary auxiliary states and adds them to the `state` dict
     """
+    
+    # create a state j_aging which is a combination of j and j_s
+    build_j_aging!(states, p)
 
     # The final value of the x vector can either be I or P,
     # so this function specifically designates the I and P states
     build_I_V_P!(states, p)
-
-    # create a state j_aging which is a combination of j and j_s
-    build_j_aging!(states, p)
 
     # Temperature, T
     build_T!(states, p)
@@ -51,7 +51,7 @@ function build_I_V_P!(states, p::AbstractParam)
         I = states[:I][1]*I1C
         P = I*V
     elseif states[:method] === :P
-        # What is currently I should really be P. I is not defined yet
+        # What is currently `I` should really be `P`. `I` is not defined yet
         P = states[:I][1]
         I = P/V
     end
@@ -64,17 +64,23 @@ end
 
 function build_j_aging!(states, p::AbstractParam)
     """
-    Append `j` with possibly additions from `j_s`
+    Append `j` with possible additions from `j_s`
     """
     j = states[:j]
+    states[:j_orig] = copy(j)
+    
+    if !(p.numerics.aging ∈ (:SEI, :R_aging))
+        return nothing
+    end
+    
     j_s = states[:j_s]
 
     j_aging = copy(j)
-    if p.numerics.aging ∈ (:SEI, :R_aging)
-        j_aging[p.N.p+1:end] = j_aging[p.N.p+1:end] .+ j_s
-    end
+    j_aging[p.N.p+1:end] .+= j_s
 
-    states[:j_aging] = state_new(j, (:p, :n), p)
+    states[:j_aging] = state_new(j_aging, (:p, :n), p)
+    # redefine the ionic flux
+    states[:j] = state_new(j_aging, (:p, :n), p)
 
     return nothing
 end
@@ -85,6 +91,10 @@ function build_T!(states, p::AbstractParam)
     """
     if isempty(states[:T])
         T = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n+p.N.a+p.N.z))
+        
+        states[:T] = state_new(T, (:a, :p, :s, :n, :z), p)
+    elseif length(states[:T]) === 1
+        T = repeat([states[:T]], (p.N.p+p.N.s+p.N.n+p.N.a+p.N.z))
         
         states[:T] = state_new(T, (:a, :p, :s, :n, :z), p)
     end
@@ -165,8 +175,8 @@ function build_η!(states, p::AbstractParam)
     Φ_s = states[:Φ_s]
     Φ_e = states[:Φ_e]
     U = states[:U]
-    j = states[:j]
-    j_s = states[:j_s]
+    j = states[:j_aging]
+    # j_aging = states[:j_aging]
     film = states[:film]
 
     F = const_Faradays
@@ -180,9 +190,9 @@ function build_η!(states, p::AbstractParam)
     end
 
     if     p.numerics.aging === :SEI
-        η_n .+= @. - F*(j.n + j_s)*(p.θ[:R_SEI] + film/p.θ[:k_n_aging])
+        η_n .+= @. - F*j.n*(p.θ[:R_SEI] + film/p.θ[:k_n_aging])
     elseif p.numerics.aging === :R_aging
-        η_n .+= @. - F*(j.n + j_s)*p.θ[:R_aging]
+        η_n .+= @. - F*j.n*p.θ[:R_aging]
     end
 
     states[:η] = state_new([η_p; η_n], (:p, :n), p)
@@ -208,7 +218,7 @@ function build_heat_generation_rates!(states, p::AbstractParam)
 
     Φ_s = states[:Φ_s]
     Φ_e = states[:Φ_e]
-    j = states[:j]
+    j = states[:j_aging]
     T = states[:T]
     c_e = states[:c_e]
     U = states[:U]
@@ -386,22 +396,17 @@ function build_heat_generation_rates!(states, p::AbstractParam)
     @views @inbounds Q_rev_n = F*a_n*j[p.N.p+1:end].*T[p.N.a+p.N.p+p.N.s+1:p.N.a+p.N.p+p.N.s+p.N.n].*∂U∂T.n
 
     ## Reaction heat generation rate
-
-    # Positive overpotential
-    @views @inbounds η_p = @. (Φ_s[1:p.N.p]-Φ_e[1:p.N.p]-U.p)
     # Positive reaction heat generation rate
     @views @inbounds Q_rxn_p = F*a_p*j[1:p.N.p].*η.p
 
-    # Negative overpotential
-    @views @inbounds η_n = @. (Φ_s[p.N.p+1:end]-Φ_e[p.N.p+p.N.s+1:end]-U.n)
     # Negative reaction heat generation rate
     @views @inbounds Q_rxn_n = F*a_n*j[p.N.p+1:end].*η.n
 
     ## Ohmic heat generation rate
     # Positive electrode ohmic generation rate
-    @views @inbounds Q_ohm_p = σ_eff_p * (dΦ_s[1:p.N.p]).^2 + K_eff.p.*(dΦ_e[1:p.N.p]).^2 + 2*R*K_eff.p.*T[p.N.a+1:p.N.a+p.N.p]*(1-p.θ[:t₊])/F.*dc_e[1:p.N.p].*1.0./c_e[1:p.N.p].*dΦ_e[1:p.N.p]
+    Q_ohm_p = σ_eff_p * (dΦ_s[1:p.N.p]).^2 + K_eff.p.*(dΦ_e[1:p.N.p]).^2 + 2*R*K_eff.p.*T[p.N.a+1:p.N.a+p.N.p]*(1-p.θ[:t₊])/F.*dc_e[1:p.N.p].*1.0./c_e[1:p.N.p].*dΦ_e[1:p.N.p]
     # Separator ohmic generation rate
-    @views @inbounds Q_ohm_s = K_eff.s.*(dΦ_e[p.N.p+1:p.N.p+p.N.s]).^2 + 2*R*K_eff.s.*T[p.N.a+p.N.p+1:p.N.a+p.N.p+p.N.s]*(1-p.θ[:t₊])/F.*dc_e[p.N.p+1:p.N.p+p.N.s].*1.0./c_e[p.N.p+1:p.N.p+p.N.s].*dΦ_e[p.N.p+1:p.N.p+p.N.s]
+    Q_ohm_s = K_eff.s.*(dΦ_e[p.N.p+1:p.N.p+p.N.s]).^2 + 2*R*K_eff.s.*T[p.N.a+p.N.p+1:p.N.a+p.N.p+p.N.s]*(1-p.θ[:t₊])/F.*dc_e[p.N.p+1:p.N.p+p.N.s].*1.0./c_e[p.N.p+1:p.N.p+p.N.s].*dΦ_e[p.N.p+1:p.N.p+p.N.s]
     # Negative electrode ohmic generation rate
     Q_ohm_n = σ_eff_n * (dΦ_s[p.N.p+1:end]).^2 +K_eff.n.*(dΦ_e[p.N.p+p.N.s+1:end]).^2 + 2*R*K_eff.n.*T[p.N.a+p.N.p+p.N.s+1:p.N.a+p.N.p+p.N.s+p.N.n]*(1-p.θ[:t₊])/F.*dc_e[p.N.p+p.N.s+1:end].*1.0./c_e[p.N.p+p.N.s+1:end].*dΦ_e[p.N.p+p.N.s+1:end]
     
@@ -437,12 +442,8 @@ function active_material(p::AbstractParam)
     """
     Electrode active material fraction [-]
     """
-    ϵ_sp = (1.0 - p.θ[:ϵ_p] - p.θ[:ϵ_fp])
-    if p.numerics.aging === :R_aging
-        ϵ_sn = (1.0 - p.θ[:ϵ_n][1] - p.θ[:ϵ_fn])
-    else
-        ϵ_sn = (1.0 - p.θ[:ϵ_n] - p.θ[:ϵ_fn])
-    end
+    ϵ_sp = 1.0 - (p.θ[:ϵ_fp] + p.θ[:ϵ_p])
+    ϵ_sn = 1.0 - (p.θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? (p.θ[:ϵ_n])[1] : p.θ[:ϵ_n]))
 
     return ϵ_sp, ϵ_sn
 end
@@ -516,13 +517,13 @@ function calc_j(Y, p::AbstractParam)
 end
 
 """
-Calculations which are primarily used in `set_vars!`. Denoted by the prefix `calc_`.
+Calculations which are primarily used in `set_vars!`, denoted by the prefix `calc_`.
 Since p.θ is a dictionary which may contain `Float64` or `Vector{Float64}`, it is important
 to denote the type of each variable for performance
 """
 @inline function calc_I1C(p::AbstractParam)
     """
-    Calculate the 1C current density (A/m²)
+    Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
     """
     F = const_Faradays
     θ = p.θ
@@ -531,15 +532,15 @@ to denote the type of each variable for performance
     ϵ_s_n = 1.0 - (θ[:ϵ_fn]::Float64 + (p.numerics.aging === :R_aging ? (θ[:ϵ_n]::Vector{Float64})[1] : θ[:ϵ_n]::Float64))
 
     I1C = (F/3600.0)*min(
-        θ[:c_max_p]::Float64*(θ[:θ_min_p]::Float64 - θ[:θ_max_p]::Float64)*ϵ_s_p*θ[:l_p]::Float64,
-        θ[:c_max_n]::Float64*(θ[:θ_max_n]::Float64 - θ[:θ_min_n]::Float64)*ϵ_s_n*θ[:l_n]::Float64,
+        ϵ_s_p*θ[:l_p]::Float64*θ[:c_max_p]::Float64*(θ[:θ_min_p]::Float64 - θ[:θ_max_p]::Float64),
+        ϵ_s_n*θ[:l_n]::Float64*θ[:c_max_n]::Float64*(θ[:θ_max_n]::Float64 - θ[:θ_min_n]::Float64),
         )
 
     return I1C
 end
 @inline function calc_I1C(p::param_no_funcs)
     """
-    Calculate the 1C current density (A/m²)
+    Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
     """
     F = const_Faradays
     θ = p.θ
@@ -548,8 +549,8 @@ end
     ϵ_s_n = 1.0 - (θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? θ[:ϵ_n][1] : θ[:ϵ_n]))
 
     I1C = (F/3600.0)*min(
-        θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p])*ϵ_s_p*θ[:l_p],
-        θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n])*ϵ_s_n*θ[:l_n],
+        ϵ_s_p*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]),
+        ϵ_s_n*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n]),
         )
 
     return I1C
@@ -571,7 +572,7 @@ end
 @inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_voltage}, p::param) = @inbounds Y[p.ind.I[1]]
 @inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power},   p::param) = @inbounds value(run)/model.V[end]/calc_I1C(p)
 
-@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:AbstractMethod}, p::param) = @views @inbounds model.I[end]*model.V[end]*calc_I1C(p)
+@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:AbstractMethod}, p::param) = @inbounds model.I[end]*model.V[end]*calc_I1C(p)
 @inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power}, p::param) = value(run)
 
 @inline function calc_SOC(c_s_avg::AbstractVector{Float64}, p::param)

@@ -85,7 +85,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     """
 
     c_e = states[:c_e]
-    j = states[:j]
+    j = states[:j_aging]
 
     ∂c_e = ∂states[:c_e]
 
@@ -211,19 +211,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam)
     """
 
     if p.numerics.solid_diffusion ∈ (:quadratic, :polynomial)
-        j = states[:j]
-        
-        ∂c_s_avg = ∂states[:c_s_avg]
-    
-        res_c_s_avg = res[:c_s_avg]
-        
-        # Cathode
-        rhsCs_p = -3j.p/p.θ[:Rp_p]
-
-        # Anode
-        rhsCs_n = -3j.n/p.θ[:Rp_n]
-
-        res_c_s_avg .= [rhsCs_p; rhsCs_n] .- ∂c_s_avg
+        residuals_c_s_avg_polynomial!(res, states, ∂states, p)
     else
         if     p.numerics.Fickian_method === :finite_difference # Use the FDM method for the solid phase diffusion
             residuals_c_s_avg_Fickian_FDM!(res, states, ∂states, p)
@@ -231,6 +219,24 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam)
             residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
         end
     end
+    return nothing
+end
+
+function residuals_c_s_avg_polynomial!(res, states, ∂states, p)
+    j = states[:j]
+        
+    ∂c_s_avg = ∂states[:c_s_avg]
+
+    res_c_s_avg = res[:c_s_avg]
+    
+    # Cathode
+    rhsCs_p = -3j.p/p.θ[:Rp_p]
+
+    # Anode
+    rhsCs_n = -3j.n/p.θ[:Rp_n]
+
+    res_c_s_avg .= [rhsCs_p; rhsCs_n] .- ∂c_s_avg
+
     return nothing
 end
 
@@ -693,7 +699,7 @@ function residuals_T!(res, states, ∂states, p)
     c_e       = states[:c_e]
     Φ_e       = states[:Φ_e]
     Φ_s       = states[:Φ_s]
-    j         = states[:j]
+    j         = states[:j_aging]
     T         = states[:T]
     I_density = states[:I][1]
 
@@ -1116,7 +1122,7 @@ function residuals_j!(res, states, p::AbstractParam)
     c_s_star = states[:c_s_star]
     c_e = states[:c_e]
     T = states[:T]
-    j = states[:j_aging]
+    j = states[:j_orig]
 
     η = states[:η]
 
@@ -1138,41 +1144,28 @@ function residuals_j_s!(res, states, p::AbstractParam)
     Calculate the molar flux density side reaction residuals due to SEI resistance [mol/(m²•s)]
     """
     j_s = states[:j_s]
+    j   = states[:j_aging]
+    Φ_s = states[:Φ_s]
+    Φ_e = states[:Φ_e]
+    film = states[:film]
     T = states[:T]
     I_density = states[:I][1]
 
     res_j_s = res[:j_s]
 
-    η = states[:η]
-
     F = const_Faradays
     R = const_Ideal_Gas
     
-    if p.numerics.aging === :R_aging
-        I1C = (F/3600.0)*p.θ[:c_max_n]*(p.θ[:θ_max_n] - p.θ[:θ_min_n])*(1.0 - p.θ[:ϵ_n][1] - p.θ[:ϵ_fn])*p.θ[:l_n]
-    else
-        I1C = (F/3600.0)*p.θ[:c_max_n]*(p.θ[:θ_max_n] - p.θ[:θ_min_n])*(1.0 - p.θ[:ϵ_n] - p.θ[:ϵ_fn])*p.θ[:l_n]
-    end
+    I1C = calc_I1C(p)
     
-    α = 0.5.*F./(R.*T.n)
+    η_s = Φ_s.n .- Φ_e.n .- p.θ[:Uref_s] .- F.*j.n.*(p.θ[:R_SEI] .+ film./p.θ[:k_n_aging])
+    
     # If aging is enabled; take into account the SEI resistance
-    if p.numerics.aging === :SEI
-        # Tafel equation for the side reaction flux.
-        j_s_calc = -p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w].*(exp.(-α.*η.n))./F
-    elseif p.numerics.aging === :R_aging
-        # Tafel equation for the side reaction flux.
-        α = 0.5.*F./(R.*T.n)
-        j_s_calc = -p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w].*(exp.(-α.*η.n))./F
-    end
+    j_s_calc = -(p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*exp.(-0.5F./(R.*T.n).*η_s)
 
     # side reaction residuals
-    for i in eachindex(j_s)
-        res_j_s[i] = IfElse.ifelse(
-            I_density > 0, 
-            j_s[i] .- j_s_calc[i],
-            j_s[i],
-        )
-    end
+    
+    res_j_s .= [IfElse.ifelse(I_density > 0, j_s[i] .- j_s_calc[i], j_s[i]) for i in eachindex(j_s)]
     
     return nothing
 end
@@ -1409,7 +1402,6 @@ function residuals_I_V_P!(res, states, p::AbstractParam)
     
     return nothing
 end
-
 
 
 

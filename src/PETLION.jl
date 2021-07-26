@@ -1,5 +1,6 @@
 module PETLION
 
+using LinearAlgebra: AbstractMatrix
 using Base: ImmutableDict
 using Dierckx: Spline1D
 using DifferentialEquations
@@ -8,7 +9,6 @@ using LinearAlgebra
 using ModelingToolkit
 using SparseArrays
 using SparseDiffTools
-using SpecialFunctions
 using Statistics
 using Parameters: @with_kw
 using ProgressBars: ProgressBar

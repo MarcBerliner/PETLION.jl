@@ -300,16 +300,16 @@ function state_indices(N, numerics)
     I_tot = 1
     
     
-    c_e = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
+    c_e     = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
     c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion === :Fickian)
-    T = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
-    film = add(:film,    film_tot,    (:n,),                :differential)
-    Q = add(:Q,       Q_tot,       (:p, :n),             :differential)
-    j = add(:j,       j_tot,       (:p, :n),             :algebraic)
-    j_s = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
-    Φ_e = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
-    Φ_s = add(:Φ_s,     Φ_s_tot,     (:p, :n),             :algebraic)
-    I = add(:I,       I_tot,       (),                   :algebraic)
+    T       = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
+    film    = add(:film,    film_tot,    (:n,),                :differential)
+    Q       = add(:Q,       Q_tot,       (:p, :n),             :differential)
+    j       = add(:j,       j_tot,       (:p, :n),             :algebraic)
+    j_s     = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
+    Φ_e     = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
+    Φ_s     = add(:Φ_s,     Φ_s_tot,     (:p, :n),             :algebraic)
+    I       = add(:I,       I_tot,       (),                   :algebraic)
     
     N_tot = N_diff + N_alg
     
@@ -357,15 +357,15 @@ end
     end
     
     function guess_algebraic!()
-        states[:j] = 0
+        states[:j] = 0.0
         
-        states[:Φ_e] = 0
+        states[:Φ_e] = 0.0
         
         states[:Φ_s] = states[:U]
         
         states[:I] = X_applied
     
-        if !isempty(states[:j_s]) states[:j_s] .= 0.0 end # totally arbitrary/random value for side-reaction flux
+        if !isempty(states[:j_s]) states[:j_s] .= 0.0 end
 
         return nothing
     end

@@ -92,6 +92,7 @@ end
     method_sym = method_symbol(method)
     funcs = p.funcs[method_sym]
     θ_tot = cache.θ_tot[method_sym]
+    keep_Y = opts.var_keep.Y
     
     # update the θ_tot vector from the dict p.θ
     funcs.update_θ!(θ_tot, p.θ)
@@ -100,8 +101,8 @@ end
     # if this is a new model?
     new_run = R1 === Array{Float64,1} || isempty(model.results)
 
-    ## initializing the states vector Y and time t    
-    Y0 = cache.Y0
+    ## initializing the states vector Y and time t
+    Y0 = keep_Y ? similar(cache.Y0) : cache.Y0
     YP0 = cache.YP0
     if R1 === Array{Float64,1}
         Y0 = deepcopy(model)
@@ -116,7 +117,11 @@ end
         t0 = 0.0
 
     else # continue from previous simulation
-        Y0  .= @views @inbounds copy(model.Y[end])
+        if keep_Y
+            Y0 .= copy(model.Y[end])
+        else
+            Y0 .= model.Y[end]
+        end
         SOC = @inbounds model.SOC[end]
         t0 = @inbounds model.t[end]
     end
@@ -132,10 +137,9 @@ end
     int = retrieve_integrator(run, p, container, Y0, YP0, opts)
     
     set_vars!(model, p, Y0, YP0, int.t, run, opts; init_all=new_run)
-    set_var!(model.Y, new_run, Y0)
+    set_var!(model.Y, new_run || keep_Y, Y0)
     
     check_simulation_stop!(model, int, run, p, bounds, opts)
-    
     return int, run, container, model
 end
 
@@ -254,13 +258,8 @@ end
     return nothing
 end
 
-@inline fix_res!(::W, ::W, ::param{T}, ::AbstractRun{method}; kw...) where {method<:AbstractMethod,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}} = nothing
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:run_voltage,T<:jacobian_symbolic,E<:Float64,W<:Vector{E}}
-    @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
-    return nothing
-end
-
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:run_voltage,T<:jacobian_AD,E<:Float64,W<:Vector{E}}
+@inline fix_res!(::W, ::W, ::param{T}, ::AbstractRun{method}; kw...) where {method<:Union{run_current,run_power},T<:jacobian_symbolic,E<:Float64,W<:Vector{E}} = nothing
+@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:run_voltage,T<:AbstractJacobian,E<:Float64,W<:Vector{E}}
     @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
     return nothing
 end

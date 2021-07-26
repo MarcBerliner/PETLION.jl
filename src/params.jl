@@ -3,8 +3,8 @@ export LCO, LiC6
 function NCA_Tesla(θ, funcs)
     ## parameters section
     # everything here can be modified without regenerating the model/jacobian.
-    θ[:D_sp] = 1.995860211142953e-14
-    θ[:k_p] = 1.0806159336878036e-7
+    θ[:D_sp] = 8.71599819329158e-14
+    θ[:k_p] = 4.4381848254635963e-10
     θ[:λ_MHC_p] = 6.26e-20
     θ[:θ_max_p] = 0.15965575699371948#0.1667
     θ[:θ_min_p] = 0.859486016265424#0.8463
@@ -26,8 +26,8 @@ function NCA_Tesla(θ, funcs)
 end
 
 function LiC6_Tesla(θ, funcs)
-    θ[:D_sn] = 1e-14
-    θ[:k_n] = 6e-7
+    θ[:D_sn] = 1.0175453067862272e-13
+    θ[:k_n] = 6.836747191615479e-12
     θ[:λ_MHC_n] = 6.26e-20
     θ[:θ_max_n] = 0.9234582496989682#0.9896
     θ[:θ_min_n] = 0.014170948572587282#0.0150
@@ -53,17 +53,17 @@ function LiC6_Tesla(θ, funcs)
     #for Li-Ion Cells, Ramadass et al. the measurement unit of M_p is wrong as
     #well as the number itself. Please refer to Review of models for predicting
     #the cycling performance of lithium ion batterise, Santhanagopalan et al.
-    θ[:M_n] = 73e-3
+    θ[:M_n] = 7.3e-4
     # Admittance                                [S/m]
-    θ[:k_n_aging] = 3.79e-7
+    θ[:k_n_aging] = 1.0
     # Side reaction current density             [A/m²]
-    θ[:i_0_jside] = 0.80e-10
+    θ[:i_0_jside] = 1.5e-6
     # Open circuit voltage for side reaction    [V]
     θ[:Uref_s] = 0.4
     # Weigthing factor used in the aging dynamics. See the definition of side
     # reaction current density in the ionicFlux.m file.
     θ[:w] = 2.0
-    θ[:R_aging] = 1.0 # not sure what to set this to
+    θ[:R_aging] = 0.01 # not sure what to set this to
 
     funcs.rxn_n = rxn_BV
     funcs.OCV_n = OCV_SiC
@@ -242,24 +242,24 @@ function LiC6(θ, funcs)
     θ[:Ea_D_sn] = 5000.0
     θ[:Ea_k_n] = 5000.0
 
-    # Initial SEI resistance value [Ohm m^2]
+    # Initial SEI resistance value [Ω⋅m²]
     θ[:R_SEI] = 0.01
     #Molar weight                               [kg/mol]
     #ATTENTION: In Development of First Principles Capacity Fade Model
     #for Li-Ion Cells, Ramadass et al. the measurement unit of M_p is wrong as
     #well as the number itself. Please refer to Review of models for predicting
     #the cycling performance of lithium ion batterise, Santhanagopalan et al.
-    θ[:M_n] = 73e-3
+    θ[:M_n] = 7.3e-4
     # Admittance                                [S/m]
-    θ[:k_n_aging] = 3.79e-7
-    # Side reaction current density             [A/m^2]
-    θ[:i_0_jside] = 0.80e-10
+    θ[:k_n_aging] = 1.0
+    # Side reaction current density             [A/m²]
+    θ[:i_0_jside] = 1.5e-6
     # Open circuit voltage for side reaction    [V]
     θ[:Uref_s] = 0.4
     # Weigthing factor used in the aging dynamics. See the definition of side
     # reaction current density in the ionicFlux.m file.
     θ[:w] = 2.0
-    θ[:R_aging] = 1.0 # not sure what to set this to
+    θ[:R_aging] = 0.01 # not sure what to set this to
 
     funcs.rxn_n = rxn_BV
     funcs.OCV_n = OCV_LiC6
@@ -363,7 +363,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     bounds.SOC_min = 0.0
     bounds.SOC_max = 1.0
     bounds.T_max = 55 + 273.15
-    bounds.c_s_n_max = 0.99
+    bounds.c_s_n_max = NaN
     bounds.I_max = NaN
     bounds.I_min = NaN
 
