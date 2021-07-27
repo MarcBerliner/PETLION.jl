@@ -233,9 +233,9 @@ fix_final_val!(::run_constant,x...) = nothing
     p = container.p
     run = container.run
     
-    fix_final_val!(run,u,p,t)
-    
     container.residuals!(res, u, du, θ_tot)
+
+    calc_scalar_residual!(res,t,u,du,p,run)
 
     fix_res!(res, u, p, run)
 
@@ -255,23 +255,6 @@ end
         @inbounds J[i,i] -= γ
     end
 
-    return nothing
-end
-
-@inline fix_res!(::W, ::W, ::param{T}, ::AbstractRun{method}; kw...) where {method<:Union{run_current,run_power},T<:jacobian_symbolic,E<:Float64,W<:Vector{E}} = nothing
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:run_voltage,T<:AbstractJacobian,E<:Float64,W<:Vector{E}}
-    @inbounds res[p.ind.I[1]+offset] = calc_V(u, p, run, p.ind.Φ_s.+offset) - value(run)
-    return nothing
-end
-@inline function fix_res!(res::W, u::W, p::param{T}, run::AbstractRun{method}; offset::Int=0) where {method<:Union{run_current,run_power},T<:jacobian_AD,E<:Float64,W<:Vector{E}}
-    @inbounds res[p.ind.I[1]+offset] = 0.0
-    return nothing
-end
-
-@inline function f_IC!(res::T1, Y_alg::T1, Y_diff::T1, p::param, run::AbstractRun, f!::Function, θ_tot::T1) where {T1<:Vector{Float64}}
-    f!(res, Y_alg, Y_diff, θ_tot)
-
-    fix_res!(res, Y_alg, p, run, offset=-p.N.diff)
     return nothing
 end
 
@@ -396,7 +379,7 @@ end
     return nothing
 end
 
-@inline function run_determination(method_struct::method_and_value{<:run_current,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:method_I,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
     method = method_struct.method
     I      = method_struct.value
 
@@ -417,7 +400,7 @@ end
 
     return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(method_struct::method_and_value{<:run_current,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:method_I,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
     method = method_struct.method
     I      = method_struct.value
 
@@ -429,7 +412,7 @@ end
     value .= func(Y0, p, t0)::Float64
     return run
 end
-@inline function run_determination(method_struct::method_and_value{<:run_voltage,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:method_V,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
     method = method_struct.method
     V      = method_struct.value
 
@@ -446,7 +429,7 @@ end
 
     return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(method_struct::method_and_value{<:run_power,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:method_P,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Union{Number,Symbol},T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
     method = method_struct.method
     P      = method_struct.value
 
@@ -464,7 +447,7 @@ end
 
     return run_constant(value, method, t0, tf, run_info())
 end
-@inline function run_determination(method_struct::method_and_value{<:run_power,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
+@inline function run_determination(method_struct::method_and_value{<:method_P,Y}, p::param, model::R1, t0::Float64, tspan::T1, Y0::R2) where {Y<:Function,T1<:Union{Number,AbstractVector,Nothing},R1<:model_output,R2<:Vector{Float64}}
     method = method_struct.method
     P      = method_struct.value
 

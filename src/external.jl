@@ -18,14 +18,10 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
     ## temporary params with no functions
     _p = param_no_funcs(θ_any, numerics, N, ind, opts, bounds, cache)
     
-    if     numerics.jacobian === :symbolic
-        funcs = retrieve_functions_symbolic(_p, methods)
-    elseif numerics.jacobian === :AD
-        funcs = load_functions(_p, methods)
-    end
+    funcs = load_functions(_p)
 
     # update θ
-    @inbounds for method in methods
+    @inbounds for method in (:I,)#methods
         funcs[method].update_θ!(cache.θ_tot[method], θ)
     end
     
@@ -172,7 +168,7 @@ function retrieve_states(Y::AbstractArray, p::AbstractParam)
 
     sections = Symbol[]
     @inbounds for (field,_type) in zip(fieldnames(index_state), fieldtypes(index_state))
-        if _type <: AbstractUnitRange && field ≠ :start && field ≠ :stop
+        if _type <: AbstractUnitRange && !(field ∈ (:start,:stop))
             push!(sections, field)
         end
     end
@@ -399,7 +395,6 @@ function strings_directory_func(N::discretizations_per_section, numerics::option
             "$(numerics.solid_diffusion)",
             "$(numerics.Fickian_method)",
             "$(numerics.aging)",
-            "$(numerics.edge_values)",
             "Np$(N.p)",
             "Ns$(N.s)",
             "Nn$(N.n)",

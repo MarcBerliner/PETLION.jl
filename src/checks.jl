@@ -13,7 +13,7 @@
     
     V = model.V[end]
     I = model.I[end]
-    if !(method === run_voltage)
+    if !(method === method_V)
         if V ≤ bounds.V_min && I < 0
             t_frac = (bounds.V_prev - bounds.V_min)/(bounds.V_prev - V)
             if t_frac < bounds.t_final_interp_frac
@@ -83,7 +83,7 @@
         c_s_n_max = -1.0
     end
 
-    if (!(method === run_current) && R3 === run_constant) && I > bounds.I_max
+    if (!(method === method_I) && R3 === run_constant) && I > bounds.I_max
         t_frac = (bounds.I_prev - bounds.I_max)/(bounds.I_prev - I)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -91,7 +91,7 @@
             run.info.exit_reason = "Above maximum permitted C-rate"
         end
     end
-    if (!(method === run_current) && R3 === run_constant) && I < bounds.I_min
+    if (!(method === method_I) && R3 === run_constant) && I < bounds.I_min
         t_frac = (bounds.I_prev - bounds.I_min)/(bounds.I_prev - I)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -128,9 +128,9 @@ function get_corrected_methods(methods)
 end
 
 @inline function get_method(I::current, V::voltage, P::power) where {
-    current<:Union{Number,Symbol,Nothing,Function},
-    voltage<:Union{Number,Symbol,Nothing},
-    power  <:Union{Number,Symbol,Nothing,Function},
+    current <: Union{Number,Symbol,Nothing,Function},
+    voltage <: Union{Number,Symbol,Nothing,Function},
+    power   <: Union{Number,Symbol,Nothing,Function},
     }
 
     if !( sum(!(method === Nothing) for method in (current,voltage,power)) === 1 )
@@ -138,11 +138,11 @@ end
     end
 
     if     !isnothing(I)
-        method, value = run_current(), I
+        method, value = method_I(), I
     elseif !isnothing(V)
-        method, value = run_voltage(), V
+        method, value = method_V(), V
     elseif !isnothing(P)
-        method, value = run_power(), P
+        method, value = method_P(), P
     else
         error("Method not supported")
     end
@@ -238,10 +238,6 @@ end
 end
 
 function check_errors_initial(θ, numerics, N)
-    if numerics.aging === :R_aging && length(θ[:ϵ_n]) === 1
-        θ[:ϵ_n] = θ[:ϵ_n][1] .* ones(N.n)
-    end
-
     if !(numerics.jacobian ∈ (:symbolic, :AD))
         error("`jacobian` can either be :symbolic or :AD")
     end

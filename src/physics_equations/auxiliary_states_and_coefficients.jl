@@ -38,26 +38,14 @@ function build_I_V_P!(states, p::AbstractParam)
     Φ_s = states[:Φ_s]
 
     I1C = calc_I1C(p)
-
-    if p.numerics.edge_values === :center
-        V = Φ_s[1] - Φ_s[end]
-    else # interpolated edges
-        V = (1.5*Φ_s[1] - 0.5*Φ_s[2]) - (1.5*Φ_s[end] - 0.5*Φ_s[end-1])
-    end
     
-    states[:V] = state_new([V], (), p)
-
-    if states[:method] ∈ (:I, :V)
-        I = states[:I][1]*I1C
-        P = I*V
-    elseif states[:method] === :P
-        # What is currently `I` should really be `P`. `I` is not defined yet
-        P = states[:I][1]
-        I = P/V
-    end
-
-    states[:P] = state_new([P], (), p)
+    I = states[:I][1]*I1C
+    V = Φ_s[1] - Φ_s[end]
+    P = I*V
+    
     states[:I] = state_new([I], (), p)
+    states[:V] = state_new([V], (), p)
+    states[:P] = state_new([P], (), p)
 
     return nothing
 end
@@ -67,7 +55,7 @@ function build_j_aging!(states, p::AbstractParam)
     Append `j` with possible additions from `j_s`
     """
     j = states[:j]
-    states[:j_orig] = copy(j)
+    states[:j] = states[:j_orig] = states[:j_aging] = state_new(j, (:p, :n), p)
     
     if !(p.numerics.aging ∈ (:SEI, :R_aging))
         return nothing
@@ -443,7 +431,7 @@ function active_material(p::AbstractParam)
     Electrode active material fraction [-]
     """
     ϵ_sp = 1.0 - (p.θ[:ϵ_fp] + p.θ[:ϵ_p])
-    ϵ_sn = 1.0 - (p.θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? (p.θ[:ϵ_n])[1] : p.θ[:ϵ_n]))
+    ϵ_sn = 1.0 - (p.θ[:ϵ_fn] + p.θ[:ϵ_n])
 
     return ϵ_sp, ϵ_sn
 end
@@ -518,72 +506,40 @@ end
 
 """
 Calculations which are primarily used in `set_vars!`, denoted by the prefix `calc_`.
-Since p.θ is a dictionary which may contain `Float64` or `Vector{Float64}`, it is important
-to denote the type of each variable for performance
 """
+function limiting_electrode(p::AbstractParam)
+    θ = p.θ
+    ϵ_sp, ϵ_sn = active_material(p)
+
+    if ϵ_sp*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]) > ϵ_sn*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n])
+        return :p
+    else
+        return :n
+    end
+end
+
 @inline function calc_I1C(p::AbstractParam)
     """
     Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
     """
-    F = const_Faradays
+    F = 96485.3365
     θ = p.θ
 
-    ϵ_s_p = 1.0 - (θ[:ϵ_fp]::Float64 + θ[:ϵ_p]::Float64)
-    ϵ_s_n = 1.0 - (θ[:ϵ_fn]::Float64 + (p.numerics.aging === :R_aging ? (θ[:ϵ_n]::Vector{Float64})[1] : θ[:ϵ_n]::Float64))
+    ϵ_sp, ϵ_sn = active_material(p)
 
     I1C = (F/3600.0)*min(
-        ϵ_s_p*θ[:l_p]::Float64*θ[:c_max_p]::Float64*(θ[:θ_min_p]::Float64 - θ[:θ_max_p]::Float64),
-        ϵ_s_n*θ[:l_n]::Float64*θ[:c_max_n]::Float64*(θ[:θ_max_n]::Float64 - θ[:θ_min_n]::Float64),
+        ϵ_sp*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]),
+        ϵ_sn*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n]),
         )
 
     return I1C
 end
-@inline function calc_I1C(p::param_no_funcs)
-    """
-    Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
-    """
-    F = const_Faradays
-    θ = p.θ
-
-    ϵ_s_p = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
-    ϵ_s_n = 1.0 - (θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? θ[:ϵ_n][1] : θ[:ϵ_n]))
-
-    I1C = (F/3600.0)*min(
-        ϵ_s_p*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]),
-        ϵ_s_n*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n]),
-        )
-
-    return I1C
-end
-
-@inline calc_V(Y::Vector{Float64}, p::param, run::AbstractRun{<:run_voltage}, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}} = value(run)
-@inline function calc_V(Y::Vector{Float64}, p::param, ::AbstractRun{<:AbstractMethod}, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}}
-    """
-    Calculate the voltage (V)
-    """
-    if p.numerics.edge_values === :center
-        return @views @inbounds Y[ind_Φ_s[1]] - Y[ind_Φ_s[end]]
-    else # interpolated edges
-        return @views @inbounds (1.5*Y[ind_Φ_s[1]] - 0.5*Y[ind_Φ_s[2]]) - (1.5*Y[ind_Φ_s[end]] - 0.5*Y[ind_Φ_s[end-1]])
-    end
-end
-
-@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_current}, p::param) = value(run)
-@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_voltage}, p::param) = @inbounds Y[p.ind.I[1]]
-@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power},   p::param) = @inbounds value(run)/model.V[end]/calc_I1C(p)
-
-@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:AbstractMethod}, p::param) = @inbounds model.I[end]*model.V[end]*calc_I1C(p)
-@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power}, p::param) = value(run)
 
 @inline function calc_SOC(c_s_avg::AbstractVector{Float64}, p::param)
     """
     Calculate the SOC (dimensionless fraction)
     """
-    if p.numerics.solid_diffusion === :Fickian
-        c_s_avg_sum = @views @inbounds mean(c_s_avg[(p.N.p*p.N.r_p)+1:end])
-    else # c_s_avg in neg electrode
-        c_s_avg_sum = @views @inbounds mean(c_s_avg[p.N.p+1:end])
-    end
+    c_s_avg_sum = @views @inbounds mean(c_s_avg[(p.numerics.solid_diffusion === :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end])
 
-    return (c_s_avg_sum/p.θ[:c_max_n]::Float64 - p.θ[:θ_min_n]::Float64)/(p.θ[:θ_max_n]::Float64 - p.θ[:θ_min_n]::Float64) # cell-soc fraction
+    return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
 end

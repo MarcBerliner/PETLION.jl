@@ -57,7 +57,7 @@ function residuals_PET!(residuals, t, x, ẋ, method::Symbol, p::AbstractParam;
     # Residuals for ionic flux, j
     residuals_j!(res, states, p)
     
-    # Residuals for ionic flux with aging, j_s
+    # Residuals for side reaction ionic flux, j_s
     if p.numerics.aging ∈ (:SEI, :R_aging)
         residuals_j_s!(res, states, p)
     end
@@ -69,7 +69,7 @@ function residuals_PET!(residuals, t, x, ẋ, method::Symbol, p::AbstractParam;
     residuals_Φ_s!(res, states, p)
 
     # Residuals for applied current density, I
-    residuals_I_V_P!(res, states, p)
+    residuals_scalar!(res, states, p)
 
     """
     Compile all residuals together
@@ -156,14 +156,9 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     # Diffusion coefficient on the interface
     @views @inbounds first_n = D_eff_s[end]/den_n
 
-    if p.numerics.aging === :R_aging
-        @assert length(p.θ[:ϵ_n]) === p.N.n
-
-        A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] = [first_n; -(first_n+second_n); second_n]/(Δx_n*p.θ[:l_n]*p.θ[:ϵ_n][1])
-    else
-        A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] = [first_n; -(first_n+second_n); second_n]/(Δx_n*p.θ[:l_n]*p.θ[:ϵ_n])
-    end
-
+    
+    A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] = [first_n; -(first_n+second_n); second_n]/(Δx_n*p.θ[:l_n]*p.θ[:ϵ_n])
+    
     ϵ_tot = [
         ones(p.N.p).*p.θ[:ϵ_p]
         ones(p.N.s).*p.θ[:ϵ_s]
@@ -1210,11 +1205,7 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     # right now, we have -K_eff [last interior face] + K_eff (last interior
     # face)
     
-    if p.numerics.edge_values === :center
-        A_tot[end, end-1:end] .= [0.0, 1.0]
-    elseif p.numerics.edge_values === :edge
-        A_tot[end, end-1:end] .= [-1/3, 1.0]
-    end
+    A_tot[end, end-1:end] .= [0.0, 1.0]
     ## Interfaces Positive electrode [last volume of the positive]
 
     # Here we are in the last volume of the positive
@@ -1312,10 +1303,8 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     # RHS for the solid potential in the negative electrode.
     @views @inbounds f_n = (p.θ[:l_n].^2 .* Δx_n.^2 .* a_n.*F.*j.n[1:end-1])./σ_eff_n
 
-    if states[:method] ∈ (:I, :V) # The Neumann BC on the right is enforced only when operating using applied current density as the input()
-        # RHS for the solid potential in the negative electrode.
-        append!(f_n, ((p.θ[:l_n].*Δx_n.*a_n.*F.*j.n[end])+I_density).*Δx_n.*p.θ[:l_n]./σ_eff_n)
-    end
+    # RHS for the solid potential in the negative electrode.
+    append!(f_n, ((p.θ[:l_n].*Δx_n.*a_n.*F.*j.n[end])+I_density).*Δx_n.*p.θ[:l_n]./σ_eff_n)
 
     function block_matrix_Φ_s(N::Int, mat_type=Float64)
         A = zeros(mat_type, N, N)
@@ -1338,32 +1327,9 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     A_p = block_matrix_Φ_s(p.N.p, eltype(j.p))
     A_n = block_matrix_Φ_s(p.N.n, eltype(j.p))
 
-    if states[:method] === :P # Power mode
-        A_n = A_n[1:end-1,:]
-        A_n *= Φ_s.n
-        A_n .-= f_n
-
-        if p.numerics.edge_values === :center
-            Φ_s_pos_cc = Φ_s.p[1]
-            Φ_s_neg_cc = Φ_s.n[end]
-        else # 2, interpolated edges
-            Φ_s_pos_cc = 1.5*Φ_s.p[1]   - 0.5*Φ_s.p[2]
-            Φ_s_neg_cc = 1.5*Φ_s.n[end] - 0.5*Φ_s.n[end-1]
-        end
-        P = states[:P][1]
-
-        Φ_s_n_BC = P
-        Φ_s_n_BC += Φ_s_pos_cc * (σ_eff_p / (Δx_p * p.θ[:l_p]) * (Φ_s.p[2]     - Φ_s.p[1])   - p.θ[:l_p] * Δx_p * a_p * F * j.p[1])
-        Φ_s_n_BC += Φ_s_neg_cc * (σ_eff_n / (Δx_n * p.θ[:l_n]) * (Φ_s.n[end-1] - Φ_s.n[end]) - p.θ[:l_n] * Δx_n * a_n * F * j.n[end])
-
-        append!(A_n, Φ_s_n_BC)
-
-    elseif states[:method] ∈ (:I, :V) # Current or voltage modes
-        A_n *= Φ_s.n
-        A_n .-= f_n
-
-    end
-
+    A_n *= Φ_s.n
+    A_n .-= f_n
+    
     A_p *= Φ_s.p
     A_p .-= f_p
 
@@ -1372,7 +1338,7 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     return nothing
 end
 
-function residuals_I_V_P!(res, states, p::AbstractParam)
+function residuals_scalar!(res, states, p::AbstractParam)
     """
     *** THE RESIDUALS ARE HANDLED IN `fix_res!` ***
 
@@ -1385,24 +1351,10 @@ function residuals_I_V_P!(res, states, p::AbstractParam)
     equations are here is to ensure that the Jacobian has the proper
     structure even though they are unused in the actual residuals function.
     """
-
-    I = states[:I][1]
-    V = states[:V][1]
-    P = states[:P][1]
     
     res_I = res[:I]
 
-    if     states[:method] === :I
-        res_I .= I/calc_I1C(p) # - input value in `fix_res!`
-    elseif states[:method] === :V
-        res_I .= V # - input value in `fix_res!`
-    elseif states[:method] === :P
-        res_I .= P # - input value in `fix_res!`
-    end
+    res_I .= 0.0
     
     return nothing
 end
-
-
-
-

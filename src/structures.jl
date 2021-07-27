@@ -8,9 +8,10 @@ const const_Ideal_Gas = 8.31446261815324
 end
 abstract type AbstractMethod end
 
-struct run_current <: AbstractMethod end
-struct run_voltage <: AbstractMethod end
-struct run_power <: AbstractMethod end
+struct method_I   <: AbstractMethod end
+struct method_V   <: AbstractMethod end
+struct method_P   <: AbstractMethod end
+struct method_res <: AbstractMethod end
 
 abstract type AbstractRun{T<:AbstractMethod} end
 
@@ -26,16 +27,24 @@ struct run_constant{T<:AbstractMethod} <: AbstractRun{T}
     tf::Float64
     info::run_info
 end
-struct run_function{T<:AbstractMethod} <: AbstractRun{T}
-    func::Function
+struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T}
+    func::func
     value::Vector{Float64}
     method::T
     t0::Float64
     tf::Float64
     info::run_info
 end
+struct run_residual{func<:Function} <: AbstractRun{method_res}
+    func::func
+    value::Vector{Float64}
+    t0::Float64
+    tf::Float64
+    info::run_info
+end
 @inline value(run::run_constant) = run.value
 @inline value(run::run_function) = @inbounds run.value[1]
+@inline value(run::run_residual) = @inbounds run.value[1]
 
 @with_kw struct index_state <: AbstractUnitRange{Int64}
     start::Int64 = 0
@@ -54,7 +63,7 @@ struct jacobian_symbolic <: AbstractJacobian
     func::Function
     sp::SparseMatrixCSC{Float64,Int64}
 end
-(jac::jacobian_symbolic)(x...) = jac.func(x...)
+#(jac::jacobian_symbolic)(x...) = jac.func(x...)
 
 struct res_FD
     f!::Function
@@ -71,6 +80,39 @@ end
 @inline function (jac::jacobian_AD)(J::R1, u::R2, x...) where {R1<:SparseMatrixCSC{Float64,Int64}, R2<:Vector{Float64}}
     forwarddiff_color_jacobian!(J, jac.f!, u, jac.jac_cache)
 end
+
+struct jacobian_combined{
+    T1<:Function,
+    T2<:Union{SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false},SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}},
+    T3<:Function
+    }
+
+    sp::SparseMatrixCSC{Float64,Int64}
+    base_func::T1
+    J_base::T2
+    scalar_func::T3
+    J_scalar::SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}
+    scalar_contains_differential::Bool
+end
+
+@inline function (J::jacobian_combined{T1,T2,T3})(t::Float64,Y::T,YP::T,γ::Float64,θ_tot::T) where {T<:Vector{Float64},T1<:Function,T2,T3<:Function}
+    J.base_func(J.J_base,t,Y,YP,γ,θ_tot)
+    J.scalar_func(J.J_scalar,t,Y,YP,γ,θ_tot)
+    return nothing
+end
+struct residuals_combined{
+    T1<:Function,
+    T2<:Function
+    }
+    base_func::T1
+    scalar_func::T2
+end
+@inline function (R::residuals_combined{T1,T2})(res::T,t::Float64,Y::T,YP::T,θ_tot::T) where {T<:Vector{Float64},T1<:Function,T2<:Function}
+    R.base_func(res,t,Y,YP,θ_tot)
+    @inbounds res[end] = R.scalar_func(t,Y,YP,θ_tot)
+    return nothing
+end
+
 
 struct init_newtons_method{T}
     f_alg!::Function
@@ -168,7 +210,6 @@ struct options_numerical
     solid_diffusion::Symbol
     Fickian_method::Symbol
     aging::Union{Bool,Symbol}
-    edge_values::Symbol
     jacobian::Symbol
 end
 
@@ -256,7 +297,7 @@ Base.firstindex(::T) where T<:model_output = 1
 abstract type AbstractParam end
 
 struct param{T<:AbstractJacobian} <: AbstractParam
-    θ::Dict{Symbol,Union{Float64,Vector{Float64}}}
+    θ::Dict{Symbol,Float64}
     numerics::options_numerical
     N::discretizations_per_section
     ind::indices_states
@@ -361,7 +402,6 @@ function Base.show(io::IO, p::AbstractParam)
     p.numerics.solid_diffusion === :Fickian ? 
     ", $(p.numerics.Fickian_method)\n" : "\n",
     "  Aging:           $(p.numerics.aging)\n",
-    "  Edge values:     $(p.numerics.edge_values)\n" ,
     show_bounds("Voltage", p.bounds.V_min, p.bounds.V_max, " V"),
     show_bounds("SOC", p.bounds.SOC_min, p.bounds.SOC_max),
     show_bounds("Current", p.bounds.I_min, p.bounds.I_max, "C"),
@@ -419,21 +459,22 @@ function Base.show(io::IO, ind::indices_states)
     
     print(io, join(str, "\n"))
 end
-method_symbol(::Type{run_current}) = :I
-method_symbol(::Type{run_voltage}) = :V
-method_symbol(::Type{run_power})   = :P
+method_symbol(::Type{method_I}) = :I
+method_symbol(::Type{method_V}) = :V
+method_symbol(::Type{method_P})   = :P
 
-method_name(::run_constant{run_current};  shorthand::Bool=false) = shorthand ? "I"      : "current"
-method_name(::run_constant{run_voltage};  shorthand::Bool=false) = shorthand ? "V"      : "voltage"
-method_name(::run_constant{run_power};    shorthand::Bool=false) = shorthand ? "P"      : "power"
-method_name(::run_function{run_current};  shorthand::Bool=false) = shorthand ? "I func" : "current function"
-method_name(::run_function{run_voltage};  shorthand::Bool=false) = shorthand ? "V func" : "voltage function"
-method_name(::run_function{run_power};    shorthand::Bool=false) = shorthand ? "P func" : "power function"
+method_name(::run_constant{method_I};            shorthand::Bool=false) = shorthand ? "I"      : "current"
+method_name(::run_constant{method_V};            shorthand::Bool=false) = shorthand ? "V"      : "voltage"
+method_name(::run_constant{method_P};            shorthand::Bool=false) = shorthand ? "P"      : "power"
+method_name(::run_function{method_I,<:Function}; shorthand::Bool=false) = shorthand ? "I func" : "current function"
+method_name(::run_function{method_V,<:Function}; shorthand::Bool=false) = shorthand ? "V func" : "voltage function"
+method_name(::run_function{method_P,<:Function}; shorthand::Bool=false) = shorthand ? "P func" : "power function"
+method_name(::run_residual;                      shorthand::Bool=false) = shorthand ? "I res"  : "current residual"
 
-method_string(run::run_constant{run_current}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(C_rate_string(value(run);digits=2))"
-method_string(run::run_constant{run_voltage}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) V"
-method_string(run::run_constant{run_power};   shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) W"
-method_string(run::run_function{<:AbstractMethod}; kw...) = method_name(run;kw...)
+method_string(run::run_constant{method_I}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(C_rate_string(value(run);digits=2))"
+method_string(run::run_constant{method_V}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) V"
+method_string(run::run_constant{method_P};   shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) W"
+method_string(run::Union{run_residual,run_function}; kw...) = method_name(run;kw...)
 
 function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
     run = result.run

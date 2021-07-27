@@ -98,8 +98,6 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     Fickian_method = :finite_difference,
     # (false) off, (:SEI) SEI resistance, (:R_aging) constant film
     aging = false,
-    # The voltage can be evaluated either at the (:center) center of the finite volume or (:edge) the edge of the finite volume
-    edge_values =  :center,
     # (true) symbolic Jacobian, (false) automatic differenation Jacobian
     jacobian = :symbolic,
     ### User-defined functions in `numerics` ###
@@ -191,7 +189,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     
     #### DO NOT MODIFY BELOW ###
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
-    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, temperature, solid_diffusion, Fickian_method, aging, edge_values, jacobian)
+    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, temperature, solid_diffusion, Fickian_method, aging, jacobian)
     
     return θ, bounds, opts, N, numerics, methods
 end
@@ -294,8 +292,6 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     Fickian_method = :finite_difference,
     # (false) off, (:SEI) SEI resistance, (:R_aging) constant film
     aging =  false,
-    # The voltage can be evaluated either at the (:center) center of the finite volume or (:edge) the edge of the finite volume
-    edge_values =  :center,
     # (true) symbolic Jacobian, (false) automatic differenation Jacobian
     jacobian = :symbolic,
     ### User-defined functions in `numerics` ###
@@ -387,7 +383,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     
     #### DO NOT MODIFY BELOW ###
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
-    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, temperature, solid_diffusion, Fickian_method, aging, edge_values, jacobian)
+    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, temperature, solid_diffusion, Fickian_method, aging, jacobian)
     
     return θ, bounds, opts, N, numerics, methods
 end
@@ -398,7 +394,7 @@ function Params(;
     kwargs... # keyword arguments for θ_System
     )
     
-    θ = Dict{Symbol,Union{Float64,Vector{Float64}}}()
+    θ = Dict{Symbol,Float64}()
     funcs = _funcs_numerical()
 
     cathode(θ, funcs)
