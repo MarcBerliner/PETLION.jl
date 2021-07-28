@@ -30,9 +30,7 @@ end
 
 function build_I_V_P!(states, p::AbstractParam)
     """
-    If the model is using current or voltage, build the voltage.
-    If the model is using power, the input `I` is really the power input. The state `I` must be 
-    redefined to be I = P/V
+    Define the current, voltage, and power.
     """
 
     Φ_s = states[:Φ_s]
@@ -176,7 +174,7 @@ function build_η!(states, p::AbstractParam)
     if haskey(p.θ, :R_film_n)
         η_n .+= -j.n.*p.θ[:R_film_n]
     end
-
+    
     if     p.numerics.aging === :SEI
         η_n .+= @. - F*j.n*(p.θ[:R_SEI] + film/p.θ[:k_n_aging])
     elseif p.numerics.aging === :R_aging
@@ -518,14 +516,15 @@ function limiting_electrode(p::AbstractParam)
     end
 end
 
-@inline function calc_I1C(p::AbstractParam)
+@inline calc_I1C(p::AbstractParam) = calc_I1C(p.θ)
+@inline function calc_I1C(θ::Dict{Symbol,T}) where T<:Union{Float64,Any}
     """
     Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
     """
     F = 96485.3365
-    θ = p.θ
 
-    ϵ_sp, ϵ_sn = active_material(p)
+    ϵ_sp = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
+    ϵ_sn = 1.0 - (θ[:ϵ_fn] + θ[:ϵ_n])
 
     I1C = (F/3600.0)*min(
         ϵ_sp*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]),

@@ -15,13 +15,9 @@ struct method_res <: AbstractMethod end
 
 abstract type AbstractRun{T<:AbstractMethod} end
 
-struct method_and_value{Q<:AbstractMethod,T<:Union{Number,Symbol,Nothing,Function}}
-    method::Q
-    value::T
-end
-
 struct run_constant{T<:AbstractMethod} <: AbstractRun{T}
-    value::Float64
+    input::Union{Number,Symbol,Function}
+    value::Vector{Float64}
     method::T
     t0::Float64
     tf::Float64
@@ -42,9 +38,7 @@ struct run_residual{func<:Function} <: AbstractRun{method_res}
     tf::Float64
     info::run_info
 end
-@inline value(run::run_constant) = run.value
-@inline value(run::run_function) = @inbounds run.value[1]
-@inline value(run::run_residual) = @inbounds run.value[1]
+@inline value(run::AbstractRun) = @inbounds run.value[1]
 
 @with_kw struct index_state <: AbstractUnitRange{Int64}
     start::Int64 = 0
@@ -84,35 +78,40 @@ end
 struct jacobian_combined{
     T1<:Function,
     T2<:Union{SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false},SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}},
-    T3<:Function
+    T3<:Function,
     }
-
     sp::SparseMatrixCSC{Float64,Int64}
     base_func::T1
     J_base::T2
     scalar_func::T3
     J_scalar::SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}
-    scalar_contains_differential::Bool
+    θ_tot::Vector{Float64}
+    θ_keys::Vector{Symbol}
 end
+Base.getindex(J::jacobian_combined,i...) = getindex(J.sp,i...)
+Base.axes(J::jacobian_combined,i...) = axes(J.sp,i...)
 
-@inline function (J::jacobian_combined{T1,T2,T3})(t::Float64,Y::T,YP::T,γ::Float64,θ_tot::T) where {T<:Vector{Float64},T1<:Function,T2,T3<:Function}
-    J.base_func(J.J_base,t,Y,YP,γ,θ_tot)
-    J.scalar_func(J.J_scalar,t,Y,YP,γ,θ_tot)
-    return nothing
-end
-struct residuals_combined{
+struct residual_combined{
     T1<:Function,
-    T2<:Function
+    T2<:Function,
+    T3<:Function,
     }
-    base_func::T1
-    scalar_func::T2
+    f_diff!::T1
+    f_alg!::T2
+    f_scalar!::T3
+    ind_diff::UnitRange{Int64}
+    ind_alg::UnitRange{Int64}
+    θ_tot::Vector{Float64}
+    θ_keys::Vector{Symbol}
 end
-@inline function (R::residuals_combined{T1,T2})(res::T,t::Float64,Y::T,YP::T,θ_tot::T) where {T<:Vector{Float64},T1<:Function,T2<:Function}
-    R.base_func(res,t,Y,YP,θ_tot)
-    @inbounds res[end] = R.scalar_func(t,Y,YP,θ_tot)
-    return nothing
+struct Jac_and_res
+    J_full::jacobian_combined
+    R_full::residual_combined
+    J_alg::jacobian_combined
+    R_diff::residual_combined
+    R_alg::residual_combined
+    int::Vector{Sundials.IDAIntegrator}
 end
-
 
 struct init_newtons_method{T}
     f_alg!::Function
@@ -129,7 +128,6 @@ struct functions_model{T<:AbstractJacobian}
     initial_guess!::Function
     J_y!::T
     initial_conditions::init_newtons_method{T}
-    update_θ!::RuntimeFn
     int::Vector{Sundials.IDAIntegrator}
 end
 
@@ -241,26 +239,28 @@ indices_states = model_states{
     tstops::Vector{Float64} = Float64[]
     tdiscon::Vector{Float64} = Float64[]
     interp_bc::Symbol = :interpolate
-    warm_start::Bool = false
+    save_start::Bool = false
     var_keep::states_logic = model_states_logic()
 end
 
-struct warm_start_info{T<:AbstractMethod}
+struct save_start_info{T<:AbstractMethod}
     method::T
     SOC::Float64 # rounded to 3rd decimal place
     I::Float64 # rounded to 3rd decimal place
 end
 
 struct cache_run
-    θ_tot::ImmutableDict{Symbol,Vector{Float64}}
-    θ_keys::ImmutableDict{Symbol,Vector{Symbol}}
+    θ_tot::Vector{Float64}
+    θ_keys::Vector{Symbol}
     cache_name::String
     state_labels::Vector{Symbol}
     vars::Tuple
     outputs_tot::Tuple
-    warm_start_dict::Dict{warm_start_info,Vector{Float64}}
+    save_start_dict::Dict{save_start_info,Vector{Float64}}
     Y0::Vector{Float64}
     YP0::Vector{Float64}
+    res::Vector{Float64}
+    Y_alg::Vector{Float64}
     id::Vector{Int64}
     constraints::Vector{Int64}
 end
@@ -296,6 +296,12 @@ Base.firstindex(::T) where T<:model_output = 1
 
 abstract type AbstractParam end
 
+@with_kw struct method_functions
+    Dict_constant::Dict{DataType,Jac_and_res}                = Dict{DataType,Jac_and_res}()
+    Dict_function::Dict{DataType,Dict{DataType,Jac_and_res}} = Dict{DataType,Dict{DataType,Jac_and_res}}()
+    Dict_residual::Dict{DataType,Jac_and_res}                = Dict{DataType,Jac_and_res}()
+end
+
 struct param{T<:AbstractJacobian} <: AbstractParam
     θ::Dict{Symbol,Float64}
     numerics::options_numerical
@@ -304,8 +310,8 @@ struct param{T<:AbstractJacobian} <: AbstractParam
     opts::options_model
     bounds::boundary_stop_conditions
     cache::cache_run
-    funcs::ImmutableDict{Symbol,functions_model{T}}
-    model_methods::Tuple
+    funcs::functions_model{T}
+    method_functions::method_functions
 end
 
 struct param_no_funcs <: AbstractParam

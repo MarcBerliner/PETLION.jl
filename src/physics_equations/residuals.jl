@@ -1,11 +1,6 @@
-function residuals_PET!(residuals, t, x, ẋ, method::Symbol, p::AbstractParam;
+function residuals_PET!(residuals, t, x, ẋ, p::AbstractParam;
     symbolic = true, # PLACEHOLDER - NOT CURRENTLY USED
     )
-
-    """
-    Ensure the `method` that's specified is in the list of appropriate methods
-    """
-    check_appropriate_method(method)
     
     """
     First put the vector of x's, ẋ's, and residuals into dictionaries
@@ -15,7 +10,6 @@ function residuals_PET!(residuals, t, x, ẋ, method::Symbol, p::AbstractParam;
     res = retrieve_states(residuals, p)
 
     states[:t] = t
-    states[:method] = method
     states[:symbolic] = symbolic
 
     """

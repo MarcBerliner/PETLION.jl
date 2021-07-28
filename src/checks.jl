@@ -127,26 +127,31 @@ function get_corrected_methods(methods)
     return methods
 end
 
-@inline function get_method(I::current, V::voltage, P::power) where {
-    current <: Union{Number,Symbol,Nothing,Function},
-    voltage <: Union{Number,Symbol,Nothing,Function},
-    power   <: Union{Number,Symbol,Nothing,Function},
+@inline function get_run(I::current, V::voltage, P::power, res::residual, t0, tspan) where {
+    current  <: Union{Number,Symbol,Function,Nothing},
+    voltage  <: Union{Number,Symbol,Function,Nothing},
+    power    <: Union{Number,Symbol,Function,Nothing},
+    residual <: Union{Function,Nothing},
     }
 
-    if !( sum(!(method === Nothing) for method in (current,voltage,power)) === 1 )
+    if !( sum(!(method === Nothing) for method in (current,voltage,power,residual)) === 1 )
         error("Cannot select more than one input")
     end
 
-    if     !isnothing(I)
-        method, value = method_I(), I
-    elseif !isnothing(V)
-        method, value = method_V(), V
-    elseif !isnothing(P)
-        method, value = method_P(), P
+    if     !(current === Nothing)
+        method, input = method_I(), I
+    elseif !(voltage === Nothing)
+        method, input = method_V(), V
+    elseif !(power === Nothing)
+        method, input = method_P(), P
+    elseif !(residual === Nothing)
+        method, input = method_res(), res
     else
         error("Method not supported")
     end
-    return method_and_value(method, value)
+    run = run_determination(method, input, t0, tspan)
+
+    return run
 end
 
 check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
@@ -166,7 +171,7 @@ check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
     end
 end
 
-@inline function check_solve(run::run_constant, model::R1, int::R2, p::R3, bounds::R4, opts::R5, container::R6, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
+@inline function check_solve(run::run_constant, model::R1, int::R2, p, bounds, opts::R5, method_funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
     if t === int.tprev
         error("Model failed to converge at t = $(t)")
     elseif iter === opts.maxiters
@@ -225,14 +230,13 @@ end
     return nothing
 end
 
-@inline function check_errors_parameters_runtime(p::R1,opts::R2,tspan::R3) where {R1<:param,R2<:options_model,R3<:Union{Number,AbstractArray,Nothing}}
+@inline function check_errors_parameters_runtime(p::R1,opts::R2) where {R1<:param,R2<:options_model}
     ϵ_sp, ϵ_sn = active_material(p)
 
     if ( ϵ_sp > 1 ) error("ϵ_p + ϵ_fp must be ∈ [0, 1)") end
     if ( ϵ_sn > 1 ) error("ϵ_n + ϵ_fn must be ∈ [0, 1)") end
-    if ( p.θ[:θ_max_p]::Float64 > p.θ[:θ_min_p]::Float64 ) error("θ_max_p must be < θ_min_p") end
-    if ( p.θ[:θ_min_n]::Float64 > p.θ[:θ_max_n]::Float64 ) error("θ_min_n must be < θ_max_n") end
-    if ( R3 === Nothing && !opts.check_bounds ) error("Must specify a tspan when `check_bounds = false`") end
+    if ( p.θ[:θ_max_p] > p.θ[:θ_min_p] ) error("θ_max_p must be < θ_min_p") end
+    if ( p.θ[:θ_min_n] > p.θ[:θ_max_n] ) error("θ_min_n must be < θ_max_n") end
 
     return nothing
 end

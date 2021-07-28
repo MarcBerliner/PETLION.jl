@@ -183,7 +183,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     opts.tstops = Float64[]
     opts.tdiscon = Float64[]
     opts.interp_bc = :interpolate
-    opts.warm_start = false
+    opts.save_start = false
 
 
     
@@ -377,7 +377,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     opts.tstops = Float64[]
     opts.tdiscon = Float64[]
     opts.interp_bc = :interpolate
-    opts.warm_start = false
+    opts.save_start = false
 
 
     

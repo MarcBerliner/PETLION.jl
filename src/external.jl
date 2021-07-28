@@ -19,11 +19,7 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
     _p = param_no_funcs(θ_any, numerics, N, ind, opts, bounds, cache)
     
     funcs = load_functions(_p)
-
-    # update θ
-    @inbounds for method in (:I,)#methods
-        funcs[method].update_θ!(cache.θ_tot[method], θ)
-    end
+    method_funcs = method_functions()
     
     ## Real params with functions and methods
     p = param(
@@ -35,7 +31,7 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
         bounds,
         cache,
         funcs,
-        methods,
+        method_funcs,
     )
     return p
 end
@@ -97,18 +93,18 @@ function build_cache(θ, ind, N, numerics, opts, methods)
         
         return labels
     end
-    
-    θ_tot = ImmutableDict{Symbol,Vector{Float64}}()
-    θ_keys = ImmutableDict{Symbol,Vector{Symbol}}()
 
-    @inbounds for method in methods
-        θ_tot = ImmutableDict(θ_tot,  method => Float64[])
-        θ_keys = ImmutableDict(θ_keys, method => Symbol[])
-    end
+    θ_tot =  Float64[]
+    θ_keys =  Symbol[]
 
     vars = variables_in_indices()
     
     opts.var_keep = model_states_logic(opts.outputs, outputs_tot)
+
+    Y0 = zeros(Float64, N.tot)
+    YP0 = zeros(Float64, N.tot)
+    res = zeros(Float64, N.alg)
+    Y_alg = zeros(Float64, N.alg)
     
     id = [
         ones(Int64, N.diff)
@@ -119,7 +115,7 @@ function build_cache(θ, ind, N, numerics, opts, methods)
     constraints = zeros(Int64, N.tot)
     constraints[ind.Φ_s] .= 1 # enforce positivity on solid phase potential in all nodes
     
-    warm_start_dict = Dict{warm_start_info,Vector{Float64}}()
+    save_start_dict = Dict{save_start_info,Vector{Float64}}()
 
     cache = cache_run(
         θ_tot,
@@ -128,9 +124,11 @@ function build_cache(θ, ind, N, numerics, opts, methods)
         variable_labels(),
         vars,
         outputs_tot,
-        warm_start_dict,
-        zeros(Float64, N.tot),
-        zeros(Float64, N.tot),
+        save_start_dict,
+        Y0,
+        YP0,
+        res,
+        Y_alg,
         id,
         constraints,
         )
