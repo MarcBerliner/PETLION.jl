@@ -1,5 +1,5 @@
 @inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6;
-    modify!::Function=set_var!,
+    modify!::R7=set_var!,
     init_all::Bool=false
     ) where {
         R1<:model_output,
@@ -7,7 +7,8 @@
         R3<:Vector{Float64},
         R4<:Float64,
         R5<:AbstractRun,
-        R6<:options_model
+        R6<:options_model,
+        R7<:Function,
         }
     """
     Sets all the outputs for the model. There are three kinds of variable outputs:

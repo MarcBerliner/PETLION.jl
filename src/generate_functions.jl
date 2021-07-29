@@ -18,13 +18,13 @@ function load_functions(p::AbstractParam)
     Y0_diff = zeros(Float64, p.N.diff)
     
     ## Begin loading functions
-    initial_guess!, f!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys = load_func(p, Y0_diff)
+    initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys = load_func(p, Y0_diff)
 
     append!(p.cache.θ_keys, θ_keys)
     append!(p.cache.θ_tot,  zeros(length(θ_keys)))
 
     initial_conditions = init_newtons_method(f_alg!, J_y_alg!, f_diff!, Y0_alg, Y0_alg_prev, Y0_diff, res)
-    funcs = functions_model{jac_type}(f!, initial_guess!, J_y!, initial_conditions, Sundials.IDAIntegrator[])
+    funcs = functions_model{jac_type}(initial_guess!, J_y!, initial_conditions)
     
     return funcs
 end
@@ -36,7 +36,6 @@ function load_functions_symbolic(p::AbstractParam, YP_cache=nothing)
     if files_exist && options[:SAVE_SYMBOLIC_FUNCTIONS]
         ## residuals
         initial_guess! = include(dir * "initial_guess.jl")
-        f!             = include(dir * "f.jl")
         f_alg!         = include(dir * "f_alg.jl")
         f_diff!        = include(dir * "f_diff.jl")
         J_y!_func      = include(dir * "J_y.jl")
@@ -45,10 +44,9 @@ function load_functions_symbolic(p::AbstractParam, YP_cache=nothing)
         ## Jacobian
         @load dir * "J_sp.jl" J_y_sp θ_keys
     else
-        Y0Func,resFunc,res_algFunc,res_diffFunc,jacFunc,jac_algFunc,J_y_sp,θ_keys = generate_functions_symbolic(p)
+        Y0Func,res_algFunc,res_diffFunc,jacFunc,jac_algFunc,J_y_sp,θ_keys = generate_functions_symbolic(p)
         
         initial_guess! = eval(Y0Func)
-        f!             = eval(resFunc)
         f_alg!         = eval(res_algFunc)
         f_diff!        = eval(res_diffFunc)
         J_y!_func      = eval(jacFunc)
@@ -61,7 +59,7 @@ function load_functions_symbolic(p::AbstractParam, YP_cache=nothing)
     J_y!     = jacobian_symbolic(J_y!_func, J_y!_sp)
     J_y_alg! = jacobian_symbolic(J_y_alg!_func, J_y_alg!_sp)
 
-    return initial_guess!, f!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys
+    return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys
 end
 
 function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
@@ -85,7 +83,6 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
     
     Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false)[2]
-    resFunc = build_function(res, t_sym, Y_sym, YP_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
 
     ## jacobian
     println_v("Making symbolic Jacobian. May take a few mins")
@@ -104,7 +101,6 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
         dir = strings_directory_func(p; create_dir=true) * "/"
         
         write(dir * "initial_guess.jl", string(Y0Func))
-        write(dir * "f.jl",             string(resFunc))
         write(dir * "J_y.jl",           string(jacFunc))
         write(dir * "f_alg.jl",         string(res_algFunc))
         write(dir * "J_y_alg.jl",       string(jac_algFunc))
@@ -115,7 +111,7 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
 
     println_v("Finished\n")
 
-    return Y0Func, resFunc, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys
+    return Y0Func, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys
 end
 
 function load_functions_forward_diff(p::AbstractParam, YP_cache::Vector{Float64})
@@ -170,7 +166,7 @@ function load_functions_forward_diff(p::AbstractParam, YP_cache::Vector{Float64}
     @assert size(J_y!.sp) === (p.N.tot,p.N.tot)
     @assert size(J_y_alg!.sp) === (p.N.alg,p.N.alg)
 
-    return initial_guess!, f!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys_slim
+    return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys_slim
 end
 
 function _symbolic_initial_guess(p::AbstractParam, SOC_sym, θ_sym, X_applied)

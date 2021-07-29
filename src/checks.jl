@@ -127,33 +127,6 @@ function get_corrected_methods(methods)
     return methods
 end
 
-@inline function get_run(I::current, V::voltage, P::power, res::residual, t0, tspan) where {
-    current  <: Union{Number,Symbol,Function,Nothing},
-    voltage  <: Union{Number,Symbol,Function,Nothing},
-    power    <: Union{Number,Symbol,Function,Nothing},
-    residual <: Union{Function,Nothing},
-    }
-
-    if !( sum(!(method === Nothing) for method in (current,voltage,power,residual)) === 1 )
-        error("Cannot select more than one input")
-    end
-
-    if     !(current === Nothing)
-        method, input = method_I(), I
-    elseif !(voltage === Nothing)
-        method, input = method_V(), V
-    elseif !(power === Nothing)
-        method, input = method_P(), P
-    elseif !(residual === Nothing)
-        method, input = method_res(), res
-    else
-        error("Method not supported")
-    end
-    run = run_determination(method, input, t0, tspan)
-
-    return run
-end
-
 check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
 
 @inline function instant_hit_bounds(model::model_output, opts::options_model)
@@ -187,7 +160,7 @@ end
     end
 end
 
-@inline function check_solve(run::run_function, model::R1, int::R2, p::R3, bounds::R4, opts::R5, container::R6, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output, R2<:Sundials.IDAIntegrator,R3<:param,R4<:boundary_stop_conditions,R5<:options_model, R6<:run_container}
+@inline function check_solve(run::run_constant, model::R1, int::R2, p::param, bounds::boundary_stop_conditions, opts::R5, method_funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
     if iter === opts.maxiters
         error("Reached max iterations of $(opts.maxiters) at t = $(int.t)")
     elseif within_bounds(run)
@@ -197,7 +170,7 @@ end
         
         # check to see if the run needs to be reinitialized
         if t - int.tprev < 1e-3opts.reltol
-            check_reinitialization!(model, int, run, p, bounds, opts, container)
+            check_reinitialization!(model, int, run, p, bounds, opts)
         end
 
         return true
@@ -206,7 +179,7 @@ end
     end
 end
 
-@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, container::R7) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model,R7<:run_container}
+@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
     """
     Checking the current function for discontinuities.
     If there is a significant change in current after a step size of dt = reltol,
@@ -223,7 +196,7 @@ end
         @inbounds Y[p.ind.I] .= value_new
         YP = int.du.v
         
-        initialize_states!(p, Y, YP, run, opts, container, @inbounds model.SOC[end])
+        initialize_states!(p, Y, YP, run, opts, @inbounds model.SOC[end])
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
     end

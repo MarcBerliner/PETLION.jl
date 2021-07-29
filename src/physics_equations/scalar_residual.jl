@@ -1,4 +1,4 @@
-@inline calc_V(Y::Vector{<:Number}, p::AbstractParam, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}} = @inbounds Y[ind_Φ_s[1]] - Y[ind_Φ_s[end]]
+@inline calc_V(Y::Vector{<:Number}, p::AbstractParam) = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
 @inline calc_I(Y::Vector{<:Number}, p::AbstractParam) = @inbounds Y[end]
 @inline calc_P(Y::Vector{<:Number}, p::AbstractParam) = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
 
@@ -6,13 +6,9 @@
 @inline method_V(Y, p) = calc_V(Y,p)
 @inline method_P(Y, p) = calc_P(Y,p)
 
-@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::param,run::run_constant{method}) where {method<:AbstractMethod,T1<:Float64,T2<:Vector{T1}} = @inbounds (res[end] = method(Y,p) - value(run))
-@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::param,run::run_function{method,func}) where {method<:AbstractMethod,T1<:Float64,T2<:Vector{T1},func<:Function} = @inbounds (res[end] = method(Y,p) - run.func(t,Y,YP,p))
-@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::param,run::run_residual{func}) where {T1<:Float64,T2<:Vector{T1},func<:Function} = @inbounds (res[end] = run.func(t,Y,YP,p))
-
-@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::AbstractParam,run::run_constant{method}) where {method<:AbstractMethod,T1<:Num,T2<:Vector{T1}} = @inbounds (res[end] = method(Y,p) - value(run))
-@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::AbstractParam,run::run_function{method,func}) where {method<:AbstractMethod,T1<:Num,T2<:Vector{T1},func<:Function} = @inbounds (res[end] = method(Y,p) - run.func(t,Y,YP,p))
-@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::AbstractParam,run::run_residual{func}) where {T1<:Num,T2<:Vector{T1},func<:Function} = @inbounds (res[end] = run.func(t,Y,YP,p))
+@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::AbstractParam,run::run_constant{method}) where {method<:AbstractMethod,T1<:Number,T2<:Vector{T1}} = @inbounds (res[end] = method(Y,p) - value(run))
+@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::AbstractParam,run::run_function{method,func}) where {method<:AbstractMethod,T1<:Number,T2<:Vector{T1},func<:Function} = @inbounds (res[end] = method(Y,p) - run.func(t,Y,YP,p))
+@inline scalar_residual!(res::T2,t::T1,Y::T2,YP::T2,p::AbstractParam,run::run_residual{func}) where {T1<:Number,T2<:Vector{T1},func<:Function} = @inbounds (res[end] = run.func(t,Y,YP,p))
 
 SM_nzval = SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}
 @inline @inbounds function scalar_jacobian!(J::SM_nzval,::T1,Y::T2,::T2,γ::T1,p::param,::run_constant{method_I}) where {T1<:Float64,T2<:Vector{T1}}
@@ -25,10 +21,12 @@ end
     return nothing
 end
 @inline @inbounds function scalar_jacobian!(J::SM_nzval,::T1,Y::T2,::T2,γ::T1,p::param,::run_constant{method_P}) where {T1<:Float64,T2<:Vector{T1}}
-    I = calc_I(Y,p)*p.θ[:I1C]
+    I1C = p.θ[:I1C]
+    I = calc_I(Y,p)*I1C
+    V = calc_V(Y,p)
     J[1] = I
     J[2] = -I
-    J[3] = calc_V(Y,p)
+    J[3] = V*I1C
     return nothing
 end
 

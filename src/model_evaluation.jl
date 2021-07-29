@@ -81,14 +81,6 @@ end
 
 @inline within_bounds(run::AbstractRun) = run.info.flag === -1
 
-struct run_container{T1<:AbstractJacobian,T2<:AbstractRun,T3<:Function}
-    p::param{T1}
-    funcs::functions_model{T1}
-    run::T2
-    residuals!::T3
-    Jacobian!::T1
-    θ_tot::Vector{Float64}
-end
 @inline function initialize_model!(model::model_struct, p::param, run::T, bounds::boundary_stop_conditions, opts::options_model) where {T<:AbstractRun,model_struct<:Union{model_output,Vector{Float64}}}
     if !haskey(p.method_functions,run)
         get_method_funcs!(p,run)
@@ -126,7 +118,7 @@ end
         SOC = @inbounds model.SOC[end]
     end
 
-    @inbounds Y0[p.ind.I] .= run.value .= run.input
+    run.value .= run.input
 
     ## getting the DAE integrator function
     initialize_states!(p,Y0,YP0,run,opts,method_funcs,SOC)
@@ -140,7 +132,7 @@ end
     return int, method_funcs, model
 end
 
-@inline function retrieve_integrator(run, p::param, method_funcs::T, Y0, YP0, opts::options_model) where T<:Jac_and_res
+@inline function retrieve_integrator(run, p::param, method_funcs::Jac_and_res{T}, Y0, YP0, opts::options_model) where {T<:Sundials.IDAIntegrator}
     """
     If the model has previously been evaluated for a constant run simulation, you can reuse
     the integrator function with its cache instead of creating a new one
@@ -151,6 +143,7 @@ end
     else
         # reuse the integrator cache
         int = @inbounds method_funcs.int[1]
+        @inbounds int.p.value .= run.value
 
         # reinitialize at t = 0 with new Y0/YP0 and tolerances
         Sundials.IDASStolerances(int.mem, opts.reltol, opts.abstol)
@@ -168,12 +161,12 @@ end
     R_full = method_funcs.R_full
     J_full = method_funcs.J_full
     DAEfunc = DAEFunction(
-        (res,YP,Y,extra,t) -> R_full(res,t,Y,YP,p,run);
-        jac = (J,YP,Y,extra,γ,t) -> J_full(J,t,Y,YP,γ,p,run),
+        (res,YP,Y,run,t) -> R_full(res,t,Y,YP,p,run);
+        jac = (J,YP,Y,run,γ,t) -> J_full(J,t,Y,YP,γ,p,run),
         jac_prototype = J_full.sp,
     )
 
-    prob = DAEProblem(DAEfunc, YP0, Y0, (0.0, run.tf), J_full.θ_tot, differential_vars=p.cache.id)
+    prob = DAEProblem(DAEfunc, YP0, Y0, (0.0, run.tf), run, differential_vars=p.cache.id)
 
     int = DiffEqBase.init(prob, Sundials.IDA(linear_solver=:KLU), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
 
@@ -217,24 +210,6 @@ end
     end
     
     run.info.iterations = iter
-    return nothing
-end
-
-# residuals for DAE with a run function
-@inline function f!(res::R1, du::R1, u::R1, θ_tot::R1, t::E, container::run_container{T,<:AbstractRun}) where {T<:AbstractJacobian,E<:Float64,R1<:Vector{E}}
-    p = container.p
-    run = container.run
-    
-    container.residuals!(res,t,u,du,θ_tot)
-
-    scalar_residual!(res,t,u,du,p,run)
-
-    return nothing
-end
-
-# Jacobian for DAE with a run function
-@inline function g!(::S, du::R1, u::R1, θ_tot::R1, γ::E, t::E, container::run_container{T,<:AbstractRun}) where {T<:jacobian_symbolic,E<:Float64,R1<:Vector{E},S<:SparseMatrixCSC{E,Int64}}
-    container.Jacobian!(t,u,du,γ,θ_tot)
     return nothing
 end
 
@@ -345,21 +320,59 @@ end
     return nothing
 end
 
-@inline function run_determination(method::AbstractMethod,input::Any,t0::Float64,tspan::Q) where {Q}
-    value = [0.0]
-    tf = Q === Nothing ? 1e6 : (@inbounds Float64(tspan[end]))
+@inline function get_run(I::current, V::voltage, P::power, res::residual, t0, tspan::Q) where {
+    current  <: Union{Number,Symbol,Function,Nothing},
+    voltage  <: Union{Number,Symbol,Function,Nothing},
+    power    <: Union{Number,Symbol,Function,Nothing},
+    residual <: Union{Function,Nothing},
+    Q,
+    }
 
-    return run_constant(input, value, method, t0, tf, run_info())
+    if !( sum(!(method === Nothing) for method in (current,voltage,power,residual)) === 1 )
+        error("Cannot select more than one input")
+    end
+
+    if     !(current === Nothing)
+        method, input = method_I(), I
+    elseif !(voltage === Nothing)
+        method, input = method_V(), V
+    elseif !(power === Nothing)
+        method, input = method_P(), P
+    elseif !(residual === Nothing)
+        method, input = method_res(), res
+    else
+        error("Method not supported")
+    end
+
+    value = [0.0]
+    tf = (Q === Nothing ? 1e6 : (@inbounds Float64(tspan[end])))
+    
+    run_type = run_determination(method, input)
+    run      = run_type(input,value,method,t0,tf,run_info())
+
+    return run
 end
-@inline function run_determination(method::AbstractMethod,func::Function,t0::Float64, tspan::Q) where {Q}
-    value = [0.0]
-    tf = Q === Nothing ? 1e6 : (@inbounds Float64(tspan[end]))
 
-    return run_function(func, value, method, t0, tf, run_info())
+@inline run_determination(::AbstractMethod,::Any)      = run_constant
+@inline run_determination(::AbstractMethod,::Function) = run_function
+@inline run_determination(::method_res,::Function)     = run_residual
+
+@inline function _initial_current!(Y0::Vector{Float64},p::param,run::run_constant{method},model::model_output) where method<:method_I
+    if method isa method_I
+        @inbounds Y0[p.ind.I] .= run.input
+    elseif method isa method_V
+        @inbounds Y0[p.ind.I] .= run.input
+    elseif method isa method_P
+        @inbounds Y0[p.ind.I] .= run.input/calc_V(Y0,p)
+    end
 end
-@inline function run_determination(::method_res,func::Function,t0::Float64, tspan::Q) where {Q}
-    value = [0.0]
-    tf = Q === Nothing ? 1e6 : (@inbounds Float64(tspan[end]))
-
-    return run_residual(func, value, t0, tf, run_info())
+@inline function initial_current!(Y0::Vector{Float64},p::param,run::run_constant{method},model::model_output) where method<:AbstractMethod
+    input = run.input
+    if input === :hold
+        @inbounds Y0[end] = method((@views model.Y[end]),p)
+        return nothing
+    elseif input === :rest && method === method_I
+        @inbounds Y0[end] = 0.0
+        return nothing
+    end
 end

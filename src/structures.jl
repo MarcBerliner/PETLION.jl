@@ -34,6 +34,7 @@ end
 struct run_residual{func<:Function} <: AbstractRun{method_res}
     func::func
     value::Vector{Float64}
+    method::method_res
     t0::Float64
     tf::Float64
     info::run_info
@@ -104,13 +105,13 @@ struct residual_combined{
     θ_tot::Vector{Float64}
     θ_keys::Vector{Symbol}
 end
-struct Jac_and_res
+struct Jac_and_res{T<:Sundials.IDAIntegrator}
     J_full::jacobian_combined
     R_full::residual_combined
     J_alg::jacobian_combined
     R_diff::residual_combined
     R_alg::residual_combined
-    int::Vector{Sundials.IDAIntegrator}
+    int::Vector{T}
 end
 
 struct init_newtons_method{T}
@@ -124,11 +125,9 @@ struct init_newtons_method{T}
 end
 
 struct functions_model{T<:AbstractJacobian}
-    f!::Function
     initial_guess!::Function
     J_y!::T
     initial_conditions::init_newtons_method{T}
-    int::Vector{Sundials.IDAIntegrator}
 end
 
 @with_kw mutable struct boundary_stop_conditions{T1<:Number,T2<:Float64}
