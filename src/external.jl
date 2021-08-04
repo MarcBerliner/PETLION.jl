@@ -377,6 +377,10 @@ end
 function strings_directory_func(N::discretizations_per_section, numerics::numerical; create_dir=false) where numerical<:options_numerical
 
     dir_saved_models = "saved_models"
+    
+    if create_dir && !isdir(dir_saved_models)
+        mkdir(dir_saved_models)
+    end
 
     dir_cell = "$dir_saved_models/$(Symbol(numerics.cathode))_$(Symbol(numerics.anode))"
 
