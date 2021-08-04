@@ -1,4 +1,4 @@
-export LCO, LiC6
+export LCO, NCA_Tesla, NMC
 
 function NCA_Tesla(θ, funcs)
     ## parameters section
@@ -109,6 +109,8 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     D_eff = D_eff_EC_EMC_DMC,
     # Effective electrolyte conductivity function
     K_eff = K_eff_EC_EMC_DMC,
+    # Thermodynamic factor, ∂ln(f)/∂ln(c_e)
+    thermodynamic_factor = thermodynamic_factor_linear,
     # By default, this will use the reaction defined by the cathode
     rxn_p = funcs.rxn_p,
     # By default, this will use the OCV defined by the cathode
@@ -139,13 +141,10 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     θ[:Cp_a] = 897.0
     θ[:Cp_z] = 385.0
 
-    θ[:σ_s] = 0.0
     θ[:σ_a] = 3.55e7
     θ[:σ_z] = 5.96e7
 
     θ[:ϵ_s] = 0.35894212806501313#0.663471282
-
-    θ[:ϵ_fs] = 0.0
 
     θ[:brugg_s] = 1.5
 
@@ -189,7 +188,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     
     #### DO NOT MODIFY BELOW ###
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
-    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, temperature, solid_diffusion, Fickian_method, aging, jacobian)
+    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
     
     return θ, bounds, opts, N, numerics, methods
 end
@@ -263,6 +262,151 @@ function LiC6(θ, funcs)
     funcs.OCV_n = OCV_LiC6
 end
 
+function NMC(θ, funcs)
+    ## parameters section
+    # everything here can be modified without regenerating the model/jacobian.
+    θ[:D_sp] = 2e-14
+    θ[:k_p] = 6.3066e-10
+    θ[:θ_max_p] = 0.359749
+    θ[:θ_min_p] = 0.955473
+    θ[:l_p] = 41.6e-6
+    θ[:σ_p] = 100
+    θ[:ϵ_p] = 0.3
+    θ[:ϵ_fp] = 0.12
+    θ[:brugg_p] = 1.5
+    θ[:c_max_p] = 51830.0
+    θ[:Rp_p] = 7.5e-6
+    θ[:Ea_D_sp] = 2.5e4
+    θ[:Ea_k_p] = 3e4
+
+    funcs.rxn_p = rxn_BV
+    funcs.OCV_p = OCV_NMC
+end
+
+function LiC6_NMC(θ, funcs)
+    θ[:D_sn] = 1.5e-14
+    θ[:k_n] = 6.3466e-10
+    θ[:θ_max_n] = 0.790813
+    θ[:θ_min_n] = 0.001
+    θ[:l_n] = 48e-6
+    θ[:σ_n] = 100
+    θ[:ϵ_n] = 0.3
+    θ[:ϵ_fn] = 0.038
+    θ[:brugg_n] = 1.5
+    θ[:c_max_n] = 31080.0
+    θ[:Rp_n] = 10e-6
+    θ[:Ea_D_sn] = 4e4
+    θ[:Ea_k_n] = 3e4
+
+    funcs.rxn_n = rxn_BV
+    funcs.OCV_n = OCV_LiC6_with_NMC
+end
+
+function θ_System(cathode::typeof(NMC), anode::typeof(LiC6_NMC), θ, funcs;
+    # State-of-charge between 0 and 1
+    SOC = 1.0,
+    # can be any combination of :I, :V, or :P
+    methods = (:I, :V, :P),
+    ### Cell discretizations, `N` ###
+    # Volume discretizations per cathode
+    N_p = 10,
+    # Volume discretizations per separator
+    N_s = 10,
+    # Volume discretizations per anode
+    N_n = 10,
+    # Volume discretizations per positive current collector (temperature only)
+    N_a = 10,
+    # Volume discretizations per negative current collector (temperature only)
+    N_z = 10,
+    # Volume discretizations per cathode particle (Fickian diffusion only)
+    N_r_p = 10,
+    # Volume discretizations per anode particle (Fickian diffusion only)
+    N_r_n = 10,
+    ### Numerical options, `numerics` ###
+    # 1D temperature, true or false
+    temperature =  false,
+    # (:Fickian) Fickian diffusion, (:quadratic) quadratic approx., (:polynomial) polynomial approx.
+    solid_diffusion = :Fickian,
+    # if solid_diffusion = :Fickian, then this can either be (:finite_difference) or (:spectral)
+    Fickian_method = :finite_difference,
+    # (false) off, (:SEI) SEI resistance, (:R_aging) constant film
+    aging =  false,
+    # (true) symbolic Jacobian, (false) automatic differenation Jacobian
+    jacobian = :symbolic,
+    ### User-defined functions in `numerics` ###
+    # Effective solid diffusion coefficient function
+    D_s_eff = D_s_eff,
+    # Reaction rate function
+    rxn_rate = rxn_rate,
+    # Effective electrolyte diffusion coefficient function
+    D_eff = D_eff,
+    # Effective electrolyte conductivity function
+    K_eff = K_eff,
+    # Thermodynamic factor, ∂ln(f)/∂ln(c_e)
+    thermodynamic_factor = thermodynamic_factor,
+    # By default, this will use the reaction defined by the cathode
+    rxn_p = funcs.rxn_p,
+    # By default, this will use the OCV defined by the cathode
+    OCV_p = funcs.OCV_p,
+    # By default, this will use the reaction defined by the anode
+    rxn_n = funcs.rxn_n,
+    # By default, this will use the OCV defined by the anode
+    OCV_n = funcs.OCV_n,
+    )
+
+
+    ## Physical parameters for the system
+    θ[:l_s] = 25e-6
+
+    θ[:ϵ_s] = 0.4
+
+    θ[:brugg_s] = 1.5
+
+    θ[:t₊] = 0.38
+
+    θ[:c_e₀] = 1200
+    θ[:T₀] = 25 + 273.15
+    θ[:T_amb] = 25 + 273.15
+
+    ## Options section
+    # everything here can be modified freely
+
+    bounds = boundary_stop_conditions()
+    bounds.V_min = 2.8
+    bounds.V_max = 4.2
+    bounds.SOC_min = 0.0
+    bounds.SOC_max = 1.0
+    bounds.T_max = NaN
+    bounds.c_s_n_max = NaN
+    bounds.I_max = NaN
+    bounds.I_min = NaN
+    bounds.η_plating_min = NaN
+
+
+    opts = options_model()
+    opts.SOC = SOC # defined above
+    opts.outputs = (:t, :V)
+    opts.abstol = 1e-6
+    opts.reltol = 1e-3
+    opts.maxiters = 10_000
+    opts.check_bounds = true
+    opts.reinit = true
+    opts.verbose = false
+    opts.interp_final = true
+    opts.tstops = Float64[]
+    opts.tdiscon = Float64[]
+    opts.interp_bc = :interpolate
+    opts.save_start = false
+
+
+    
+    #### DO NOT MODIFY BELOW ###
+    N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
+    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
+    
+    return θ, bounds, opts, N, numerics, methods
+end
+
 function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     # State-of-charge between 0 and 1
     SOC = 1.0,
@@ -303,6 +447,8 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     D_eff = D_eff_linear,
     # Effective electrolyte conductivity function
     K_eff = K_eff,
+    # Thermodynamic factor, ∂ln(f)/∂ln(c_e)
+    thermodynamic_factor = thermodynamic_factor_linear,
     # By default, this will use the reaction defined by the cathode
     rxn_p = funcs.rxn_p,
     # By default, this will use the OCV defined by the cathode
@@ -333,13 +479,10 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     θ[:Cp_a] = 897.0
     θ[:Cp_z] = 385.0
 
-    θ[:σ_s] = 0.0
     θ[:σ_a] = 3.55e7
     θ[:σ_z] = 5.96e7
 
     θ[:ϵ_s] = 0.724
-
-    θ[:ϵ_fs] = 0.0
 
     θ[:brugg_s] = 4.0
 
@@ -362,6 +505,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     bounds.c_s_n_max = NaN
     bounds.I_max = NaN
     bounds.I_min = NaN
+    bounds.η_plating_min = NaN
 
 
     opts = options_model()
@@ -383,14 +527,28 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     
     #### DO NOT MODIFY BELOW ###
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
-    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, temperature, solid_diffusion, Fickian_method, aging, jacobian)
+    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
     
     return θ, bounds, opts, N, numerics, methods
 end
 
-function Params(;
-    cathode::Function = LCO,  # Default chemistry - can be modified
-    anode::Function = LiC6, # Default chemistry - can be modified
+function Params(chemistry::typeof(LCO);kwargs...)
+    cathode = LCO
+    anode   = LiC6
+    return Params(cathode,anode;kwargs...)
+end
+function Params(chemistry::typeof(NCA_Tesla);kwargs...)
+    cathode = NCA_Tesla
+    anode   = LiC6_Tesla
+    return Params(cathode,anode;kwargs...)
+end
+function Params(chemistry::typeof(NMC);kwargs...)
+    cathode = NMC
+    anode   = LiC6_NMC
+    return Params(cathode,anode;kwargs...)
+end
+
+function Params(cathode, anode; # Input chemistry - can be modified
     kwargs... # keyword arguments for θ_System
     )
     

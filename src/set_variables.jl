@@ -57,10 +57,10 @@ end
     append ? push!(x, x_val) : (@inbounds x[1] .= x_val)
 end
 
-@inline function set_var_last!(x::T1, append::Bool, x_val::T2) where {T1<:Vector{Float64},T2<:Float64}
+@inline function set_var_last!(x::T1, append, x_val::T2) where {T1<:Vector{Float64},T2<:Float64}
     @inbounds x[end] = x_val
 end
-@inline function set_var_last!(x::T1, append::Bool, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
+@inline function set_var_last!(x::T1, append, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
     @inbounds x[end] .= x_val
 end
 

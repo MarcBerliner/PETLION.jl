@@ -24,7 +24,7 @@ function load_functions(p::AbstractParam)
     append!(p.cache.θ_tot,  zeros(length(θ_keys)))
 
     initial_conditions = init_newtons_method(f_alg!, J_y_alg!, f_diff!, Y0_alg, Y0_alg_prev, Y0_diff, res)
-    funcs = functions_model{jac_type}(initial_guess!, J_y!, initial_conditions)
+    funcs = functions_model(initial_guess!, J_y!, initial_conditions)
     
     return funcs
 end
@@ -178,7 +178,7 @@ function _symbolic_initial_guess(p::AbstractParam, SOC_sym, θ_sym, X_applied)
     return Y0_sym
 end
 
-function _symbolic_residuals(p::AbstractParam, t_sym, Y_sym, YP_sym, X_applied, θ_sym, method)
+function _symbolic_residuals(p::AbstractParam, t_sym, Y_sym, YP_sym, X_applied, θ_sym, method=nothing)
     ## symbolic battery model
     res = similar(Y_sym)
     residuals_PET!(res, t_sym, Y_sym, YP_sym, p)
@@ -199,6 +199,26 @@ function _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
     return J_sp, sp_x, sp_xp
 end
 
+function _symbolic_jacobian(p::AbstractParam;inds=nothing)
+    θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
+    res = [_symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym, X_applied, θ_sym);Y_sym[end]]
+
+    if inds === nothing
+        inds = 1:length(res)
+    end
+    res    = res[inds]
+    Y_sym  = Y_sym[inds]
+    YP_sym = YP_sym[inds]
+
+    ## symbolic jacobian
+    Jac_x  = sparsejacobian_multithread(res, Y_sym;  show_progress=false, simplify=false)
+    Jac_xp = sparsejacobian_multithread(res, YP_sym; show_progress=false, simplify=false)
+    
+    # For some reason, Jac[ind_new] .= Jac_new doesn't work on linux. This if statement is a temporary workaround
+    Jac = Jac_x .+ γ_sym.*Jac_xp
+
+    return Jac
+end
 function _symbolic_jacobian(p::AbstractParam, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, method; verbose=false)
 
     J_sp, sp_x, sp_xp = _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
@@ -290,7 +310,7 @@ function get_symbolic_vars(p::AbstractParam)
     ModelingToolkit.@variables Y_sym[1:p.N.tot], YP_sym[1:p.N.tot], t_sym, SOC_sym, X_applied, γ_sym
     ModelingToolkit.@parameters θ_sym[1:length(θ_keys)]
 
-    p_sym = param_no_funcs([convert(_type,getproperty(p,field)) for (field,_type) in zip(fieldnames(param_no_funcs),fieldtypes(param_no_funcs))]...)
+    p_sym = param_no_funcs([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(param_no_funcs),fieldtypes(param_no_funcs))]...)
     p_sym.opts.SOC = SOC_sym
 
     @inbounds for (i,key) in enumerate(θ_keys)

@@ -1,6 +1,6 @@
-@views @inbounds @inline function check_simulation_stop!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator, method<:AbstractMethod, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
-    Y = int.u.v
-    t = int.t
+@views @inbounds @inline function check_simulation_stop!(model::R1, t::Float64, Y::R2,YP::R2, run::R3, p::R4, bounds::R5, opts::R6;
+    ϵ::Float64 = opts.reltol,
+    ) where {R1<:model_output, R2<:Vector{Float64}, method<:AbstractMethod, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
     tf = run.tf
     
     if t ≥ tf
@@ -14,7 +14,7 @@
     V = model.V[end]
     I = model.I[end]
     if !(method === method_V)
-        if V ≤ bounds.V_min && I < 0
+        if (bounds.V_min - V > ϵ) && I < 0
             t_frac = (bounds.V_prev - bounds.V_min)/(bounds.V_prev - V)
             if t_frac < bounds.t_final_interp_frac
                 bounds.t_final_interp_frac = t_frac
@@ -23,7 +23,7 @@
             end
         end
 
-        if V ≥ bounds.V_max && I > 0
+        if (V - bounds.V_max > ϵ) && I > 0
             t_frac = (bounds.V_prev - bounds.V_max)/(bounds.V_prev - V)
             if t_frac < bounds.t_final_interp_frac
                 bounds.t_final_interp_frac = t_frac
@@ -34,7 +34,7 @@
     end
     
     SOC = model.SOC[end]
-    if SOC < bounds.SOC_min && I < 0
+    if (bounds.SOC_min - SOC > ϵ) && I < 0
         t_frac = (bounds.SOC_prev - bounds.SOC_min)/(bounds.SOC_prev - SOC)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -42,7 +42,7 @@
             run.info.exit_reason = "Below minimum SOC limit"
         end
     end
-    if SOC > bounds.SOC_max && I > 0
+    if (SOC - bounds.SOC_max > ϵ) && I > 0
         t_frac = (bounds.SOC_prev - bounds.SOC_max)/(bounds.SOC_prev - SOC)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -51,28 +51,30 @@
         end
     end
     
-    if p.numerics.temperature && (T = maximum(model.T[end])) > bounds.T_max
-        t_frac = (bounds.T_prev - bounds.T_max)/(bounds.T_prev - T)
-        if t_frac < bounds.t_final_interp_frac
-            bounds.t_final_interp_frac = t_frac
-            run.info.flag = 5
-            run.info.exit_reason = "Above maximum permitted temperature"
-        end 
+    if p.numerics.temperature
+        T = temperature_weighting((@inbounds @views model.T[end]),p)
+        if T - bounds.T_max > ϵ
+            t_frac = (bounds.T_prev - bounds.T_max)/(bounds.T_prev - T)
+            if t_frac < bounds.t_final_interp_frac
+                bounds.t_final_interp_frac = t_frac
+                run.info.flag = 5
+                run.info.exit_reason = "Above maximum permitted temperature"
+            end
+        end
     else
         T = -1.0
     end
     
     c_s_avg = model.c_s_avg[end]
     if !isnan(bounds.c_s_n_max) && I > 0
-
         if p.numerics.solid_diffusion === :Fickian
             c_s_n_max = maximum(c_s_avg[(p.N.p)*(p.N.r_p)+1:end])
         else
             c_s_n_max = maximum(c_s_avg[(p.N.p)+1:end])
         end
         
-        if c_s_n_max > bounds.c_s_n_max*(p.θ[:c_max_n]::Float64*p.θ[:θ_max_n]::Float64)
-            t_frac = (bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]::Float64*p.θ[:θ_max_n]::Float64))/(bounds.c_s_n_prev - c_s_n_max)
+        if c_s_n_max - bounds.c_s_n_max*p.θ[:c_max_n] > ϵ
+            t_frac = (bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]))/(bounds.c_s_n_prev - c_s_n_max)
             if t_frac < bounds.t_final_interp_frac
                 bounds.t_final_interp_frac = t_frac
                 run.info.flag = 6
@@ -83,7 +85,7 @@
         c_s_n_max = -1.0
     end
 
-    if (!(method === method_I) && R3 === run_constant) && I > bounds.I_max
+    if (!(method === method_I) && R3 === run_constant) && (I - bounds.I_max > ϵ)
         t_frac = (bounds.I_prev - bounds.I_max)/(bounds.I_prev - I)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -91,7 +93,7 @@
             run.info.exit_reason = "Above maximum permitted C-rate"
         end
     end
-    if (!(method === method_I) && R3 === run_constant) && I < bounds.I_min
+    if (!(method === method_I) && R3 === run_constant) && (bounds.I_min - I > ϵ)
         t_frac = (bounds.I_prev - bounds.I_min)/(bounds.I_prev - I)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -100,15 +102,24 @@
         end
     end
 
-    if !within_bounds(run)
-        return nothing
+    η_plating = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+    if bounds.η_plating_min - η_plating > ϵ
+        t_frac = (bounds.η_plating_prev - bounds.η_plating_min)/(bounds.η_plating_prev - η_plating)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 9
+            run.info.exit_reason = "Below minimum permitted η_plating"
+        end
     end
 
-    bounds.V_prev = V
-    bounds.I_prev = I
-    bounds.SOC_prev = SOC
-    bounds.T_prev = T
-    bounds.c_s_n_prev = c_s_n_max
+    if within_bounds(run)
+        bounds.V_prev         = V
+        bounds.I_prev         = I
+        bounds.SOC_prev       = SOC
+        bounds.T_prev         = T
+        bounds.c_s_n_prev     = c_s_n_max
+        bounds.η_plating_prev = η_plating
+    end
 
     return nothing
 end
@@ -144,23 +155,32 @@ check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
     end
 end
 
-@inline function check_solve(run::run_constant, model::R1, int::R2, p, bounds, opts::R5, method_funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
+@inline function check_solve(run::Union{run_constant,run_residual}, model::R1, int::R2, p, bounds, opts::R5, method_funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
     if t === int.tprev
-        error("Model failed to converge at t = $(t)")
+        # Sometimes the initial step at t = 0 can be too large. This reduces the step size
+        if t === 0.0
+            if iter === 2
+                Sundials.IDASetInitStep(int.mem,opts.reltol)
+            else
+                error("Model failed to converge at t = $(t). Try tightening the absolute and relative tolerances.")
+            end
+        else
+            error("Model failed to converge at t = $(t)")
+        end
     elseif iter === opts.maxiters
         error("Reached max iterations of $(opts.maxiters) at t = $(t)")
     elseif within_bounds(run)
         # update Y only after checking the stop conditions. this is done to store a copy of the
         # previous model run in case any back-interpolation is needed
         set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
-
-        return true
     else # no errors and run.info.flag ≠ -1
         return false
     end
+
+    return true
 end
 
-@inline function check_solve(run::run_constant, model::R1, int::R2, p::param, bounds::boundary_stop_conditions, opts::R5, method_funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
+@inline function check_solve(run::run_function, model::R1, int::R2, p::param, bounds::boundary_stop_conditions, opts::R5, method_funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
     if iter === opts.maxiters
         error("Reached max iterations of $(opts.maxiters) at t = $(int.t)")
     elseif within_bounds(run)
@@ -170,7 +190,7 @@ end
         
         # check to see if the run needs to be reinitialized
         if t - int.tprev < 1e-3opts.reltol
-            check_reinitialization!(model, int, run, p, bounds, opts)
+            check_reinitialization!(model, int, run, p, bounds, opts, method_funcs)
         end
 
         return true
@@ -179,7 +199,7 @@ end
     end
 end
 
-@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
+@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, method_funcs) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
     """
     Checking the current function for discontinuities.
     If there is a significant change in current after a step size of dt = reltol,
@@ -187,16 +207,15 @@ end
     """
     
     Y = int.u.v
+    YP = int.du.v
     t_new = int.t + opts.reltol
 
     value_old = value(run)
-    value_new = run.func(Y, p, t_new)::Float64
+    value_new = run.func(t_new,Y,YP,p)
+    run.value .= value_new
     
     if !≈(value_old, value_new, atol=opts.abstol, rtol=opts.reltol)
-        @inbounds Y[p.ind.I] .= value_new
-        YP = int.du.v
-        
-        initialize_states!(p, Y, YP, run, opts, @inbounds model.SOC[end])
+        initialize_states!(p,Y,YP,run,opts,method_funcs,(@inbounds model.SOC[end]))
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
     end

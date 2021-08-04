@@ -14,6 +14,7 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
     @inbounds for key in keys(θ)
         θ_any[key] = θ[key]
     end
+    θ[:I1C] = calc_I1C(θ)
     
     ## temporary params with no functions
     _p = param_no_funcs(θ_any, numerics, N, ind, opts, bounds, cache)
@@ -373,7 +374,7 @@ end
     return Y0, YP0
 end
 
-function strings_directory_func(N::discretizations_per_section, numerics::options_numerical; create_dir=false)
+function strings_directory_func(N::discretizations_per_section, numerics::numerical; create_dir=false) where numerical<:options_numerical
 
     dir_saved_models = "saved_models"
 
@@ -381,23 +382,12 @@ function strings_directory_func(N::discretizations_per_section, numerics::option
 
     str = join(
         [
-            "$(numerics.rxn_p)",
-            "$(numerics.rxn_n)",
-            "$(numerics.OCV_p)",
-            "$(numerics.OCV_n)",
-            "$(numerics.D_s_eff)",
-            "$(numerics.rxn_rate)",
-            "$(numerics.D_eff)",
-            "$(numerics.K_eff)",
-            "$(numerics.temperature)",
-            "$(numerics.solid_diffusion)",
-            "$(numerics.Fickian_method)",
-            "$(numerics.aging)",
-            "Np$(N.p)",
-            "Ns$(N.s)",
-            "Nn$(N.n)",
-            numerics.temperature                  ? "Na$(N.a)_Nz$(N.z)" : "",
-            numerics.solid_diffusion === :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : ""
+            ["$(getproperty(numerics,field))" for field in filter(x->!(x ∈ (:cathode,:anode)), fieldnames(numerical))];
+            "Np$(N.p)";
+            "Ns$(N.s)";
+            "Nn$(N.n)";
+            numerics.temperature                  ? "Na$(N.a)_Nz$(N.z)" : "";
+            numerics.solid_diffusion === :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : "";
         ],
         "_"
     )

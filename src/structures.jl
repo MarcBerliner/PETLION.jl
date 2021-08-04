@@ -13,17 +13,17 @@ struct method_V   <: AbstractMethod end
 struct method_P   <: AbstractMethod end
 struct method_res <: AbstractMethod end
 
-abstract type AbstractRun{T<:AbstractMethod} end
+abstract type AbstractRun{T<:AbstractMethod,input<:Any} end
 
-struct run_constant{T<:AbstractMethod} <: AbstractRun{T}
-    input::Union{Number,Symbol,Function}
+struct run_constant{T<:AbstractMethod,in<:Union{Number,Symbol,Function}} <: AbstractRun{T,in}
+    input::in
     value::Vector{Float64}
     method::T
     t0::Float64
     tf::Float64
     info::run_info
 end
-struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T}
+struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
     func::func
     value::Vector{Float64}
     method::T
@@ -31,10 +31,10 @@ struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T}
     tf::Float64
     info::run_info
 end
-struct run_residual{func<:Function} <: AbstractRun{method_res}
+struct run_residual{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
     func::func
     value::Vector{Float64}
-    method::method_res
+    method::T
     t0::Float64
     tf::Float64
     info::run_info
@@ -53,26 +53,26 @@ end
     var_type::Symbol = :NA
 end
 
-abstract type AbstractJacobian end
-struct jacobian_symbolic <: AbstractJacobian
-    func::Function
+abstract type AbstractJacobian <: Function end
+struct jacobian_symbolic{T<:Function} <: AbstractJacobian
+    func::T
     sp::SparseMatrixCSC{Float64,Int64}
 end
-#(jac::jacobian_symbolic)(x...) = jac.func(x...)
+(jac::jacobian_symbolic{<:Function})(x...) = jac.func(x...)
 
-struct res_FD
-    f!::Function
+struct res_FD{T<:Function} <: Function
+    f!::T
     YP_cache::Vector{Float64}
     θ_tot::Vector{Float64}
 end
 (res_FD::res_FD)(res, u) = res_FD.f!(res, u, res_FD.YP_cache, res_FD.θ_tot)
 
-struct jacobian_AD <:AbstractJacobian
-    f!::res_FD
+struct jacobian_AD{T<:Function} <: AbstractJacobian
+    f!::res_FD{T}
     sp::SparseMatrixCSC{Float64,Int64}
     jac_cache::SparseDiffTools.ForwardColorJacCache
 end
-@inline function (jac::jacobian_AD)(J::R1, u::R2, x...) where {R1<:SparseMatrixCSC{Float64,Int64}, R2<:Vector{Float64}}
+@inline function (jac::jacobian_AD{T})(J, u, x...) where {T<:Function}
     forwarddiff_color_jacobian!(J, jac.f!, u, jac.jac_cache)
 end
 
@@ -114,7 +114,7 @@ struct Jac_and_res{T<:Sundials.IDAIntegrator}
     int::Vector{T}
 end
 
-struct init_newtons_method{T}
+struct init_newtons_method{T<:AbstractJacobian}
     f_alg!::Function
     J_y_alg!::T
     f_diff!::Function
@@ -124,10 +124,10 @@ struct init_newtons_method{T}
     res::Vector{Float64}
 end
 
-struct functions_model{T<:AbstractJacobian}
+struct functions_model{T1<:AbstractJacobian,T2<:AbstractJacobian}
     initial_guess!::Function
-    J_y!::T
-    initial_conditions::init_newtons_method{T}
+    J_y!::T1
+    initial_conditions::init_newtons_method{T2}
 end
 
 @with_kw mutable struct boundary_stop_conditions{T1<:Number,T2<:Float64}
@@ -139,15 +139,17 @@ end
     c_s_n_max::T1 = -1.0
     I_max::T1 = NaN
     I_min::T1 = NaN
+    η_plating_min::T1 = NaN
     t_final_interp_frac::T2 = +1.0
     V_prev::T2 = -1.0
     SOC_prev::T2 = -1.0
     T_prev::T2 = -1.0
     c_s_n_prev::T2 = -1.0
     I_prev::T2 = -1.0
+    η_plating_prev::T2 = -1.0
 end
 
-@inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number)
+@inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number, η_plating_min::Number)
     boundary_stop_conditions(
         Float64(V_max),
         Float64(V_min),
@@ -157,7 +159,8 @@ end
         Float64(c_s_n_max),
         Float64(I_max),
         Float64(I_min),
-        +1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
+        Float64(η_plating_min),
+        +1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
 end
 
 struct _discretizations_per_section
@@ -190,6 +193,7 @@ end
     D_s_eff::Function = emptyfunc
     D_eff::Function = emptyfunc
     K_eff::Function = emptyfunc
+    thermodynamic_factor::Function = emptyfunc
 end
 
 struct options_numerical
@@ -203,6 +207,7 @@ struct options_numerical
     rxn_rate::Function
     D_eff::Function
     K_eff::Function
+    thermodynamic_factor::Function
     temperature::Bool
     solid_diffusion::Symbol
     Fickian_method::Symbol
@@ -266,33 +271,6 @@ end
 
 @inline model_states_logic(outputs, cache::cache_run) = model_states_logic(outputs, cache.outputs_tot)
 
-struct run_results{T<:AbstractRun}
-    run::T
-    tspan::Tuple{Float64,Float64}
-    info::run_info
-    run_index::UnitRange{Int64}
-    int::Sundials.IDAIntegrator
-    opts::options_model
-    bounds::boundary_stop_conditions
-    N::discretizations_per_section
-    numerics::options_numerical
-end
-
-model_output = model_states{
-    Array{Float64,1},
-    VectorOfArray{Float64,2,Array{Array{Float64,1},1}},
-    Array{run_results,1},
-}
-(model::model_output)(t::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate) = interpolate_model(model, t, interp_bc)
-Base.length(model::model_output) = length(model.results)
-Base.isempty(model::model_output) = isempty(model.results)
-function Base.getindex(model::T, i1::Int) where T<:model_output
-    ind = model.results[i1].run_index
-    T([fields === :results ? [model.results[i1]] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
-end
-Base.lastindex(model::T) where T<:model_output = length(model)
-Base.firstindex(::T) where T<:model_output = 1
-
 abstract type AbstractParam end
 
 @with_kw struct method_functions
@@ -300,6 +278,7 @@ abstract type AbstractParam end
     Dict_function::Dict{DataType,Dict{DataType,Jac_and_res}} = Dict{DataType,Dict{DataType,Jac_and_res}}()
     Dict_residual::Dict{DataType,Jac_and_res}                = Dict{DataType,Jac_and_res}()
 end
+Base.empty!(f::method_functions) = (for field in fieldnames(method_functions);empty!(getproperty(f,field));end;f)
 
 struct param{T<:AbstractJacobian} <: AbstractParam
     θ::Dict{Symbol,Float64}
@@ -322,6 +301,34 @@ struct param_no_funcs <: AbstractParam
     bounds::boundary_stop_conditions
     cache::cache_run
 end
+
+struct run_results{T<:AbstractRun}
+    run::T
+    tspan::Tuple{Float64,Float64}
+    info::run_info
+    run_index::UnitRange{Int64}
+    int::Sundials.IDAIntegrator
+    opts::options_model
+    bounds::boundary_stop_conditions
+    N::discretizations_per_section
+    numerics::options_numerical
+    p::param
+end
+
+model_output = model_states{
+    Array{Float64,1},
+    VectorOfArray{Float64,2,Array{Array{Float64,1},1}},
+    Array{run_results,1},
+}
+(model::model_output)(t::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate) = interpolate_model(model, t, interp_bc)
+Base.length(model::model_output) = length(model.results)
+Base.isempty(model::model_output) = isempty(model.results)
+function Base.getindex(model::T, i1::Int) where T<:model_output
+    ind = model.results[i1].run_index
+    T([fields === :results ? [model.results[i1]] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
+end
+Base.lastindex(model::T) where T<:model_output = length(model)
+Base.firstindex(::T) where T<:model_output = 1
 
 
 ## Modifying Base functions
@@ -398,7 +405,7 @@ function Base.show(io::IO, p::AbstractParam)
     "$(replace(replace(string(typeof(p)), "PETLION."=>""),"{param_no_funcs}"=>"")):\n",
     "  Cathode: $(p.numerics.cathode), $(p.numerics.rxn_p), & $(p.numerics.OCV_p)\n",
     "  Anode:   $(p.numerics.anode), $(p.numerics.rxn_n), & $(p.numerics.OCV_n)\n",
-    "  System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), & $(p.numerics.K_eff)\n",
+    "  System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), $(p.numerics.K_eff), & $(p.numerics.thermodynamic_factor)\n",
     :model_methods ∈ fieldnames(typeof(p)) && !isempty(p.model_methods) ? 
     "  Methods: $(join(p.model_methods, ", "))\n" : "",
     "  --------\n",
@@ -411,7 +418,7 @@ function Base.show(io::IO, p::AbstractParam)
     show_bounds("SOC", p.bounds.SOC_min, p.bounds.SOC_max),
     show_bounds("Current", p.bounds.I_min, p.bounds.I_max, "C"),
     p.numerics.temperature ?
-    show_bounds("Temperature", NaN, p.bounds.T_max-273.15, " °C") : "",
+    show_bounds("Temperature", NaN, p.bounds.T_max, " °C") : "",
     show_bounds("Anode sat.", NaN, p.bounds.c_s_n_max),
     "  --------\n",
     p.numerics.temperature ?
@@ -466,19 +473,19 @@ function Base.show(io::IO, ind::indices_states)
 end
 method_symbol(::Type{method_I}) = :I
 method_symbol(::Type{method_V}) = :V
-method_symbol(::Type{method_P})   = :P
+method_symbol(::Type{method_P}) = :P
 
-method_name(::run_constant{method_I};            shorthand::Bool=false) = shorthand ? "I"      : "current"
-method_name(::run_constant{method_V};            shorthand::Bool=false) = shorthand ? "V"      : "voltage"
-method_name(::run_constant{method_P};            shorthand::Bool=false) = shorthand ? "P"      : "power"
+method_name(::run_constant{method_I,<:Any};      shorthand::Bool=false) = shorthand ? "I"      : "current"
+method_name(::run_constant{method_V,<:Any};      shorthand::Bool=false) = shorthand ? "V"      : "voltage"
+method_name(::run_constant{method_P,<:Any};      shorthand::Bool=false) = shorthand ? "P"      : "power"
 method_name(::run_function{method_I,<:Function}; shorthand::Bool=false) = shorthand ? "I func" : "current function"
 method_name(::run_function{method_V,<:Function}; shorthand::Bool=false) = shorthand ? "V func" : "voltage function"
 method_name(::run_function{method_P,<:Function}; shorthand::Bool=false) = shorthand ? "P func" : "power function"
 method_name(::run_residual;                      shorthand::Bool=false) = shorthand ? "I res"  : "current residual"
 
-method_string(run::run_constant{method_I}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(C_rate_string(value(run);digits=2))"
-method_string(run::run_constant{method_V}; shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) V"
-method_string(run::run_constant{method_P};   shorthand::Bool=false) = method_name(run,shorthand=shorthand) * " = $(round(value(run);digits=2)) W"
+method_string(run::run_constant{method_I,<:Any};     kw...) = method_name(run;kw...) * " = $(C_rate_string(value(run);digits=2))"
+method_string(run::run_constant{method_V,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) V"
+method_string(run::run_constant{method_P,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) W"
 method_string(run::Union{run_residual,run_function}; kw...) = method_name(run;kw...)
 
 function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
@@ -527,7 +534,7 @@ function Base.show(io::IO, model::model_output)
 
         return str
     end
-    
+
     title = "PETLION model"
     if !isempty(model)
         str = @views @inbounds string(
@@ -540,7 +547,7 @@ function Base.show(io::IO, model::model_output)
                 "  Power:   $(round(model.P[end];   digits = 4)) W\n",
                 "  SOC:     $(round(model.SOC[end]; digits = 4))\n",
                 length(model.T) > 0 ? 
-                "  Temp.:   $(round(maximum(model.T[end])-273.15; digits = 4)) °C\n"
+                "  Temp.:   $(round(temperature_weighting((@inbounds @views model.T[end]),model.results[end].p)-273.15; digits = 4)) °C\n"
                 : "",
                 "  Exit:    $(model.results[end].info.exit_reason)",
             )
