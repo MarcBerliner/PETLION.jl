@@ -168,7 +168,7 @@ function OCV_LCO(θ_p, T=298.15, p=nothing)
     T_ref = 25 + 273.15
 
     # Define the OCV for the positive electrode
-    @views U_p = (-4.656 .+ 88.669θ_p.^2 .- 401.119θ_p.^4 .+ 342.909θ_p.^6 .- 462.471θ_p.^8 .+ 433.434θ_p.^10)./(-1 .+ 18.933θ_p.^2 .- 79.532θ_p.^4 .+ 37.311θ_p.^6 .- 73.083θ_p.^8 .+ 95.96θ_p.^10)
+    U_p = (-4.656 .+ 88.669θ_p.^2 .- 401.119θ_p.^4 .+ 342.909θ_p.^6 .- 462.471θ_p.^8 .+ 433.434θ_p.^10)./(-1 .+ 18.933θ_p.^2 .- 79.532θ_p.^4 .+ 37.311θ_p.^6 .- 73.083θ_p.^8 .+ 95.96θ_p.^10)
 
     # Compute the variation of OCV with respect to temperature variations [V/K]
     ∂U∂T_p = -0.001(0.199521039 .- 0.928373822θ_p .+ 1.364550689000003θ_p.^2 .- 0.6115448939999998θ_p.^3)./(1 .- 5.661479886999997θ_p +11.47636191θ_p.^2 .- 9.82431213599998θ_p.^3 .+ 3.048755063θ_p.^4)
@@ -258,6 +258,28 @@ function OCV_LiC6(θ_n, T=298.15, p=nothing)
     return U_n, ∂U∂T_n
 end
 
+function OCV_NMC(θ_p, T=298.15, p=nothing)
+    # Define the OCV for the positive electrode
+    U_p = @. -10.72θ_p^4+ 23.88θ_p^3 - 16.77θ_p^2 + 2.595θ_p + 4.563
+
+    # Compute the variation of OCV with respect to temperature variations [V/K]
+    ∂U∂T_p = zeros(length(U_p))
+
+    return U_p, ∂U∂T_p
+end
+
+function OCV_LiC6_with_NMC(θ_n, T=298.15, p=nothing)
+    # Define the OCV for the negative electrode
+    U_n = @. 0.1493 + 0.8493exp(-61.79θ_n) + 0.3824exp(-665.8θ_n) - 
+        exp(39.42θ_n-41.92) - 0.03131atan(25.59θ_n - 4.099) - 
+        0.009434atan(32.49θ_n - 15.74)
+
+    # Compute the variation of OCV with respect to temperature variations [V/K]
+    ∂U∂T_n = zeros(length(U_n))
+
+    return U_n, ∂U∂T_n
+end
+
 function OCV_SiC(x, T=298.15, p=nothing)
     # Calculate the open circuit voltage of the battery in the negative electrode
     a, b, c, d, e, f, g, h, k, l, m, n, p, q, r = 
@@ -279,6 +301,41 @@ end
 
 
 
+
+
+## Thermodynamic factors
+function thermodynamic_factor_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+    """
+    Thermodynamic factor for the activity coefficient. The term `(1-t₊)` is included elsewhere,
+    do not include the multiple in this function
+    """
+    func(c_e, T) = ones(length(c_e))
+
+    ν_p = func(c_e_p, T_p)
+    ν_s = func(c_e_s, T_s)
+    ν_n = func(c_e_n, T_n)
+
+    return ν_p, ν_s, ν_n
+end
+
+function thermodynamic_factor(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+    """
+    Thermodynamic factor for the activity coefficient. The term `(1-t₊)` is included elsewhere,
+    do not include the multiple in this function
+    """
+    func(c_e, T) = @. (0.601 - 0.24(c_e/1000)^0.5 +0.982*(1-0.0052(T-293))*(c_e/1000)^1.5)
+
+    ν_p = func(c_e_p, T_p)
+    ν_s = func(c_e_s, T_s)
+    ν_n = func(c_e_n, T_n)
+
+    return ν_p, ν_s, ν_n
+end
+
+
+
+
+
 ## Reaction Rates
 sqrt_ReLU(x;minval=0) = sqrt(max(minval,x))
 
@@ -294,32 +351,13 @@ function rxn_BV(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p;
     R = const_Ideal_Gas
 
     # simplified version which is faster to calculate
-    if true #eltype(c_s_star) == Num
-
-        if α == 0.5
-            j_i = @. 2.0k_i*sqrt(c_e*c_s_star*(c_s_max - c_s_star))*(sinh(0.5*F*η/(R*T)))
-        else
-            j_i = @. k_i*(c_e)^(1 - α)*c_s_star^α*(c_s_max - c_s_star)^(1 - α)*(exp(α*F*η/(R*T)) - exp(-(α*F*η/(R*T))))
-        end
-
-    else # non-simplified form
-        # normalizing the concentrations
-        θ_i = c_s_star./c_s_max
-        ĉ_e = c_e./p.θ[:c_e₀]
-        η̂ = η.*(F./(R.*T))
-        act_R = θ_i./(1.0 .- θ_i)
-
-        γ_ts = 1.0./(1.0 .- θ_i) # needed for ecd_extras
-
-        ecd = @. k_i*ĉ_e^(1.0 - α)*act_R^(α)/γ_ts
-        j_i = @. ecd*(exp(-α*η̂) - exp((1.0 - α)*η̂))
-
-        j_i .*= (-p.θ[:c_e₀].^(1.0 .- α).*c_s_max)
-
+    if α == 0.5
+        j_i = @. 2.0k_i*sqrt(c_e*c_s_star*(c_s_max - c_s_star))*(sinh(0.5*F*η/(R*T)))
+    else
+        j_i = @. k_i*(c_e)^(1 - α)*c_s_star^α*(c_s_max - c_s_star)^(1 - α)*(exp(α*F*η/(R*T)) - exp(-(α*F*η/(R*T))))
     end
 
     return j_i
-
 end
 
 function MHC_kfunc(η, λ)

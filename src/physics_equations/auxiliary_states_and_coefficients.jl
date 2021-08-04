@@ -30,34 +30,20 @@ end
 
 function build_I_V_P!(states, p::AbstractParam)
     """
-    If the model is using current or voltage, build the voltage.
-    If the model is using power, the input `I` is really the power input. The state `I` must be 
-    redefined to be I = P/V
+    Define the current, voltage, and power.
     """
 
     Φ_s = states[:Φ_s]
 
     I1C = calc_I1C(p)
-
-    if p.numerics.edge_values === :center
-        V = Φ_s[1] - Φ_s[end]
-    else # interpolated edges
-        V = (1.5*Φ_s[1] - 0.5*Φ_s[2]) - (1.5*Φ_s[end] - 0.5*Φ_s[end-1])
-    end
     
-    states[:V] = state_new([V], (), p)
-
-    if states[:method] ∈ (:I, :V)
-        I = states[:I][1]*I1C
-        P = I*V
-    elseif states[:method] === :P
-        # What is currently `I` should really be `P`. `I` is not defined yet
-        P = states[:I][1]
-        I = P/V
-    end
-
-    states[:P] = state_new([P], (), p)
+    I = states[:I][1]*I1C
+    V = Φ_s[1] - Φ_s[end]
+    P = I*V
+    
     states[:I] = state_new([I], (), p)
+    states[:V] = state_new([V], (), p)
+    states[:P] = state_new([P], (), p)
 
     return nothing
 end
@@ -67,7 +53,7 @@ function build_j_aging!(states, p::AbstractParam)
     Append `j` with possible additions from `j_s`
     """
     j = states[:j]
-    states[:j_orig] = copy(j)
+    states[:j] = states[:j_orig] = states[:j_aging] = state_new(j, (:p, :n), p)
     
     if !(p.numerics.aging ∈ (:SEI, :R_aging))
         return nothing
@@ -188,7 +174,7 @@ function build_η!(states, p::AbstractParam)
     if haskey(p.θ, :R_film_n)
         η_n .+= -j.n.*p.θ[:R_film_n]
     end
-
+    
     if     p.numerics.aging === :SEI
         η_n .+= @. - F*j.n*(p.θ[:R_SEI] + film/p.θ[:k_n_aging])
     elseif p.numerics.aging === :R_aging
@@ -221,21 +207,12 @@ function build_heat_generation_rates!(states, p::AbstractParam)
     j = states[:j_aging]
     T = states[:T]
     c_e = states[:c_e]
-    U = states[:U]
     ∂U∂T = states[:∂U∂T]
     η = states[:η]
     K_eff = states[:K_eff]
 
     F = const_Faradays
     R = const_Ideal_Gas
-
-    c_e_p = c_e.p
-    c_e_s = c_e.s
-    c_e_n = c_e.n
-
-    T_p = T.p
-    T_s = T.s
-    T_n = T.n
 
     a_p, a_n = surface_area_to_volume_ratio(p)
     σ_eff_p, σ_eff_n = conductivity_effective(p)
@@ -246,33 +223,33 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # order accuracy [forward & backward difference schemes respectively]
         # while the middle control volume approximations use a second order accuracy [central difference scheme].
     
-        Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
+        Δx = Δx_values(p.N)
     
         ## Solid potential derivatives
     
         # Positive Electrode
-        dΦ_sp = [(-3*Φ_s[1]+4*Φ_s[2]-Φ_s[3])/(2*Δx_p*p.θ[:l_p]);           					# Forward differentiation scheme
-            (Φ_s[3:p.N.p]-Φ_s[1:p.N.p-2]) / (2*Δx_p*p.θ[:l_p]);						# Central differentiation scheme
-            (3*Φ_s[p.N.p]-4*Φ_s[p.N.p-1]+Φ_s[p.N.p-2]) / (2*Δx_p*p.θ[:l_p])		# Backward differentiation scheme
+        dΦ_sp = [(-3*Φ_s[1]+4*Φ_s[2]-Φ_s[3])/(2*Δx.p*p.θ[:l_p]);           					# Forward differentiation scheme
+            (Φ_s[3:p.N.p]-Φ_s[1:p.N.p-2]) / (2*Δx.p*p.θ[:l_p]);						# Central differentiation scheme
+            (3*Φ_s[p.N.p]-4*Φ_s[p.N.p-1]+Φ_s[p.N.p-2]) / (2*Δx.p*p.θ[:l_p])		# Backward differentiation scheme
             ]
     
         # Negative Electrode
-        dΦ_sn = [(-3*Φ_s[p.N.p+1]+4*Φ_s[p.N.p+2]-Φ_s[p.N.p+3])/(2*Δx_n*p.θ[:l_n]); 	# Forward differentiation scheme
-            (Φ_s[p.N.p+3:end]-Φ_s[p.N.p+1:end-2]) / (2*Δx_n*p.θ[:l_n]); 					# Central differentiation scheme
-            (3*Φ_s[end]-4*Φ_s[end-1]+Φ_s[end-2]) / (2*Δx_n*p.θ[:l_n]) 						# Backward differentiation scheme
+        dΦ_sn = [(-3*Φ_s[p.N.p+1]+4*Φ_s[p.N.p+2]-Φ_s[p.N.p+3])/(2*Δx.n*p.θ[:l_n]); 	# Forward differentiation scheme
+            (Φ_s[p.N.p+3:end]-Φ_s[p.N.p+1:end-2]) / (2*Δx.n*p.θ[:l_n]); 					# Central differentiation scheme
+            (3*Φ_s[end]-4*Φ_s[end-1]+Φ_s[end-2]) / (2*Δx.n*p.θ[:l_n]) 						# Backward differentiation scheme
             ]
     
-        dΦ_s = [
-            dΦ_sp
-            dΦ_sn
-            ]
+        dΦ_s = (
+            p = dΦ_sp,
+            n = dΦ_sn,
+            )
     
         ## Electrolyte potential derivatives
     
         # Positive Electrode
     
-        dΦ_ep = [ (-3*Φ_e[1]+4*Φ_e[2]-Φ_e[3])/(2*Δx_p*p.θ[:l_p]);		# Forward differentiation scheme
-            (Φ_e[3:p.N.p]-Φ_e[1:p.N.p-2])/(2*Δx_p*p.θ[:l_p])	  	# Central differentiation scheme
+        dΦ_ep = [ (-3*Φ_e[1]+4*Φ_e[2]-Φ_e[3])/(2*Δx.p*p.θ[:l_p]);		# Forward differentiation scheme
+            (Φ_e[3:p.N.p]-Φ_e[1:p.N.p-2])/(2*Δx.p*p.θ[:l_p])	  	# Central differentiation scheme
             ]
     
         # Attention! The last volume of the positive electrode will involve one volume of the
@@ -280,7 +257,7 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the positive electrode: derivative approximation with a central scheme
-        dΦ_e_last_p = 2*(Φ_e[p.N.p+1]-Φ_e[p.N.p-1])/(3 * Δx_p*p.θ[:l_p] + Δx_s*p.θ[:l_s])
+        dΦ_e_last_p = 2*(Φ_e[p.N.p+1]-Φ_e[p.N.p-1])/(3 * Δx.p*p.θ[:l_p] + Δx.s*p.θ[:l_s])
     
         # Separator
     
@@ -289,17 +266,17 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # considerations must be done with respect to the deltax quantities.
     
         # First CV in the separator: derivative approximation with a central difference scheme
-        dΦ_e_first_s = 2*(Φ_e[p.N.p+2]-Φ_e[p.N.p])/(Δx_p*p.θ[:l_p] + 3* Δx_s*p.θ[:l_s])
+        dΦ_e_first_s = 2*(Φ_e[p.N.p+2]-Φ_e[p.N.p])/(Δx.p*p.θ[:l_p] + 3* Δx.s*p.θ[:l_s])
     
         # Central difference scheme
-        dΦ_es =  (Φ_e[p.N.p+3:p.N.p+p.N.s]-Φ_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx_s*p.θ[:l_s])
+        dΦ_es =  (Φ_e[p.N.p+3:p.N.p+p.N.s]-Φ_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx.s*p.θ[:l_s])
     
         # Attention! The last volume of the separator will involve one volume of the
         # negative section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the separator: derivative approximation with a central scheme
-        dΦ_e_last_s = 2*(Φ_e[p.N.p+p.N.s+1]-Φ_e[p.N.p+p.N.s-1])/( Δx_n*p.θ[:l_n] + 3*Δx_s*p.θ[:l_s])
+        dΦ_e_last_s = 2*(Φ_e[p.N.p+p.N.s+1]-Φ_e[p.N.p+p.N.s-1])/( Δx.n*p.θ[:l_n] + 3*Δx.s*p.θ[:l_s])
     
         # Negative electrode
     
@@ -308,28 +285,24 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # considerations must be done with respect to the deltax quantities.
     
         # First CV in the negative electrode: derivative approximation with a central scheme
-        dΦ_e_first_n = 2*(Φ_e[p.N.p+p.N.s+2]-Φ_e[p.N.p+p.N.s])/(3 * Δx_n*p.θ[:l_n] + Δx_s*p.θ[:l_s])
+        dΦ_e_first_n = 2*(Φ_e[p.N.p+p.N.s+2]-Φ_e[p.N.p+p.N.s])/(3 * Δx.n*p.θ[:l_n] + Δx.s*p.θ[:l_s])
     
         # Central difference scheme
-        dΦ_en = [(Φ_e[p.N.p+p.N.s+3:end]-Φ_e[p.N.p+p.N.s+1:end-2])/(2*Δx_n*p.θ[:l_n]);
-            (3*Φ_e[end]-4*Φ_e[end-1]+Φ_e[end-2])/(2*Δx_n*p.θ[:l_n])
+        dΦ_en = [(Φ_e[p.N.p+p.N.s+3:end]-Φ_e[p.N.p+p.N.s+1:end-2])/(2*Δx.n*p.θ[:l_n]);
+            (3*Φ_e[end]-4*Φ_e[end-1]+Φ_e[end-2])/(2*Δx.n*p.θ[:l_n])
             ]
-        dΦ_e = [
-            dΦ_ep
-            dΦ_e_last_p
-            dΦ_e_first_s
-            dΦ_es
-            dΦ_e_last_s
-            dΦ_e_first_n
-            dΦ_en
-        ]
+        dΦ_e = (
+            p = [dΦ_ep;dΦ_e_last_p],
+            s = [dΦ_e_first_s;dΦ_es;dΦ_e_last_s],
+            n = [dΦ_e_first_n;dΦ_en],
+        )
     
         ## Electrolyte concentration derivatives
     
         # Positive Electrode
     
-        dc_ep = [ (-3*c_e[1]+4*c_e[2]-c_e[3])/(2*Δx_p*p.θ[:l_p]); 		# Forward differentiation scheme
-            (c_e[3:p.N.p]-c_e[1:p.N.p-2])/(2*Δx_p*p.θ[:l_p]) 	# Central differentiation scheme
+        dc_ep = [ (-3*c_e[1]+4*c_e[2]-c_e[3])/(2*Δx.p*p.θ[:l_p]); 		# Forward differentiation scheme
+            (c_e[3:p.N.p]-c_e[1:p.N.p-2])/(2*Δx.p*p.θ[:l_p]) 	# Central differentiation scheme
             ]
     
         # Attention! The last volume of the positive electrode will involve one volume of the
@@ -337,7 +310,7 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the positive electrode: derivative approximation with a central scheme
-        dc_e_last_p = 2*(c_e[p.N.p+1]-c_e[p.N.p-1])/(3 * Δx_p*p.θ[:l_p] + Δx_s*p.θ[:l_s])
+        dc_e_last_p = 2*(c_e[p.N.p+1]-c_e[p.N.p-1])/(3 * Δx.p*p.θ[:l_p] + Δx.s*p.θ[:l_s])
     
         # Separator
     
@@ -346,17 +319,17 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # considerations must be done with respect to the deltax quantities.
     
         # First CV in the separator: derivative approximation with a central scheme
-        dc_e_first_s = 2*(c_e[p.N.p+2]-c_e[p.N.p])/( Δx_p*p.θ[:l_p] + 3* Δx_s*p.θ[:l_s])
+        dc_e_first_s = 2*(c_e[p.N.p+2]-c_e[p.N.p])/( Δx.p*p.θ[:l_p] + 3* Δx.s*p.θ[:l_s])
     
         # Central differentiation scheme
-        dc_es = (c_e[p.N.p+3:p.N.p+p.N.s]-c_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx_s*p.θ[:l_s])
+        dc_es = (c_e[p.N.p+3:p.N.p+p.N.s]-c_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx.s*p.θ[:l_s])
     
         # Attention! The last volume of the separator will involve one volume of the
         # negative section for the calculation of the derivative. Therefore suitable
         # considerations must be done with respect to the deltax quantities.
     
         # Last CV in the separator: derivative approximation with a central scheme
-        dc_e_last_s = 2*(c_e[p.N.p+p.N.s+1]-c_e[p.N.p+p.N.s-1])/( Δx_n*p.θ[:l_n] + 3*Δx_s*p.θ[:l_s])
+        dc_e_last_s = 2*(c_e[p.N.p+p.N.s+1]-c_e[p.N.p+p.N.s-1])/( Δx.n*p.θ[:l_n] + 3*Δx.s*p.θ[:l_s])
     
         # Negative electrode
     
@@ -365,21 +338,17 @@ function build_heat_generation_rates!(states, p::AbstractParam)
         # considerations must be done with respect to the deltax quantities.
     
         # First CV in the negative electrode: derivative approximation with a central scheme
-        dc_e_first_n = 2*(c_e[p.N.p+p.N.s+2]-c_e[p.N.p+p.N.s])/(3 * Δx_n*p.θ[:l_n] + Δx_s*p.θ[:l_s])
+        dc_e_first_n = 2*(c_e[p.N.p+p.N.s+2]-c_e[p.N.p+p.N.s])/(3 * Δx.n*p.θ[:l_n] + Δx.s*p.θ[:l_s])
     
-        dc_en = [(c_e[p.N.p+p.N.s+3:end]-c_e[p.N.p+p.N.s+1:end-2])/(2*Δx_p*p.θ[:l_p]); 	# Central differentiation scheme
-            (3*c_e[end]-4*c_e[end-1]+c_e[end-2])/(2*Δx_n*p.θ[:l_n]) 						# Backward differentiation scheme
+        dc_en = [(c_e[p.N.p+p.N.s+3:end]-c_e[p.N.p+p.N.s+1:end-2])/(2*Δx.p*p.θ[:l_p]); 	# Central differentiation scheme
+            (3*c_e[end]-4*c_e[end-1]+c_e[end-2])/(2*Δx.n*p.θ[:l_n]) 						# Backward differentiation scheme
             ]
     
-        dc_e = [
-            dc_ep
-            dc_e_last_p
-            dc_e_first_s
-            dc_es
-            dc_e_last_s
-            dc_e_first_n
-            dc_en
-        ]
+        dc_e = (
+            p = [dc_ep;dc_e_last_p],
+            s = [dc_e_first_s;dc_es;dc_e_last_s],
+            n = [dc_e_first_n;dc_en],
+        )
     
         return dΦ_s, dΦ_e, dc_e
     end
@@ -390,25 +359,27 @@ function build_heat_generation_rates!(states, p::AbstractParam)
     ## Reversible heat generation rate
 
     # Positive electrode
-    @views @inbounds Q_rev_p = F*a_p*j[1:p.N.p].*T[p.N.a+1:p.N.a+p.N.p].*∂U∂T.p
+    @views @inbounds Q_rev_p = F*a_p*j.p.*T.p.*∂U∂T.p
 
     # Negative Electrode
-    @views @inbounds Q_rev_n = F*a_n*j[p.N.p+1:end].*T[p.N.a+p.N.p+p.N.s+1:p.N.a+p.N.p+p.N.s+p.N.n].*∂U∂T.n
+    @views @inbounds Q_rev_n = F*a_n*j.n.*T.n.*∂U∂T.n
 
     ## Reaction heat generation rate
     # Positive reaction heat generation rate
-    @views @inbounds Q_rxn_p = F*a_p*j[1:p.N.p].*η.p
+    @views @inbounds Q_rxn_p = F*a_p*j.p.*η.p
 
     # Negative reaction heat generation rate
-    @views @inbounds Q_rxn_n = F*a_n*j[p.N.p+1:end].*η.n
+    @views @inbounds Q_rxn_n = F*a_n*j.n.*η.n
 
     ## Ohmic heat generation rate
+    ν_p, ν_s, ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
+
     # Positive electrode ohmic generation rate
-    Q_ohm_p = σ_eff_p * (dΦ_s[1:p.N.p]).^2 + K_eff.p.*(dΦ_e[1:p.N.p]).^2 + 2*R*K_eff.p.*T[p.N.a+1:p.N.a+p.N.p]*(1-p.θ[:t₊])/F.*dc_e[1:p.N.p].*1.0./c_e[1:p.N.p].*dΦ_e[1:p.N.p]
+    Q_ohm_p = σ_eff_p * dΦ_s.p.^2 + K_eff.p.*dΦ_e.p.^2 + 2*R*K_eff.p.*T.p*(1-p.θ[:t₊]).*ν_p/F.*(dc_e.p./c_e.p).*dΦ_e.p
     # Separator ohmic generation rate
-    Q_ohm_s = K_eff.s.*(dΦ_e[p.N.p+1:p.N.p+p.N.s]).^2 + 2*R*K_eff.s.*T[p.N.a+p.N.p+1:p.N.a+p.N.p+p.N.s]*(1-p.θ[:t₊])/F.*dc_e[p.N.p+1:p.N.p+p.N.s].*1.0./c_e[p.N.p+1:p.N.p+p.N.s].*dΦ_e[p.N.p+1:p.N.p+p.N.s]
+    Q_ohm_s = K_eff.s.*dΦ_e.s.^2 + 2*R*K_eff.s.*T.s*(1-p.θ[:t₊]).*ν_s/F.*dc_e.s.*1.0./c_e.s.*dΦ_e.s
     # Negative electrode ohmic generation rate
-    Q_ohm_n = σ_eff_n * (dΦ_s[p.N.p+1:end]).^2 +K_eff.n.*(dΦ_e[p.N.p+p.N.s+1:end]).^2 + 2*R*K_eff.n.*T[p.N.a+p.N.p+p.N.s+1:p.N.a+p.N.p+p.N.s+p.N.n]*(1-p.θ[:t₊])/F.*dc_e[p.N.p+p.N.s+1:end].*1.0./c_e[p.N.p+p.N.s+1:end].*dΦ_e[p.N.p+p.N.s+1:end]
+    Q_ohm_n = σ_eff_n * dΦ_s.n.^2 + K_eff.n.*dΦ_e.n.^2 + 2*R*K_eff.n.*T.n*(1-p.θ[:t₊]).*ν_n/F.*(dc_e.n./c_e.n).*dΦ_e.n
     
     Q_rev = [Q_rev_p; Q_rev_n]
     Q_rxn = [Q_rxn_p; Q_rxn_n]
@@ -443,7 +414,7 @@ function active_material(p::AbstractParam)
     Electrode active material fraction [-]
     """
     ϵ_sp = 1.0 - (p.θ[:ϵ_fp] + p.θ[:ϵ_p])
-    ϵ_sn = 1.0 - (p.θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? (p.θ[:ϵ_n])[1] : p.θ[:ϵ_n]))
+    ϵ_sn = 1.0 - (p.θ[:ϵ_fn] + p.θ[:ϵ_n])
 
     return ϵ_sp, ϵ_sn
 end
@@ -518,72 +489,62 @@ end
 
 """
 Calculations which are primarily used in `set_vars!`, denoted by the prefix `calc_`.
-Since p.θ is a dictionary which may contain `Float64` or `Vector{Float64}`, it is important
-to denote the type of each variable for performance
 """
-@inline function calc_I1C(p::AbstractParam)
-    """
-    Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
-    """
-    F = const_Faradays
+function limiting_electrode(p::AbstractParam)
     θ = p.θ
+    ϵ_sp, ϵ_sn = active_material(p)
 
-    ϵ_s_p = 1.0 - (θ[:ϵ_fp]::Float64 + θ[:ϵ_p]::Float64)
-    ϵ_s_n = 1.0 - (θ[:ϵ_fn]::Float64 + (p.numerics.aging === :R_aging ? (θ[:ϵ_n]::Vector{Float64})[1] : θ[:ϵ_n]::Float64))
-
-    I1C = (F/3600.0)*min(
-        ϵ_s_p*θ[:l_p]::Float64*θ[:c_max_p]::Float64*(θ[:θ_min_p]::Float64 - θ[:θ_max_p]::Float64),
-        ϵ_s_n*θ[:l_n]::Float64*θ[:c_max_n]::Float64*(θ[:θ_max_n]::Float64 - θ[:θ_min_n]::Float64),
-        )
-
-    return I1C
-end
-@inline function calc_I1C(p::param_no_funcs)
-    """
-    Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
-    """
-    F = const_Faradays
-    θ = p.θ
-
-    ϵ_s_p = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
-    ϵ_s_n = 1.0 - (θ[:ϵ_fn] + (p.numerics.aging === :R_aging ? θ[:ϵ_n][1] : θ[:ϵ_n]))
-
-    I1C = (F/3600.0)*min(
-        ϵ_s_p*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]),
-        ϵ_s_n*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n]),
-        )
-
-    return I1C
-end
-
-@inline calc_V(Y::Vector{Float64}, p::param, run::AbstractRun{<:run_voltage}, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}} = value(run)
-@inline function calc_V(Y::Vector{Float64}, p::param, ::AbstractRun{<:AbstractMethod}, ind_Φ_s::T=p.ind.Φ_s) where {T<:AbstractUnitRange{Int64}}
-    """
-    Calculate the voltage (V)
-    """
-    if p.numerics.edge_values === :center
-        return @views @inbounds Y[ind_Φ_s[1]] - Y[ind_Φ_s[end]]
-    else # interpolated edges
-        return @views @inbounds (1.5*Y[ind_Φ_s[1]] - 0.5*Y[ind_Φ_s[2]]) - (1.5*Y[ind_Φ_s[end]] - 0.5*Y[ind_Φ_s[end-1]])
+    if ϵ_sp*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]) > ϵ_sn*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n])
+        return :p
+    else
+        return :n
     end
 end
 
-@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_current}, p::param) = value(run)
-@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_voltage}, p::param) = @inbounds Y[p.ind.I[1]]
-@inline calc_I(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power},   p::param) = @inbounds value(run)/model.V[end]/calc_I1C(p)
+@inline calc_I1C(p::AbstractParam) = calc_I1C(p.θ)
+@inline function calc_I1C(θ::Dict{Symbol,T}) where T<:Union{Float64,Any}
+    """
+    Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
+    """
+    F = 96485.3365
 
-@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:AbstractMethod}, p::param) = @inbounds model.I[end]*model.V[end]*calc_I1C(p)
-@inline calc_P(Y::Vector{Float64}, model::model_output, run::AbstractRun{<:run_power}, p::param) = value(run)
+    ϵ_sp = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
+    ϵ_sn = 1.0 - (θ[:ϵ_fn] + θ[:ϵ_n])
+
+    I1C = (F/3600.0)*min(
+        ϵ_sp*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]),
+        ϵ_sn*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n]),
+        )
+
+    return I1C
+end
 
 @inline function calc_SOC(c_s_avg::AbstractVector{Float64}, p::param)
     """
     Calculate the SOC (dimensionless fraction)
     """
-    if p.numerics.solid_diffusion === :Fickian
-        c_s_avg_sum = @views @inbounds mean(c_s_avg[(p.N.p*p.N.r_p)+1:end])
-    else # c_s_avg in neg electrode
-        c_s_avg_sum = @views @inbounds mean(c_s_avg[p.N.p+1:end])
-    end
+    c_s_avg_sum = @views @inbounds mean(c_s_avg[(p.numerics.solid_diffusion === :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end])
 
-    return (c_s_avg_sum/p.θ[:c_max_n]::Float64 - p.θ[:θ_min_n]::Float64)/(p.θ[:θ_max_n]::Float64 - p.θ[:θ_min_n]::Float64) # cell-soc fraction
+    return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
 end
+
+@inline function temperature_weighting(T::AbstractVector{<:Number},p::AbstractParam)
+    @views @inbounds (
+        mean(T[1:p.N.a])*p.θ[:l_a]+
+        mean(T[1:p.N.p .+ (p.N.a)])*p.θ[:l_p]+
+        mean(T[1:p.N.s .+ (p.N.a+p.N.p)])*p.θ[:l_s]+
+        mean(T[1:p.N.n .+ (p.N.a+p.N.p+p.N.s)])*p.θ[:l_n]+
+        mean(T[1:p.N.z .+ (p.N.a+p.N.p+p.N.s+p.N.n)])*p.θ[:l_z]
+    )/(p.θ[:l_a]+p.θ[:l_p]+p.θ[:l_s]+p.θ[:l_n]+p.θ[:l_z])
+end
+@inline function constant_temperature(t,Y,YP::AbstractVector{<:Number},p::AbstractParam)
+    temperature_weighting((@views @inbounds YP[p.ind.T]),p)
+end
+temperature_weighting(T::VectorOfArray,p::AbstractParam) = [temperature_weighting(_T,p) for _T in T]
+
+η_plating(Y::AbstractVector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+η_plating(t,Y,YP,p) = η_plating(Y,p)
+
+export dc_s
+dc_s(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam)-> YP[p.ind.c_s_avg[index]]
+dc_s(index::Int64) = dc_s(Val(index))

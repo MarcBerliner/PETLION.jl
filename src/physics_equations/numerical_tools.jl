@@ -93,10 +93,10 @@ function block_matrix_maker(p, X, Y, Z)
     return A_tot
 end
 
-function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p)
+function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p::AbstractParam)
     # interpolate_electrolyte_conductivities interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
 
-    Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
+    Δx = Δx_values(p.N)
 
     Keff_i_medio(β_i, Keff_i) = Keff_i[1:end-1].*Keff_i[2:end]./(β_i*Keff_i[2:end]+(1-β_i)*Keff_i[1:end-1])
     β_i_j(Δx_i, l_i, Δx_j, l_j) = Δx_i*l_i/2 /(Δx_j*l_j/2+Δx_i*l_i/2)
@@ -109,7 +109,7 @@ function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p)
     # The last element of Keff_p_medio will be the harmonic mean of the
     # elements at the interface positive-separator
 
-    β_p_s = β_i_j(Δx_p, p.θ[:l_p], Δx_s, p.θ[:l_s])
+    β_p_s = β_i_j(Δx.p, p.θ[:l_p], Δx.s, p.θ[:l_s])
 
     Keff_p_s_interface = Keff_i_j_interface(β_p_s, Keff_p, Keff_s)
 
@@ -123,7 +123,7 @@ function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p)
     # The last element of Keff_s_medio will be the harmonic mean of the
     # elements at the interface separator-negative
 
-    β_s_n = β_i_j(Δx_s, p.θ[:l_s], Δx_n, p.θ[:l_n])
+    β_s_n = β_i_j(Δx.s, p.θ[:l_s], Δx.n, p.θ[:l_n])
 
     Keff_s_n_interface = Keff_i_j_interface(β_s_n, Keff_s, Keff_n)
 
@@ -141,12 +141,12 @@ function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p)
 
 end
 
-harmonic_mean(β, x₁, x₂) = x₁.*x₂ ./ (β*x₂ + (1.0 - β)*x₁)
+harmonic_mean(β, x₁, x₂) = @. x₁*x₂/(β*x₂ + (1.0 - β)*x₁)
 
-function interpolate_electrolyte_concentration(c_e, p)
+function interpolate_electrolyte_concentration(c_e, p::AbstractParam)
     # interpolate_electrolyte_concentration interpolates the value of electrolyte concentration at the edges of control volumes using harmonic mean.
 
-    Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
+    Δx = Δx_values(p.N)
 
     ## Electrolyte concentration interpolation
 
@@ -155,7 +155,7 @@ function interpolate_electrolyte_concentration(c_e, p)
     @inbounds @views c̄_e_p = harmonic_mean(β_c_e_p, c_e[1:p.N.p-1], c_e[2:p.N.p])
 
     # Interpolation on the interface between separator & positive electrode
-    @inbounds @views β_c_e_ps = Δx_p*p.θ[:l_p]/2 / (Δx_p*p.θ[:l_p]/2 + Δx_s*p.θ[:l_s]/2)
+    @inbounds @views β_c_e_ps = Δx.p*p.θ[:l_p]/2 / (Δx.p*p.θ[:l_p]/2 + Δx.s*p.θ[:l_s]/2)
     @inbounds @views c̄_e_ps = harmonic_mean(β_c_e_ps, c_e[p.N.p], c_e[p.N.p+1])
 
     # Interpolation within the separator
@@ -163,7 +163,7 @@ function interpolate_electrolyte_concentration(c_e, p)
     @inbounds @views c̄_e_s = harmonic_mean(β_c_e_s, c_e[p.N.p+1:p.N.p+p.N.s-1], c_e[p.N.p+2:p.N.p+p.N.s])
 
     # Interpolation on the interface between separator & negative electrode
-    @inbounds @views β_c_e_sn = Δx_s*p.θ[:l_s]/2 / (Δx_n*p.θ[:l_n]/2 + Δx_s*p.θ[:l_s]/2)
+    @inbounds @views β_c_e_sn = Δx.s*p.θ[:l_s]/2 / (Δx.n*p.θ[:l_n]/2 + Δx.s*p.θ[:l_s]/2)
     @inbounds @views c̄_e_sn = harmonic_mean(β_c_e_sn, c_e[p.N.p+p.N.s], c_e[p.N.p+p.N.s+1])
 
     # Interpolation within the negative electrode
@@ -174,17 +174,17 @@ function interpolate_electrolyte_concentration(c_e, p)
 
 end
 
-function interpolate_temperature(T, p)
+function interpolate_temperature(T, p::AbstractParam)
     # interpolate_temperature evaluates the interpolation of the temperature at the edges of control volumes using harmonic mean.
 
-    Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
+    Δx = Δx_values(p.N)
 
     # Interpolation within the positive electrode
     β_T_p = 0.5
     @inbounds @views T̄_p = harmonic_mean(β_T_p, T[p.N.a+1:p.N.a+p.N.p-1], T[p.N.a+2:p.N.a+p.N.p])
 
     # Interpolation on the interface between separator & positive electrode
-    @inbounds @views β_T_ps = Δx_p*p.θ[:l_p]/2 / (Δx_p*p.θ[:l_p]/2 + Δx_s*p.θ[:l_s]/2)
+    @inbounds @views β_T_ps = Δx.p*p.θ[:l_p]/2 / (Δx.p*p.θ[:l_p]/2 + Δx.s*p.θ[:l_s]/2)
     @inbounds @views T̄_ps = harmonic_mean(β_T_ps, T[p.N.a+p.N.p], T[p.N.a+p.N.p+1])
 
     # Interpolation within the separator
@@ -192,7 +192,7 @@ function interpolate_temperature(T, p)
     @inbounds @views T̄_s = harmonic_mean(β_T_s, T[p.N.a+p.N.p+1:p.N.a+p.N.p+p.N.s-1], T[p.N.a+p.N.p+2:p.N.a+p.N.p+p.N.s])
 
     # Interpolation on the interface between separator & negative electrode
-    @inbounds @views β_T_sn = Δx_s*p.θ[:l_s]/2 / (Δx_n*p.θ[:l_n]/2 + Δx_s*p.θ[:l_s]/2)
+    @inbounds @views β_T_sn = Δx.s*p.θ[:l_s]/2 / (Δx.n*p.θ[:l_n]/2 + Δx.s*p.θ[:l_s]/2)
     @inbounds @views T̄_sn = harmonic_mean(β_T_sn, T[p.N.a+p.N.p+p.N.s], T[p.N.a+p.N.p+p.N.s+1])
 
     # Interpolation within the negative electrode
@@ -204,36 +204,27 @@ return T̄_p, T̄_ps, T̄_s, T̄_sn, T̄_n
 end
 
 
-function interpolate_electrolyte_concetration_fluxes(c_e, p)
+function interpolate_electrolyte_concetration_fluxes(c_e, p::AbstractParam)
     # interpolate_electrolyte_concetration_fluxes interpolates the electrolyte concentration flux at the edges of control volumes using harmonic mean.
 
-    Δx_p, Δx_s, Δx_n, Δx_a, Δx_z = Δx(p)
+    Δx = Δx_values(p.N)
 
     # Fluxes within the positive electrode
-    @inbounds @views c_e_flux_p = (c_e[2:p.N.p] .- c_e[1:p.N.p-1])/(Δx_p*p.θ[:l_p])
+    @inbounds @views c_e_flux_p = (c_e[2:p.N.p] .- c_e[1:p.N.p-1])/(Δx.p*p.θ[:l_p])
 
     # Fluxes at the separator-positive interface
-    @inbounds @views c_e_flux_ps = (c_e[p.N.p+1] .- c_e[p.N.p]) / ((Δx_p*p.θ[:l_p]/2+Δx_s*p.θ[:l_s]/2))
+    @inbounds @views c_e_flux_ps = (c_e[p.N.p+1] .- c_e[p.N.p]) / ((Δx.p*p.θ[:l_p]/2+Δx.s*p.θ[:l_s]/2))
 
     # Fluxes within the separator
-    @inbounds @views c_e_flux_s = (c_e[p.N.p+2:p.N.p+p.N.s] .- c_e[p.N.p+1:p.N.p+p.N.s-1])/(Δx_s*p.θ[:l_s])
+    @inbounds @views c_e_flux_s = (c_e[p.N.p+2:p.N.p+p.N.s] .- c_e[p.N.p+1:p.N.p+p.N.s-1])/(Δx.s*p.θ[:l_s])
 
     # Fluxes at the separator-negative interface
-    @inbounds @views c_e_flux_sn = (c_e[p.N.p+p.N.s+1] .- c_e[p.N.p+p.N.s]) / ((Δx_n*p.θ[:l_n]/2+Δx_s*p.θ[:l_s]/2))
+    @inbounds @views c_e_flux_sn = (c_e[p.N.p+p.N.s+1] .- c_e[p.N.p+p.N.s]) / ((Δx.n*p.θ[:l_n]/2+Δx.s*p.θ[:l_s]/2))
 
     # Fluxes within the negative electrode
-    @inbounds @views c_e_flux_n = (c_e[p.N.p+p.N.s+2:end] .- c_e[p.N.p+p.N.s+1:end-1])/(Δx_n*p.θ[:l_n])
+    @inbounds @views c_e_flux_n = (c_e[p.N.p+p.N.s+2:end] .- c_e[p.N.p+p.N.s+1:end-1])/(Δx.n*p.θ[:l_n])
 
     return c_e_flux_p, c_e_flux_ps, c_e_flux_s, c_e_flux_sn, c_e_flux_n
 end
 
-function Δx(p)
-
-    Δx_p = 1.0/p.N.p
-    Δx_s = 1.0/p.N.s
-    Δx_n = 1.0/p.N.n
-    Δx_a = 1.0/p.N.a
-    Δx_z = 1.0/p.N.z
-
-    return Δx_p, Δx_s, Δx_n, Δx_a, Δx_z
-end
+Δx_values(N) = (p=1/N.p, s=1/N.s, n=1/N.n, a=1/N.a, z=1/N.z)

@@ -1,5 +1,5 @@
 @inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6;
-    modify!::Function=set_var!,
+    modify!::R7=set_var!,
     init_all::Bool=false
     ) where {
         R1<:model_output,
@@ -7,7 +7,8 @@
         R3<:Vector{Float64},
         R4<:Float64,
         R5<:AbstractRun,
-        R6<:options_model
+        R6<:options_model,
+        R7<:Function,
         }
     """
     Sets all the outputs for the model. There are three kinds of variable outputs:
@@ -27,9 +28,9 @@
 
     # these variables must be calculated, but they may not necessarily be kept
     modify!(model.t,        (keep.t       || init_all), t + run.t0 )
-    modify!(model.V,        (keep.V       || init_all), calc_V(Y, p, run) )
-    modify!(model.I,        (keep.I       || init_all), calc_I(Y, model, run, p) )
-    modify!(model.P,        (keep.P       || init_all), calc_P(Y, model, run, p) )
+    modify!(model.I,        (keep.I       || init_all), calc_I(Y, p) )
+    modify!(model.V,        (keep.V       || init_all), calc_V(Y, p) )
+    modify!(model.P,        (keep.P       || init_all), calc_P(Y, p) )
     modify!(model.c_s_avg,  (keep.c_s_avg || init_all), @views @inbounds Y[ind.c_s_avg] )
     modify!(model.SOC,      (keep.SOC     || init_all), @views @inbounds calc_SOC(model.c_s_avg[end], p) )
     if p.numerics.temperature modify!(model.T, (keep.T || init_all), @views @inbounds Y[ind.T] ) end
@@ -50,24 +51,16 @@
 end
 
 @inline function set_var!(x::T1, append::Bool, x_val::T2) where {T1<:Vector{Float64},T2<:Float64}
-    if append
-        push!(x, x_val)
-    else
-        @inbounds x[1] = x_val
-    end
+    append ? push!(x, x_val) : (@inbounds x[1] = x_val)
 end
 @inline function set_var!(x::T1, append::Bool, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
-    if append
-        push!(x, x_val)
-    else
-        @inbounds x[1] .= x_val
-    end
+    append ? push!(x, x_val) : (@inbounds x[1] .= x_val)
 end
 
-@inline function set_var_last!(x::T1, append::Bool, x_val::T2) where {T1<:Vector{Float64},T2<:Float64}
+@inline function set_var_last!(x::T1, append, x_val::T2) where {T1<:Vector{Float64},T2<:Float64}
     @inbounds x[end] = x_val
 end
-@inline function set_var_last!(x::T1, append::Bool, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
+@inline function set_var_last!(x::T1, append, x_val::T2) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
     @inbounds x[end] .= x_val
 end
 

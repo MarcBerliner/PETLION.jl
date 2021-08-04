@@ -14,20 +14,13 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
     @inbounds for key in keys(θ)
         θ_any[key] = θ[key]
     end
+    θ[:I1C] = calc_I1C(θ)
     
     ## temporary params with no functions
     _p = param_no_funcs(θ_any, numerics, N, ind, opts, bounds, cache)
     
-    if     numerics.jacobian === :symbolic
-        funcs = retrieve_functions_symbolic(_p, methods)
-    elseif numerics.jacobian === :AD
-        funcs = load_functions(_p, methods)
-    end
-
-    # update θ
-    @inbounds for method in methods
-        funcs[method].update_θ!(cache.θ_tot[method], θ)
-    end
+    funcs = load_functions(_p)
+    method_funcs = method_functions()
     
     ## Real params with functions and methods
     p = param(
@@ -39,7 +32,7 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
         bounds,
         cache,
         funcs,
-        methods,
+        method_funcs,
     )
     return p
 end
@@ -101,18 +94,18 @@ function build_cache(θ, ind, N, numerics, opts, methods)
         
         return labels
     end
-    
-    θ_tot = ImmutableDict{Symbol,Vector{Float64}}()
-    θ_keys = ImmutableDict{Symbol,Vector{Symbol}}()
 
-    @inbounds for method in methods
-        θ_tot = ImmutableDict(θ_tot,  method => Float64[])
-        θ_keys = ImmutableDict(θ_keys, method => Symbol[])
-    end
+    θ_tot =  Float64[]
+    θ_keys =  Symbol[]
 
     vars = variables_in_indices()
     
     opts.var_keep = model_states_logic(opts.outputs, outputs_tot)
+
+    Y0 = zeros(Float64, N.tot)
+    YP0 = zeros(Float64, N.tot)
+    res = zeros(Float64, N.alg)
+    Y_alg = zeros(Float64, N.alg)
     
     id = [
         ones(Int64, N.diff)
@@ -123,7 +116,7 @@ function build_cache(θ, ind, N, numerics, opts, methods)
     constraints = zeros(Int64, N.tot)
     constraints[ind.Φ_s] .= 1 # enforce positivity on solid phase potential in all nodes
     
-    warm_start_dict = Dict{warm_start_info,Vector{Float64}}()
+    save_start_dict = Dict{save_start_info,Vector{Float64}}()
 
     cache = cache_run(
         θ_tot,
@@ -132,9 +125,11 @@ function build_cache(θ, ind, N, numerics, opts, methods)
         variable_labels(),
         vars,
         outputs_tot,
-        warm_start_dict,
-        zeros(Float64, N.tot),
-        zeros(Float64, N.tot),
+        save_start_dict,
+        Y0,
+        YP0,
+        res,
+        Y_alg,
         id,
         constraints,
         )
@@ -172,7 +167,7 @@ function retrieve_states(Y::AbstractArray, p::AbstractParam)
 
     sections = Symbol[]
     @inbounds for (field,_type) in zip(fieldnames(index_state), fieldtypes(index_state))
-        if _type <: AbstractUnitRange && field ≠ :start && field ≠ :stop
+        if _type <: AbstractUnitRange && !(field ∈ (:start,:stop))
             push!(sections, field)
         end
     end
@@ -379,7 +374,7 @@ end
     return Y0, YP0
 end
 
-function strings_directory_func(N::discretizations_per_section, numerics::options_numerical; create_dir=false)
+function strings_directory_func(N::discretizations_per_section, numerics::numerical; create_dir=false) where numerical<:options_numerical
 
     dir_saved_models = "saved_models"
 
@@ -387,24 +382,12 @@ function strings_directory_func(N::discretizations_per_section, numerics::option
 
     str = join(
         [
-            "$(numerics.rxn_p)",
-            "$(numerics.rxn_n)",
-            "$(numerics.OCV_p)",
-            "$(numerics.OCV_n)",
-            "$(numerics.D_s_eff)",
-            "$(numerics.rxn_rate)",
-            "$(numerics.D_eff)",
-            "$(numerics.K_eff)",
-            "$(numerics.temperature)",
-            "$(numerics.solid_diffusion)",
-            "$(numerics.Fickian_method)",
-            "$(numerics.aging)",
-            "$(numerics.edge_values)",
-            "Np$(N.p)",
-            "Ns$(N.s)",
-            "Nn$(N.n)",
-            numerics.temperature                  ? "Na$(N.a)_Nz$(N.z)" : "",
-            numerics.solid_diffusion === :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : ""
+            ["$(getproperty(numerics,field))" for field in filter(x->!(x ∈ (:cathode,:anode)), fieldnames(numerical))];
+            "Np$(N.p)";
+            "Ns$(N.s)";
+            "Nn$(N.n)";
+            numerics.temperature                  ? "Na$(N.a)_Nz$(N.z)" : "";
+            numerics.solid_diffusion === :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : "";
         ],
         "_"
     )
