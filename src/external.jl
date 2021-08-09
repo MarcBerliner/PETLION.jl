@@ -1,10 +1,9 @@
 ## Functions to complete the param structure
-function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
-    methods = get_corrected_methods(methods_old)
+function initialize_param(θ, bounds, opts, _N, numerics)
     
     ind, N_diff, N_alg, N_tot = state_indices(_N, numerics)
     N = discretizations_per_section(_N.p, _N.s, _N.n, _N.a, _N.z, _N.r_p, _N.r_n, N_diff, N_alg, N_tot)
-    cache = build_cache(θ, ind, N, numerics, opts, methods)
+    cache = build_cache(θ, ind, N, numerics, opts)
 
     check_errors_initial(θ, numerics, N)
     
@@ -17,12 +16,11 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
     θ[:I1C] = calc_I1C(θ)
     
     ## temporary params with no functions
-    _p = param_no_funcs(θ_any, numerics, N, ind, opts, bounds, cache)
+    _p = param_skeleton(θ_any, numerics, N, ind, opts, bounds, cache)
     
     funcs = load_functions(_p)
-    method_funcs = method_functions()
     
-    ## Real params with functions and methods
+    ## Real params with functions
     p = param(
         θ,
         numerics,
@@ -32,12 +30,11 @@ function initialize_param(θ, bounds, opts, _N, numerics, methods_old)
         bounds,
         cache,
         funcs,
-        method_funcs,
     )
     return p
 end
 
-function build_cache(θ, ind, N, numerics, opts, methods)
+function build_cache(θ, ind, N, numerics, opts)
     """
     Creates the cache struct for _Params
     """

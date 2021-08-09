@@ -1,5 +1,5 @@
-@inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6;
-    modify!::R7=set_var!,
+@inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6, bounds::R7;
+    modify!::R8=set_var!,
     init_all::Bool=false
     ) where {
         R1<:model_output,
@@ -8,7 +8,8 @@
         R4<:Float64,
         R5<:AbstractRun,
         R6<:options_model,
-        R7<:Function,
+        R7<:boundary_stop_conditions,
+        R8<:Function,
         }
     """
     Sets all the outputs for the model. There are three kinds of variable outputs:
@@ -27,25 +28,25 @@
     keep = opts.var_keep
 
     # these variables must be calculated, but they may not necessarily be kept
-    modify!(model.t,        (keep.t       || init_all), t + run.t0 )
-    modify!(model.I,        (keep.I       || init_all), calc_I(Y, p) )
-    modify!(model.V,        (keep.V       || init_all), calc_V(Y, p) )
-    modify!(model.P,        (keep.P       || init_all), calc_P(Y, p) )
-    modify!(model.c_s_avg,  (keep.c_s_avg || init_all), @views @inbounds Y[ind.c_s_avg] )
-    modify!(model.SOC,      (keep.SOC     || init_all), @views @inbounds calc_SOC(model.c_s_avg[end], p) )
-    if p.numerics.temperature modify!(model.T, (keep.T || init_all), @views @inbounds Y[ind.T] ) end
-
+    modify!(model.t,   (keep.t   || init_all), t + run.t0     )
+    modify!(model.I,   (keep.I   || init_all), calc_I(Y, p)   )
+    modify!(model.V,   (keep.V   || init_all), calc_V(Y, p)   )
+    modify!(model.P,   (keep.P   || init_all), calc_P(Y, p)   )
+    modify!(model.SOC, (keep.SOC || init_all), calc_SOC(Y, p) )
+    
     # these variables do not need to be calculated
-    if keep.YP  modify!(model.YP,  (keep.YP  || init_all), (keep.YP ? copy(YP) : YP)   ) end
-    if keep.c_e modify!(model.c_e, (keep.c_e || init_all), @views @inbounds Y[ind.c_e] ) end
-    if keep.j   modify!(model.j,   (keep.j   || init_all), @views @inbounds Y[ind.j]   ) end
-    if keep.Φ_e modify!(model.Φ_e, (keep.Φ_e || init_all), @views @inbounds Y[ind.Φ_e] ) end
-    if keep.Φ_s modify!(model.Φ_s, (keep.Φ_s || init_all), @views @inbounds Y[ind.Φ_s] ) end
+    if keep.YP      modify!(model.YP,      true, copy(YP)                        ) end
+    if keep.c_e     modify!(model.c_e,     true, @views @inbounds Y[ind.c_e]     ) end
+    if keep.c_s_avg modify!(model.c_s_avg, true, @views @inbounds Y[ind.c_s_avg] ) end
+    if keep.j       modify!(model.j,       true, @views @inbounds Y[ind.j]       ) end
+    if keep.Φ_e     modify!(model.Φ_e,     true, @views @inbounds Y[ind.Φ_e]     ) end
+    if keep.Φ_s     modify!(model.Φ_s,     true, @views @inbounds Y[ind.Φ_s]     ) end
     
     # exist as an optional output if the model uses them
-    if ( p.numerics.aging === :SEI                 && keep.film ) modify!(model.film, (keep.film || init_all), @views @inbounds Y[ind.film] ) end
-    if ( !(p.numerics.aging === false)             && keep.j_s )  modify!(model.j_s,  (keep.j_s  || init_all), @views @inbounds Y[ind.j_s]  ) end
-    if ( p.numerics.solid_diffusion === :quadratic && keep.Q )    modify!(model.Q,    (keep.Q    || init_all), @views @inbounds Y[ind.Q]    ) end
+    if ( p.numerics.temperature === true           && keep.T    ) modify!(model.T,    true, @views @inbounds Y[ind.T]    ) end
+    if ( p.numerics.aging === :SEI                 && keep.film ) modify!(model.film, true, @views @inbounds Y[ind.film] ) end
+    if ( !(p.numerics.aging === false)             && keep.j_s  ) modify!(model.j_s,  true, @views @inbounds Y[ind.j_s]  ) end
+    if ( p.numerics.solid_diffusion === :quadratic && keep.Q    ) modify!(model.Q,    true, @views @inbounds Y[ind.Q]    ) end
 
     return nothing
 end

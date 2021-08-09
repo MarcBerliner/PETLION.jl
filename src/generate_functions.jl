@@ -10,26 +10,19 @@ function load_functions(p::AbstractParam)
         jac_type = jacobian_AD
         load_func = load_functions_forward_diff
     end
-
-    ## Pre-allocation
-    Y0_alg = zeros(Float64, p.N.alg)
-    Y0_alg_prev = zeros(Float64, p.N.alg)
-    res = zeros(Float64, p.N.alg)
-    Y0_diff = zeros(Float64, p.N.diff)
     
     ## Begin loading functions
-    initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys = load_func(p, Y0_diff)
+    initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys = load_func(p)
 
     append!(p.cache.θ_keys, θ_keys)
     append!(p.cache.θ_tot,  zeros(length(θ_keys)))
 
-    initial_conditions = init_newtons_method(f_alg!, J_y_alg!, f_diff!, Y0_alg, Y0_alg_prev, Y0_diff, res)
-    funcs = functions_model(initial_guess!, J_y!, initial_conditions)
+    funcs = model_funcs(initial_guess!, f_diff!, f_alg!, J_y!, J_y_alg!)
     
     return funcs
 end
 
-function load_functions_symbolic(p::AbstractParam, YP_cache=nothing)
+function load_functions_symbolic(p::AbstractParam)
     dir = strings_directory_func(p) * "/"
     files_exist = isdir(dir)
 
@@ -62,9 +55,7 @@ function load_functions_symbolic(p::AbstractParam, YP_cache=nothing)
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys
 end
 
-function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
-    verbose=true,
-    )
+function generate_functions_symbolic(p::AbstractParam; verbose=true)
     
     println_v(x...) = verbose ? println(x...) : nothing
 
@@ -78,7 +69,7 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
 
     ## batteryModel function
     println_v("Making symbolic model")
-    res = _symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym, X_applied, θ_sym, method)
+    res = _symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym)
 
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
     
@@ -86,12 +77,12 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
 
     ## jacobian
     println_v("Making symbolic Jacobian. May take a few mins")
-    Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, method, verbose=verbose)
+    Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, verbose=verbose)
 
     println_v("Making initial condition functions")
-    res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim, method)
+    res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
 
-    jac_algFunc = _symbolic_initial_conditions_jac(p, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim, method)
+    jac_algFunc = _symbolic_initial_conditions_jac(p, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)
     
     J_y_sp = (findnz(J_sp)..., p.N.tot-1, p.N.tot)
         
@@ -114,7 +105,7 @@ function generate_functions_symbolic(p::AbstractParam, method::Symbol=:I;
     return Y0Func, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys
 end
 
-function load_functions_forward_diff(p::AbstractParam, YP_cache::Vector{Float64})
+function load_functions_forward_diff(p::AbstractParam)
 
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
 
@@ -122,30 +113,42 @@ function load_functions_forward_diff(p::AbstractParam, YP_cache::Vector{Float64}
     Y0_sym = _symbolic_initial_guess(p_sym, SOC_sym, θ_sym, X_applied)
 
     ## batteryModel function
-    res = _symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym, X_applied, θ_sym, method)
+    res = _symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym)
     
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
     
     Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false)[2]
-    resFunc = build_function(res, Y_sym, YP_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
     
-    res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, Y_sym, YP_sym, θ_sym, θ_sym_slim, method)
+    res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
 
-    J_y_sp, sp_x, sp_xp = _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
+    J_y_sp = _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)[1]
 
-    J_y_sp_alg = J_y_sp[p.N.diff+1:end,p.N.diff+1:end]
+    """
+    Sometimes, the differential terms do not appear in the row corresponding to their value.
+    this line ensures that there is still a spot for the ∂x/∂t term in the jacobian sparsity pattern/
+    functon, otherwise there will be a mismatch in the sparse matrix
+    """
+    @inbounds for i in 1:p.N.diff
+        if iszero(J_y_sp[i,i])
+            J_y_sp[i,i] = 1e-100 # some arbitrarily small number so it doesn't get overwritten
+        end
+    end
 
-    function build_color_jacobian_struct(J, f!, N, _YP_cache=zeros(Float64,N))
+    J_y_sp_alg = @inbounds J_y_sp[p.N.diff+1:end,p.N.diff+1:end]
+
+    function build_color_jacobian_struct(J, f!, N, )
         colorvec = SparseDiffTools.matrix_colors(J)
 
-        Y_cache = zeros(Float64, N)
+        Y_cache = zeros(Float64, N+1)
 
-        func = res_FD(f!, _YP_cache, p.cache.θ_tot)
+        _Y_cache  = zeros(Float64,p.N.tot)
+        _YP_cache = zeros(Float64,p.N.tot)
+        func = res_FD(f!, _Y_cache, _YP_cache, p.cache.θ_tot, p.N)
         
         jac_cache = SparseDiffTools.ForwardColorJacCache(
             func,
             Y_cache,
-            dx = similar(Y_cache),
+            dx = zeros(N),
             colorvec = colorvec,
             sparsity = similar(J),
             )
@@ -155,16 +158,18 @@ function load_functions_forward_diff(p::AbstractParam, YP_cache::Vector{Float64}
     end
 
     initial_guess! = eval(Y0Func)
-    f! = eval(resFunc)
-    f_alg! = eval(res_algFunc)
-    f_diff! = eval(res_diffFunc)
+    f_alg!         = eval(res_algFunc)
+    f_diff!        = eval(res_diffFunc)
+    f! = function (res,t,Y,YP,θ_tot)
+        f_diff!((@views @inbounds res[1:p.N.diff]),       t, Y, YP, θ_tot)
+        f_alg!( (@views @inbounds res[p.N.diff+1:end-1]), t, Y, YP, θ_tot)
+    end
 
-    J_y! = build_color_jacobian_struct(J_y_sp, f!, p.N.tot)
-    J_y_alg! = build_color_jacobian_struct(J_y_sp_alg, f_alg!, p.N.alg, YP_cache)
+    J_y!     = build_color_jacobian_struct(J_y_sp, f!, p.N.tot-1)
+    J_y_alg! = build_color_jacobian_struct(J_y_sp_alg, f_alg!, p.N.alg-1)
 
-
-    @assert size(J_y!.sp) === (p.N.tot,p.N.tot)
-    @assert size(J_y_alg!.sp) === (p.N.alg,p.N.alg)
+    @assert size(J_y!.sp) === (p.N.tot-1,p.N.tot)
+    @assert size(J_y_alg!.sp) === (p.N.alg-1,p.N.alg)
 
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys_slim
 end
@@ -178,7 +183,7 @@ function _symbolic_initial_guess(p::AbstractParam, SOC_sym, θ_sym, X_applied)
     return Y0_sym
 end
 
-function _symbolic_residuals(p::AbstractParam, t_sym, Y_sym, YP_sym, X_applied, θ_sym, method=nothing)
+function _symbolic_residuals(p::AbstractParam, t_sym, Y_sym, YP_sym)
     ## symbolic battery model
     res = similar(Y_sym)
     residuals_PET!(res, t_sym, Y_sym, YP_sym, p)
@@ -199,33 +204,28 @@ function _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
     return J_sp, sp_x, sp_xp
 end
 
-function _symbolic_jacobian(p::AbstractParam;inds=nothing)
+function _symbolic_jacobian(p::AbstractParam;inds::T=1:p.N.tot) where T<:UnitRange{Int64}
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
-    res = [_symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym, X_applied, θ_sym);Y_sym[end]]
+    res = [_symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym);Y_sym[end]]
 
-    if inds === nothing
-        inds = 1:length(res)
-    end
-    res    = res[inds]
-    Y_sym  = Y_sym[inds]
-    YP_sym = YP_sym[inds]
+    res    = @inbounds @views res[inds]
+    Y_sym  = @inbounds @views Y_sym[inds]
+    YP_sym = @inbounds @views YP_sym[inds]
 
     ## symbolic jacobian
     Jac_x  = sparsejacobian_multithread(res, Y_sym;  show_progress=false, simplify=false)
     Jac_xp = sparsejacobian_multithread(res, YP_sym; show_progress=false, simplify=false)
     
-    # For some reason, Jac[ind_new] .= Jac_new doesn't work on linux. This if statement is a temporary workaround
     Jac = Jac_x .+ γ_sym.*Jac_xp
 
     return Jac
 end
-function _symbolic_jacobian(p::AbstractParam, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, method; verbose=false)
-
+function _symbolic_jacobian(p::AbstractParam, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim; verbose=false)
     J_sp, sp_x, sp_xp = _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
 
     ## symbolic jacobian
-    Jac_x  = sparsejacobian_multithread(res, Y_sym;  show_progress=false, simplify=false)
-    Jac_xp = sparsejacobian_multithread(res, YP_sym; show_progress = false, sp = sp_xp)
+    Jac_x  = sparsejacobian_multithread(res, Y_sym;  show_progress=false, sp = sp_x,  simplify=false)
+    Jac_xp = sparsejacobian_multithread(res, YP_sym; show_progress=false, sp = sp_xp, simplify=false)
     
     # For some reason, Jac[ind_new] .= Jac_new doesn't work on linux. This if statement is a temporary workaround
     Jac = Jac_x .+ γ_sym.*Jac_xp
@@ -239,7 +239,7 @@ function _symbolic_jacobian(p::AbstractParam, res, t_sym, Y_sym, YP_sym, γ_sym,
 
     return Jac, jacFunc, J_sp
 end
-function _symbolic_initial_conditions_res(p::AbstractParam, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim, method)
+function _symbolic_initial_conditions_res(p::AbstractParam, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
     
     res_diff = res[1:p.N.diff]
     res_alg = res[p.N.diff+1:end]
@@ -249,7 +249,7 @@ function _symbolic_initial_conditions_res(p::AbstractParam, res, t_sym, Y_sym, Y
     
     return res_algFunc, res_diffFunc
 end
-function _symbolic_initial_conditions_jac(p::AbstractParam, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim, method)
+function _symbolic_initial_conditions_jac(p::AbstractParam, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)
     
     jac_alg = @inbounds Jac[p.N.diff+1:end,p.N.diff+1:end]
     
@@ -310,7 +310,7 @@ function get_symbolic_vars(p::AbstractParam)
     ModelingToolkit.@variables Y_sym[1:p.N.tot], YP_sym[1:p.N.tot], t_sym, SOC_sym, X_applied, γ_sym
     ModelingToolkit.@parameters θ_sym[1:length(θ_keys)]
 
-    p_sym = param_no_funcs([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(param_no_funcs),fieldtypes(param_no_funcs))]...)
+    p_sym = param_skeleton([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(param_skeleton),fieldtypes(param_skeleton))]...)
     p_sym.opts.SOC = SOC_sym
 
     @inbounds for (i,key) in enumerate(θ_keys)

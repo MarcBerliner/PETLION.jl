@@ -72,8 +72,6 @@ end
 function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, funcs;
     # State-of-charge between 0 and 1
     SOC = 1.0,
-    # can be any combination of :I, :V, or :P
-    methods = (:I, :V),
     ### Cell discretizations, `N` ###
     # Volume discretizations per cathode
     N_p = 10,
@@ -167,7 +165,8 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     bounds.c_s_n_max = NaN
     bounds.I_max = NaN
     bounds.I_min = NaN
-
+    bounds.η_plating_min = NaN
+    bounds.c_e_min = NaN
 
     opts = options_model()
     opts.SOC = SOC # defined above
@@ -190,7 +189,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
     numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
     
-    return θ, bounds, opts, N, numerics, methods
+    return θ, bounds, opts, N, numerics
 end
 
 function LCO(θ, funcs)
@@ -305,8 +304,6 @@ end
 function θ_System(cathode::typeof(NMC), anode::typeof(LiC6_NMC), θ, funcs;
     # State-of-charge between 0 and 1
     SOC = 1.0,
-    # can be any combination of :I, :V, or :P
-    methods = (:I, :V, :P),
     ### Cell discretizations, `N` ###
     # Volume discretizations per cathode
     N_p = 10,
@@ -381,6 +378,7 @@ function θ_System(cathode::typeof(NMC), anode::typeof(LiC6_NMC), θ, funcs;
     bounds.I_max = NaN
     bounds.I_min = NaN
     bounds.η_plating_min = NaN
+    bounds.c_e_min = NaN
 
 
     opts = options_model()
@@ -404,14 +402,12 @@ function θ_System(cathode::typeof(NMC), anode::typeof(LiC6_NMC), θ, funcs;
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
     numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
     
-    return θ, bounds, opts, N, numerics, methods
+    return θ, bounds, opts, N, numerics
 end
 
 function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     # State-of-charge between 0 and 1
     SOC = 1.0,
-    # can be any combination of :I, :V, or :P
-    methods = (:I, :V, :P),
     ### Cell discretizations, `N` ###
     # Volume discretizations per cathode
     N_p = 10,
@@ -506,6 +502,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     bounds.I_max = NaN
     bounds.I_min = NaN
     bounds.η_plating_min = NaN
+    bounds.c_e_min = NaN
 
 
     opts = options_model()
@@ -529,7 +526,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
     numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
     
-    return θ, bounds, opts, N, numerics, methods
+    return θ, bounds, opts, N, numerics
 end
 
 function Params(chemistry::typeof(LCO);kwargs...)
@@ -557,9 +554,9 @@ function Params(cathode, anode; # Input chemistry - can be modified
 
     cathode(θ, funcs)
     anode(θ, funcs)
-    θ, bounds, opts, N, numerics, methods = θ_System(cathode, anode, θ, funcs; kwargs...)
+    θ, bounds, opts, N, numerics = θ_System(cathode, anode, θ, funcs; kwargs...)
 
-    p = initialize_param(θ, bounds, opts, N, numerics, methods)
+    p = initialize_param(θ, bounds, opts, N, numerics)
 
     return p
 end

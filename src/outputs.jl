@@ -38,12 +38,12 @@ end
         outputs = (outputs,)
     end
     
-    init_all = :all ∈ outputs
+    use_all = :all ∈ outputs
 
     x = Vector{Bool}(undef, length(outputs_tot))
     i = 1
     @inbounds for field in outputs_tot
-        @inbounds x[i] = init_all || field ∈ outputs
+        @inbounds x[i] = use_all || field ∈ outputs
         i += 1
     end
     

@@ -2,9 +2,10 @@
 @inline calc_I(Y::Vector{<:Number}, p::AbstractParam) = @inbounds Y[end]
 @inline calc_P(Y::Vector{<:Number}, p::AbstractParam) = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
 
-@inline method_I(Y, p) = calc_I(Y,p)
-@inline method_V(Y, p) = calc_V(Y,p)
-@inline method_P(Y, p) = calc_P(Y,p)
+@inline method_I(Y, p)   = calc_I(Y,p)
+@inline method_V(Y, p)   = calc_V(Y,p)
+@inline method_P(Y, p)   = calc_P(Y,p)
+@inline method_η_p(Y, p) = calc_η_plating(Y,p)
 @inline method_res(Y, p) = 0.0
 
 @inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_constant{method,<:Any}) where {method<:AbstractMethod,T<:Number} = @inbounds (res[end] = method(Y,p) - value(run))
@@ -38,6 +39,11 @@ end
     J[3] = V*I1C
     return nothing
 end
+@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractParam,::AbstractRun{method_η_p,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
+    J[1] = -1
+    J[2] = 1
+    return nothing
+end
 
 @inbounds function get_jacobian_sparsity(p::AbstractParam, ::AbstractRun{method_I,<:Any};jac_type::DataType=Float64)
     J = spzeros(jac_type,p.N.tot)
@@ -55,6 +61,13 @@ end
     J = spzeros(jac_type,p.N.tot)
     J[p.ind.I] .= 1
     J[p.ind.Φ_s[[1,end]]] .= 1
+
+    return J
+end
+@inbounds function get_jacobian_sparsity(p::AbstractParam, ::AbstractRun{method_η_p,<:Any};jac_type::DataType=Float64)
+    J = spzeros(jac_type,p.N.tot)
+    J[p.ind.Φ_e.n[1]] = 1
+    J[p.ind.Φ_s.n[1]] = 1
 
     return J
 end
@@ -231,8 +244,8 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
         )
     
     R_full = residual_combined(
-        p.funcs.initial_conditions.f_diff!,
-        p.funcs.initial_conditions.f_alg!,
+        p.funcs.f_diff!,
+        p.funcs.f_alg!,
         scalar_residual!,
         1:p.N.diff,
         p.N.diff+1:p.N.tot,
@@ -242,7 +255,7 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
     
     J_alg = _get_jacobian_combined(
         (@inbounds J_sp_base[p.N.diff+1:p.N.tot-1,p.N.diff+1:p.N.tot]),
-        p.funcs.initial_conditions.J_y_alg!,
+        p.funcs.J_y_alg!,
         J_sp_alg_scalar,
         J_scalar_alg_func,
         θ_tot,
@@ -250,7 +263,7 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
         )
 
     R_diff = residual_combined(
-        p.funcs.initial_conditions.f_diff!,
+        p.funcs.f_diff!,
         emptyfunc,
         emptyfunc,
         1:p.N.diff,
@@ -261,7 +274,7 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
     
     R_alg = residual_combined(
         emptyfunc,
-        p.funcs.initial_conditions.f_alg!,
+        p.funcs.f_alg!,
         scalar_residal_alg!,
         1:0,
         1:p.N.alg,
@@ -290,11 +303,11 @@ function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,
 end
 
 function get_method_funcs!(p::param,run::run_constant{method,<:Any}) where method<:AbstractMethod
-    p.method_functions.Dict_constant[method] = _get_method_funcs_no_differentiation(p,run)
+    p.funcs.Dict_constant[method] = _get_method_funcs_no_differentiation(p,run)
 end
 function get_method_funcs!(p::param,run::run_function{method,func}) where {method<:AbstractMethod,func<:Function}
-    if !haskey(p.method_functions.Dict_function,method)
-        p.method_functions.Dict_function[method] = Dict{DataType,jacobian_combined}()
+    if !haskey(p.funcs.Dict_function,method)
+        p.funcs.Dict_function[method] = Dict{DataType,jacobian_combined}()
     end
 
     func_only_uses_time = true
@@ -309,15 +322,15 @@ function get_method_funcs!(p::param,run::run_function{method,func}) where {metho
     end
         
     if func_only_uses_time
-        p.method_functions.Dict_function[method][func] = _get_method_funcs_no_differentiation(p,run)
+        p.funcs.Dict_function[method][func] = _get_method_funcs_no_differentiation(p,run)
     else
-        p.method_functions.Dict_function[method][func] = _get_method_funcs(p,run)
+        p.funcs.Dict_function[method][func] = _get_method_funcs(p,run)
     end
 
     return nothing
 end
 function get_method_funcs!(p::param,run::run_residual{method_res,func}) where {func<:Function}
-    p.method_functions.Dict_residual[func] = _get_method_funcs(p,run)
+    p.funcs.Dict_residual[func] = _get_method_funcs(p,run)
 end
 
 """
@@ -327,27 +340,37 @@ Multiple dispatch for the residuals function
     r.f_diff!((@views @inbounds res[r.ind_diff]), t, Y, YP, r.θ_tot)
     r.f_alg!( (@views @inbounds res[r.ind_alg]),  t, Y, YP, r.θ_tot)
     @inbounds res[end] = r.f_scalar!(t,Y,YP,r.θ_tot)
+    return nothing
 end
 @inline function (r::residual_combined{T1,T2,T3})(res::T,t,Y,YP,p,run) where {T1<:typeof(emptyfunc),T2<:Function,T3<:Function,T<:AbstractVector{Float64}}
     r.f_alg!(res,t,Y,YP,r.θ_tot)
     @inbounds res[end] = r.f_scalar!(t,Y,YP,r.θ_tot)
+    return nothing
 end
 @inline function (r::residual_combined{T1,T2,T3})(res::T,t,Y,YP,p,run) where {T1<:Function,T2<:Function,T3<:typeof(scalar_residual!),T<:AbstractVector{Float64}}
     r.f_diff!((@views @inbounds res[r.ind_diff]), t, Y, YP, r.θ_tot)
     r.f_alg!( (@views @inbounds res[r.ind_alg]),  t, Y, YP, r.θ_tot)
     scalar_residual!(res,t,Y,YP,p,run)
+    return nothing
 end
 @inline function (r::residual_combined{T1,T2,T3})(res::T,t,Y,YP,p,run) where {T1<:typeof(emptyfunc),T2<:Function,T3<:typeof(scalar_residual!),T<:AbstractVector{Float64}}
     r.f_alg!(res,t,Y,YP,r.θ_tot)
     scalar_residual!(res,t,Y,YP,p,run)
+    return nothing
 end
 @inline function (r::residual_combined{T1,T2,T3})(res::T,t,Y,YP,p,run) where {T1<:Function,T2<:typeof(emptyfunc),T3<:typeof(emptyfunc),T<:AbstractVector{Float64}}
     r.f_diff!(res, t, Y, YP, r.θ_tot)
+    return nothing
 end
 
 """
 Multiple dispatch for the Jacobian function
 """
+@inline function (J::jacobian_combined)(J_new::SparseMatrixCSC{Float64,Int64},x...)
+    J(x...)
+    @inbounds J_new.nzval .= J.sp.nzval
+    return nothing
+end
 @inline function (J::jacobian_combined{T1,T2,T3})(t,Y,YP,γ,p,run) where {T1<:Function,T2,T3<:Function}
     J.base_func(J.J_base,t,Y,YP,γ,J.θ_tot)
     J.scalar_func(J.J_scalar,t,Y,YP,γ,J.θ_tot)
@@ -358,19 +381,44 @@ end
     scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
     return nothing
 end
-@inline function (J::jacobian_combined)(J_new::SparseMatrixCSC{Float64,Int64},x...)
-    J(x...)
-    @inbounds J_new.nzval .= J.sp.nzval
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::param{<:jacobian_AD},run) where {T1<:Function,T2,T3<:Function}
+    J.scalar_func(J.J_scalar,t,Y,YP,γ,J.θ_tot)
+    res_FD = J.base_func.f!
+    if size(J.sp) === (p.N.alg,p.N.alg)
+        @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
+        Y_new = @views @inbounds Y[p.N.diff+1:end]
+        @inbounds res_FD.YP_cache .= 0.0
+    else
+        @inbounds res_FD.YP_cache .= YP
+        Y_new = Y
+    end
+    J.base_func(t,Y_new,YP,γ,p,run)
+    J.J_base .= J.base_func.sp.nzval
+    return nothing
+end
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::param{<:jacobian_AD},run) where {T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
+    scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
+    res_FD = J.base_func.f!
+    if size(J.sp) === (p.N.alg,p.N.alg)
+        @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
+        Y_new = @views @inbounds Y[p.N.diff+1:end]
+        @inbounds res_FD.YP_cache .= 0.0
+    else
+        @inbounds res_FD.YP_cache .= YP
+        Y_new = Y
+    end
+    J.base_func(t,Y_new,YP,γ,p,run)
+    J.J_base .= J.base_func.sp.nzval
     return nothing
 end
 
 """
-method_functions definitions
+model_funcs definitions
 """
-(f::method_functions)(::run_constant{method,input}) where {method<:AbstractMethod,input<:Any}     = f.Dict_constant[method]
-(f::method_functions)(::run_function{method,func})  where {method<:AbstractMethod,func<:Function} = f.Dict_function[method][func]
-(f::method_functions)(::run_residual{method,func})  where {method<:method_res,func<:Function}     = f.Dict_residual[func]
+(f::model_funcs)(::run_constant{method,input}) where {method<:AbstractMethod,input<:Any}     = f.Dict_constant[method]
+(f::model_funcs)(::run_function{method,func})  where {method<:AbstractMethod,func<:Function} = f.Dict_function[method][func]
+(f::model_funcs)(::run_residual{method,func})  where {method<:method_res,func<:Function}     = f.Dict_residual[func]
 
-Base.haskey(f::method_functions,::run_constant{method,input})  where {method<:AbstractMethod,input<:Any}     = haskey(f.Dict_constant,method)
-Base.haskey(f::method_functions,::run_function{method,func})   where {method<:AbstractMethod,func<:Function} = haskey(f.Dict_function,method) && haskey(f.Dict_function[method],func)
-Base.haskey(f::method_functions,::run_residual{method,func})   where {method<:method_res,func<:Function}     = haskey(f.Dict_residual,func)
+Base.haskey(f::model_funcs,::run_constant{method,input})  where {method<:AbstractMethod,input<:Any}     = haskey(f.Dict_constant,method)
+Base.haskey(f::model_funcs,::run_function{method,func})   where {method<:AbstractMethod,func<:Function} = haskey(f.Dict_function,method) && haskey(f.Dict_function[method],func)
+Base.haskey(f::model_funcs,::run_residual{method,func})   where {method<:method_res,func<:Function}     = haskey(f.Dict_residual,func)

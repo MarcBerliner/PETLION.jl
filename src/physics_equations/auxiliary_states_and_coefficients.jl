@@ -519,11 +519,11 @@ end
     return I1C
 end
 
-@inline function calc_SOC(c_s_avg::AbstractVector{Float64}, p::param)
+@inline function calc_SOC(Y::AbstractVector{Float64}, p::param)
     """
     Calculate the SOC (dimensionless fraction)
     """
-    c_s_avg_sum = @views @inbounds mean(c_s_avg[(p.numerics.solid_diffusion === :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end])
+    c_s_avg_sum = @views @inbounds mean(Y[p.ind.c_s_avg[(p.numerics.solid_diffusion === :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end]])
 
     return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
 end
@@ -542,9 +542,13 @@ end
 end
 temperature_weighting(T::VectorOfArray,p::AbstractParam) = [temperature_weighting(_T,p) for _T in T]
 
-η_plating(Y::AbstractVector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
-η_plating(t,Y,YP,p) = η_plating(Y,p)
+calc_η_plating(Y::AbstractVector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
 
 export dc_s
 dc_s(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam)-> YP[p.ind.c_s_avg[index]]
 dc_s(index::Int64) = dc_s(Val(index))
+
+export dc_e
+dc_e(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam)-> YP[p.ind.c_e[index]]
+dc_e(index::Int64) = dc_e(Val(index))

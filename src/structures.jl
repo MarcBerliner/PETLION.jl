@@ -1,19 +1,45 @@
 const const_Faradays  = 96485.3365
 const const_Ideal_Gas = 8.31446261815324
 
+abstract type AbstractJacobian <: Function end
+abstract type AbstractParam{T<:AbstractJacobian} end
+abstract type AbstractMethod end
+abstract type AbstractRun{T<:AbstractMethod,input<:Any} end
+
+struct _discretizations_per_section
+    p::Int64
+    s::Int64
+    n::Int64
+    a::Int64
+    z::Int64
+    r_p::Int64
+    r_n::Int64
+end
+struct discretizations_per_section
+    p::Int64
+    s::Int64
+    n::Int64
+    a::Int64
+    z::Int64
+    r_p::Int64
+    r_n::Int64
+    diff::Int64
+    alg::Int64
+    tot::Int64
+end
+
 @with_kw mutable struct run_info
     exit_reason::String = ""
     flag::Int64 = -1
     iterations::Int64 = -1
 end
-abstract type AbstractMethod end
 
 struct method_I   <: AbstractMethod end
 struct method_V   <: AbstractMethod end
 struct method_P   <: AbstractMethod end
+struct method_η_p <: AbstractMethod end
 struct method_res <: AbstractMethod end
 
-abstract type AbstractRun{T<:AbstractMethod,input<:Any} end
 
 struct run_constant{T<:AbstractMethod,in<:Union{Number,Symbol,Function}} <: AbstractRun{T,in}
     input::in
@@ -21,6 +47,7 @@ struct run_constant{T<:AbstractMethod,in<:Union{Number,Symbol,Function}} <: Abst
     method::T
     t0::Float64
     tf::Float64
+    name::String
     info::run_info
 end
 struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
@@ -29,6 +56,7 @@ struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
     method::T
     t0::Float64
     tf::Float64
+    name::String
     info::run_info
 end
 struct run_residual{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
@@ -37,6 +65,7 @@ struct run_residual{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
     method::T
     t0::Float64
     tf::Float64
+    name::String
     info::run_info
 end
 @inline value(run::AbstractRun) = @inbounds run.value[1]
@@ -53,7 +82,6 @@ end
     var_type::Symbol = :NA
 end
 
-abstract type AbstractJacobian <: Function end
 struct jacobian_symbolic{T<:Function} <: AbstractJacobian
     func::T
     sp::SparseMatrixCSC{Float64,Int64}
@@ -62,18 +90,36 @@ end
 
 struct res_FD{T<:Function} <: Function
     f!::T
+    Y_cache::Vector{Float64}
     YP_cache::Vector{Float64}
     θ_tot::Vector{Float64}
+    N::discretizations_per_section
 end
-(res_FD::res_FD)(res, u) = res_FD.f!(res, u, res_FD.YP_cache, res_FD.θ_tot)
+function (res_FD::res_FD{T})(res::AbstractVector{<:Number}, Y::AbstractVector{<:Number}) where T<:Function
+    if length(Y) === res_FD.N.tot
+        Y_new = Y
+    else
+        Y_new = zeros(eltype(Y), length(res_FD.Y_cache))
+        @inbounds @views Y_new[1:res_FD.N.diff] .= res_FD.Y_cache[1:res_FD.N.diff]
+        @inbounds @views Y_new[res_FD.N.diff+1:end] .= Y
+    end
+    res_FD.f!(res, 0.0, Y_new, res_FD.YP_cache, res_FD.θ_tot)
+end
 
 struct jacobian_AD{T<:Function} <: AbstractJacobian
     f!::res_FD{T}
     sp::SparseMatrixCSC{Float64,Int64}
     jac_cache::SparseDiffTools.ForwardColorJacCache
 end
-@inline function (jac::jacobian_AD{T})(J, u, x...) where {T<:Function}
-    forwarddiff_color_jacobian!(J, jac.f!, u, jac.jac_cache)
+@inline function (jac::jacobian_AD{T})(t,Y,YP,γ::Float64,p::P,run) where {T<:Function,P<:AbstractParam}
+    J = jac.sp
+    forwarddiff_color_jacobian!(J, jac.f!, Y, jac.jac_cache)
+    if size(J) === (p.N.tot-1,p.N.tot)
+        @inbounds for i in 1:p.N.diff
+            J[i,i] += -γ
+        end
+    end
+    return nothing
 end
 
 struct jacobian_combined{
@@ -114,22 +160,6 @@ struct Jac_and_res{T<:Sundials.IDAIntegrator}
     int::Vector{T}
 end
 
-struct init_newtons_method{T<:AbstractJacobian}
-    f_alg!::Function
-    J_y_alg!::T
-    f_diff!::Function
-    Y0_alg::Vector{Float64}
-    Y0_alg_prev::Vector{Float64}
-    Y0_diff::Vector{Float64}
-    res::Vector{Float64}
-end
-
-struct functions_model{T1<:AbstractJacobian,T2<:AbstractJacobian}
-    initial_guess!::Function
-    J_y!::T1
-    initial_conditions::init_newtons_method{T2}
-end
-
 @with_kw mutable struct boundary_stop_conditions{T1<:Number,T2<:Float64}
     V_max::T1 = -1.0
     V_min::T1 = -1.0
@@ -140,6 +170,7 @@ end
     I_max::T1 = NaN
     I_min::T1 = NaN
     η_plating_min::T1 = NaN
+    c_e_min::T1 = NaN
     t_final_interp_frac::T2 = +1.0
     V_prev::T2 = -1.0
     SOC_prev::T2 = -1.0
@@ -147,9 +178,10 @@ end
     c_s_n_prev::T2 = -1.0
     I_prev::T2 = -1.0
     η_plating_prev::T2 = -1.0
+    c_e_min_prev::T2 = -1.0
 end
 
-@inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number, η_plating_min::Number)
+@inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number, η_plating_min::Number, c_e_min::Number)
     boundary_stop_conditions(
         Float64(V_max),
         Float64(V_min),
@@ -160,41 +192,21 @@ end
         Float64(I_max),
         Float64(I_min),
         Float64(η_plating_min),
-        +1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
+        Float64(c_e_min),
+        +1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
 end
 
-struct _discretizations_per_section
-    p::Int64
-    s::Int64
-    n::Int64
-    a::Int64
-    z::Int64
-    r_p::Int64
-    r_n::Int64
+mutable struct _funcs_numerical
+    rxn_p::Function
+    rxn_n::Function
+    OCV_p::Function
+    OCV_n::Function
+    D_s_eff::Function
+    D_eff::Function
+    K_eff::Function
+    thermodynamic_factor::Function
 end
-struct discretizations_per_section
-    p::Int64
-    s::Int64
-    n::Int64
-    a::Int64
-    z::Int64
-    r_p::Int64
-    r_n::Int64
-    diff::Int64
-    alg::Int64
-    tot::Int64
-end
-
-@with_kw mutable struct _funcs_numerical
-    rxn_p::Function = emptyfunc
-    rxn_n::Function = emptyfunc
-    OCV_p::Function = emptyfunc
-    OCV_n::Function = emptyfunc
-    D_s_eff::Function = emptyfunc
-    D_eff::Function = emptyfunc
-    K_eff::Function = emptyfunc
-    thermodynamic_factor::Function = emptyfunc
-end
+_funcs_numerical() = _funcs_numerical([emptyfunc for _ in fieldnames(_funcs_numerical)]...)
 
 struct options_numerical
     cathode::Function
@@ -271,16 +283,24 @@ end
 
 @inline model_states_logic(outputs, cache::cache_run) = model_states_logic(outputs, cache.outputs_tot)
 
-abstract type AbstractParam end
-
-@with_kw struct method_functions
-    Dict_constant::Dict{DataType,Jac_and_res}                = Dict{DataType,Jac_and_res}()
-    Dict_function::Dict{DataType,Dict{DataType,Jac_and_res}} = Dict{DataType,Dict{DataType,Jac_and_res}}()
-    Dict_residual::Dict{DataType,Jac_and_res}                = Dict{DataType,Jac_and_res}()
+struct model_funcs{T1<:Function,T2<:Function,T3<:Function,T4<:AbstractJacobian,T5<:AbstractJacobian}
+    initial_guess!::T1
+    f_diff!::T2
+    f_alg!::T3
+    J_y!::T4
+    J_y_alg!::T5
+    Dict_constant::Dict{DataType,Jac_and_res}
+    Dict_function::Dict{DataType,Dict{DataType,Jac_and_res}}
+    Dict_residual::Dict{DataType,Jac_and_res}
 end
-Base.empty!(f::method_functions) = (for field in fieldnames(method_functions);empty!(getproperty(f,field));end;f)
+model_funcs(x...) = model_funcs(x...,
+    Dict{DataType,Jac_and_res}(),
+    Dict{DataType,Dict{DataType,Jac_and_res}}(),
+    Dict{DataType,Jac_and_res}()
+    )
+Base.empty!(f::model_funcs) = (for field in fieldnames(model_funcs)[fieldtypes(model_funcs) .<: Dict];empty!(getproperty(f,field));end;f)
 
-struct param{T<:AbstractJacobian} <: AbstractParam
+struct param{T<:AbstractJacobian} <: AbstractParam{T}
     θ::Dict{Symbol,Float64}
     numerics::options_numerical
     N::discretizations_per_section
@@ -288,11 +308,10 @@ struct param{T<:AbstractJacobian} <: AbstractParam
     opts::options_model
     bounds::boundary_stop_conditions
     cache::cache_run
-    funcs::functions_model{T}
-    method_functions::method_functions
+    funcs::model_funcs{<:Function,<:Function,<:Function,T,<:AbstractJacobian}
 end
 
-struct param_no_funcs <: AbstractParam
+struct param_skeleton <: AbstractParam{AbstractJacobian}
     θ::Dict{Symbol,Any}
     numerics::options_numerical
     N::discretizations_per_section
@@ -335,7 +354,7 @@ Base.firstindex(::T) where T<:model_output = 1
 function Plots.plot(model::model_output, x_name::Symbol=:V; legend=false, ylabel=x_name, kwargs...)
     x = getproperty(model, x_name)
     
-    !(size(x,2) === 1) ? x = x' : nothing
+    isa_matrix = x isa AbstractMatrix
     if length(model.t) ≠ length(x) error("$x_name is not in `outputs`") end
 
     if model.t[end] ≥ 3600
@@ -346,13 +365,27 @@ function Plots.plot(model::model_output, x_name::Symbol=:V; legend=false, ylabel
         time_unit = "s"
     end
     
-    Plots.plot(model.t./time_scale, x;
-        legend = legend,
+    plt = Plots.plot(legend = legend,
         ylabel = x_name,
         xlabel = haskey(kwargs, :xlabel) ? kwargs[:xlabel] : "t ($(time_unit))",
         kwargs...
-    )
-
+        )
+    
+    if isa_matrix
+        len = size(x,1)
+        @inbounds for n in 1:len
+            α = (n-1)/(len-1)
+            rgb = Plots.RGB(
+                Plots.palette(:default)[1].r*(1-α) + Plots.palette(:default)[2].r*α,
+                Plots.palette(:default)[1].g*(1-α) + Plots.palette(:default)[2].g*α,
+                Plots.palette(:default)[1].b*(1-α) + Plots.palette(:default)[2].b*α,
+            )
+            Plots.plot!(plt, model.t./time_scale, (@inbounds @views x[n,:][:]);color=rgb,kwargs...)
+        end
+    else
+        Plots.plot!(plt, model.t./time_scale, x;kwargs...)
+    end
+    return plt
 end
 
 function C_rate_string(I::Number;digits::Int64=4)
@@ -402,7 +435,7 @@ function Base.show(io::IO, p::AbstractParam)
     
     sp = p.numerics.solid_diffusion === :Fickian ? "  " : ""
     str = string(
-    "$(replace(replace(string(typeof(p)), "PETLION."=>""),"{param_no_funcs}"=>"")):\n",
+    "$(replace(replace(string(typeof(p)), "PETLION."=>""),"{param_skeleton}"=>"")):\n",
     "  Cathode: $(p.numerics.cathode), $(p.numerics.rxn_p), & $(p.numerics.OCV_p)\n",
     "  Anode:   $(p.numerics.anode), $(p.numerics.rxn_n), & $(p.numerics.OCV_n)\n",
     "  System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), $(p.numerics.K_eff), & $(p.numerics.thermodynamic_factor)\n",
@@ -474,14 +507,17 @@ end
 method_symbol(::Type{method_I}) = :I
 method_symbol(::Type{method_V}) = :V
 method_symbol(::Type{method_P}) = :P
+method_symbol(::Type{method_η_p}) = :η_p
 
-method_name(::run_constant{method_I,<:Any};      shorthand::Bool=false) = shorthand ? "I"      : "current"
-method_name(::run_constant{method_V,<:Any};      shorthand::Bool=false) = shorthand ? "V"      : "voltage"
-method_name(::run_constant{method_P,<:Any};      shorthand::Bool=false) = shorthand ? "P"      : "power"
-method_name(::run_function{method_I,<:Function}; shorthand::Bool=false) = shorthand ? "I func" : "current function"
-method_name(::run_function{method_V,<:Function}; shorthand::Bool=false) = shorthand ? "V func" : "voltage function"
-method_name(::run_function{method_P,<:Function}; shorthand::Bool=false) = shorthand ? "P func" : "power function"
-method_name(::run_residual;                      shorthand::Bool=false) = shorthand ? "I res"  : "current residual"
+method_name(::run_constant{method_I,<:Any};        shorthand::Bool=false) = shorthand ? "I"      : "current"
+method_name(::run_constant{method_V,<:Any};        shorthand::Bool=false) = shorthand ? "V"      : "voltage"
+method_name(::run_constant{method_P,<:Any};        shorthand::Bool=false) = shorthand ? "P"      : "power"
+method_name(::run_constant{method_η_p,<:Any};      shorthand::Bool=false) = shorthand ? "η_p"    : "plating overpotential"
+method_name(::run_function{method_I,<:Function};   shorthand::Bool=false) = shorthand ? "I func"   : "current function"
+method_name(::run_function{method_V,<:Function};   shorthand::Bool=false) = shorthand ? "V func"   : "voltage function"
+method_name(::run_function{method_P,<:Function};   shorthand::Bool=false) = shorthand ? "P func"   : "power function"
+method_name(::run_function{method_η_p,<:Function}; shorthand::Bool=false) = shorthand ? "η_p func" : "plating overpotential function"
+method_name(run::run_residual;                     shorthand::Bool=false) = run.name === "res" ? (shorthand ? "I res"  : "current residual") : run.name
 
 method_string(run::run_constant{method_I,<:Any};     kw...) = method_name(run;kw...) * " = $(C_rate_string(value(run);digits=2))"
 method_string(run::run_constant{method_V,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) V"
