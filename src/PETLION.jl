@@ -9,7 +9,7 @@ using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros
 using SparseDiffTools: matrix_colors, ForwardColorJacCache
 using Parameters: @with_kw
 using RecursiveArrayTools: VectorOfArray
-using ModelingToolkit
+using Symbolics
 
 import IfElse
 import Plots

@@ -194,8 +194,8 @@ function _symbolic_residuals(p::AbstractParam, t_sym, Y_sym, YP_sym)
 end
 
 function _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
-    sp_x = ModelingToolkit.jacobian_sparsity(res, Y_sym)
-    sp_xp = ModelingToolkit.jacobian_sparsity(res, YP_sym)
+    sp_x = Symbolics.jacobian_sparsity(res, Y_sym)
+    sp_xp = Symbolics.jacobian_sparsity(res, YP_sym)
     
     I,J,_ = findnz(sp_x .+ sp_xp)
 
@@ -265,7 +265,7 @@ function get_only_θ_used_in_model(θ_sym, θ_keys, X...)
     """
     used_params_tot = eltype(θ_sym)[]
     @inbounds for _X in X, x in _X
-        append!(used_params_tot, ModelingToolkit.get_variables(x))
+        append!(used_params_tot, Symbolics.get_variables(x))
     end
     index_params = Int64[]
 
@@ -307,8 +307,12 @@ end
 function get_symbolic_vars(p::AbstractParam)
     θ_keys = sort!(Symbol.(keys(p.θ))) # sorted for convenience
 
-    ModelingToolkit.@variables Y_sym[1:p.N.tot], YP_sym[1:p.N.tot], t_sym, SOC_sym, X_applied, γ_sym
-    ModelingToolkit.@parameters θ_sym[1:length(θ_keys)]
+    Symbolics.@variables Y_sym[1:p.N.tot], YP_sym[1:p.N.tot], t_sym, SOC_sym, X_applied, γ_sym
+    Symbolics.@variables θ_sym[1:length(θ_keys)]
+    
+    Y_sym  = collect(Y_sym)
+    YP_sym = collect(YP_sym)
+    θ_sym  = collect(θ_sym)
 
     p_sym = param_skeleton([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(param_skeleton),fieldtypes(param_skeleton))]...)
     p_sym.opts.SOC = SOC_sym
@@ -321,7 +325,7 @@ function get_symbolic_vars(p::AbstractParam)
 end
 
 function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVector{<:Num};
-    sp = ModelingToolkit.jacobian_sparsity(ops, vars),
+    sp = Symbolics.jacobian_sparsity(ops, vars),
     simplify = true,
     show_progress = true,
     multithread = true,

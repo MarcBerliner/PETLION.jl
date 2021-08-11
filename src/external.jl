@@ -313,7 +313,7 @@ end
 @inline function guess_init(p::AbstractParam, X_applied=0.0)
     """
     Get the initial guess in the DAE initialization.
-    This function is made symbolic by ModelingToolkit and saved as 
+    This function is made symbolic by Symbolics and saved as 
     `initial_guess.jl`
     """
 

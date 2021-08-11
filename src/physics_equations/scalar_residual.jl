@@ -122,8 +122,8 @@ function _get_method_funcs(p::param, run::run_function)
     J_Y = J_YP = J_vec = nothing
     is_differentiable = true
     try
-        J_Y  = @inbounds ModelingToolkit.sparsejacobian([res[end]], Y)[:]
-        J_YP = @inbounds ModelingToolkit.sparsejacobian([res[end]], YP)[:]
+        J_Y  = @inbounds Symbolics.sparsejacobian([res[end]], Y)[:]
+        J_YP = @inbounds Symbolics.sparsejacobian([res[end]], YP)[:]
         J_vec = J_Y .+ γ.*J_YP
     catch
         is_differentiable = false
@@ -142,8 +142,8 @@ function _get_method_funcs(p::param, run::run_residual)
 
     scalar_residual!(res,t,Y,YP,p_sym,run)
     
-    J_Y  = @inbounds ModelingToolkit.sparsejacobian([res[end]], Y)[:]
-    J_YP = @inbounds ModelingToolkit.sparsejacobian([res[end]], YP)[:]
+    J_Y  = @inbounds Symbolics.sparsejacobian([res[end]], Y)[:]
+    J_YP = @inbounds Symbolics.sparsejacobian([res[end]], YP)[:]
     J_vec = J_Y .+ γ.*J_YP
 
     return differentiate_residual_func(p,run,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys)
@@ -181,7 +181,7 @@ function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     Creating the scalar function
     """
     if scalar_contains_YP
-        vars_in_residual = @inbounds ModelingToolkit.get_variables(res[end])
+        vars_in_residual = @inbounds Symbolics.get_variables(res[end])
         # Find all indices where YP is used in the residual equation
         ind_differential = findall(in(vars_in_residual), @views @inbounds YP[1:p.N.diff])
         
@@ -196,7 +196,7 @@ function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
 
         scalar_residal_alg! = eval(build_function(res_algebraic,t,Y,YP,θ_sym_slim; expression=Val{false}))
 
-        J_alg_vec = ModelingToolkit.sparsejacobian([res_algebraic], Y[p.N.diff+1:end])[:]
+        J_alg_vec = Symbolics.sparsejacobian([res_algebraic], Y[p.N.diff+1:end])[:]
         
         J_scalar_alg_func = eval(build_function(J_alg_vec.nzval,t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
         

@@ -196,7 +196,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     return nothing
 end
 
-function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:polynomial}) where {jac,temp}
+function residuals_c_s_avg!(res, states, ∂states, p::Union{AbstractParam{jac,temp,:polynomial},AbstractParam{jac,temp,:quadratic}}) where {jac,temp}
     j = states[:j]
         
     ∂c_s_avg = ∂states[:c_s_avg]

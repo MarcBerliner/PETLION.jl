@@ -621,7 +621,7 @@ end
 
 function _MTK_MatVecProd(A, x; simple::Bool = true)
     """
-    Change matrix-vector multiplication in ModelingToolkit to ignore 0s in the matrix.
+    Change matrix-vector multiplication in Symbolics to ignore 0s in the matrix.
     This can speed up computation time without resorting to using the `simplify` function.
     """
     n, m = size(A)
