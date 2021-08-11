@@ -227,15 +227,13 @@ function _symbolic_jacobian(p::AbstractParam, res, t_sym, Y_sym, YP_sym, γ_sym,
     Jac_x  = sparsejacobian_multithread(res, Y_sym;  show_progress=false, sp = sp_x,  simplify=false)
     Jac_xp = sparsejacobian_multithread(res, YP_sym; show_progress=false, sp = sp_xp, simplify=false)
     
-    # For some reason, Jac[ind_new] .= Jac_new doesn't work on linux. This if statement is a temporary workaround
-    Jac = Jac_x .+ γ_sym.*Jac_xp
+    Jac = Jac_x
+    @inbounds for (i,j) in zip(Jac_xp.rowval,Jac_xp.colptr)
+        Jac[i,j] += γ_sym*Jac_xp[i,j]
+    end
 
-    # @assert length(Jac.nzval) === length(J_sp.nzval)
-    
     # building the sparse jacobian
     jacFunc = build_function(Jac.nzval, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)[2]
-    
-    # _fix_sparse_matrix_build_function(jacFunc)
 
     return Jac, jacFunc, J_sp
 end
