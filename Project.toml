@@ -6,7 +6,7 @@ version = "0.1.0"
 [deps]
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
 Dierckx = "39dd38d3-220a-591b-8e3c-4c3a8c710a94"
-DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 GeneralizedGenerated = "6b9d7cbe-bcb9-11e9-073f-15a7a543e2eb"
 IfElse = "615f187c-cbe4-4ef1-ba3b-2fcf58d6d173"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"

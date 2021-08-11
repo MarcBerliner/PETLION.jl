@@ -1,18 +1,16 @@
 module PETLION
 
-using LinearAlgebra: AbstractMatrix
-using Base: ImmutableDict
+using DiffEqBase: DAEFunction, DAEProblem, step!, init
 using Dierckx: Spline1D
-using DifferentialEquations
 using GeneralizedGenerated: mk_function, RuntimeFn
 using LinearAlgebra
-using ModelingToolkit
 using SparseArrays
-using SparseDiffTools
-using Statistics
+using SparseDiffTools: matrix_colors, ForwardColorJacCache
+using Statistics: mean
 using Parameters: @with_kw
 using ProgressBars: ProgressBar
-using RecursiveArrayTools
+using RecursiveArrayTools: VectorOfArray
+using ModelingToolkit
 
 import IfElse
 import Plots

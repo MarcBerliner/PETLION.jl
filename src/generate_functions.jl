@@ -137,7 +137,7 @@ function load_functions_forward_diff(p::AbstractParam)
     J_y_sp_alg = @inbounds J_y_sp[p.N.diff+1:end,p.N.diff+1:end]
 
     function build_color_jacobian_struct(J, f!, N, )
-        colorvec = SparseDiffTools.matrix_colors(J)
+        colorvec = matrix_colors(J)
 
         Y_cache = zeros(Float64, N+1)
 
@@ -145,7 +145,7 @@ function load_functions_forward_diff(p::AbstractParam)
         _YP_cache = zeros(Float64,p.N.tot)
         func = res_FD(f!, _Y_cache, _YP_cache, p.cache.θ_tot, p.N)
         
-        jac_cache = SparseDiffTools.ForwardColorJacCache(
+        jac_cache = ForwardColorJacCache(
             func,
             Y_cache,
             dx = zeros(N),

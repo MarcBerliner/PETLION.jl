@@ -109,7 +109,7 @@ end
 struct jacobian_AD{T<:Function} <: AbstractJacobian
     f!::res_FD{T}
     sp::SparseMatrixCSC{Float64,Int64}
-    jac_cache::SparseDiffTools.ForwardColorJacCache
+    jac_cache::ForwardColorJacCache
 end
 @inline function (jac::jacobian_AD{T})(t,Y,YP,γ::Float64,p::P,run) where {T<:Function,P<:AbstractParam}
     J = jac.sp
