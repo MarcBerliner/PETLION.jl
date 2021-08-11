@@ -4,8 +4,8 @@ using StatsBase: mean
 using SciMLBase: DAEFunction, DAEProblem, step!, init
 using Dierckx: Spline1D
 using GeneralizedGenerated: mk_function, RuntimeFn
-using LinearAlgebra: diagind, Tridiagonal
-using SparseArrays: sparse, findnz, SparseMatrixCSC
+using LinearAlgebra: diagind, Tridiagonal, norm
+using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros
 using SparseDiffTools: matrix_colors, ForwardColorJacCache
 using Parameters: @with_kw
 using RecursiveArrayTools: VectorOfArray
