@@ -234,9 +234,6 @@ function state_indices(N, numerics)
     e.g., temperature is still used in isothermal simulations
     """
 
-    ind_alg = 0:0
-    ind_diff = 0:0
-    ind_tot = 0:0
     N_diff = 0
     N_alg = 0
 
@@ -280,17 +277,16 @@ function state_indices(N, numerics)
         return index_state(start, stop, a, p, s, n, z, (sections...,), var_type)
     end
 
-    c_e_tot = 1:(N.p+N.s+N.n)
+    c_e_tot     = 1:(N.p+N.s+N.n)
     c_s_avg_tot = numerics.solid_diffusion === :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
-    T_tot = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
-    film_tot = numerics.aging === :SEI ? (1:N.n) : nothing
-    Q_tot = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
-    j_tot = 1:(N.p+N.n)
-    j_s_tot = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
-    Φ_e_tot = 1:(N.p+N.s+N.n)
-    Φ_s_tot = 1:(N.p+N.n)
-    I_tot = 1
-    
+    T_tot       = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
+    film_tot    = numerics.aging === :SEI ? (1:N.n) : nothing
+    Q_tot       = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
+    j_tot       = 1:(N.p+N.n)
+    j_s_tot     = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
+    Φ_e_tot     = 1:(N.p+N.s+N.n)
+    Φ_s_tot     = 1:(N.p+N.n)
+    I_tot       = 1
     
     c_e     = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
     c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion === :Fickian)
@@ -321,7 +317,7 @@ end
     `initial_guess.jl`
     """
 
-    Y0 = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
+    Y0  = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
     YP0 = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
 
     states = retrieve_states(Y0, p)

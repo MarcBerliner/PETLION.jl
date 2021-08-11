@@ -79,7 +79,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
 
     c_e = states[:c_e]
     T   = states[:T]
-    j   = states[:j_aging]
+    j   = states[:j_total]
 
     ∂c_e = ∂states[:c_e]
 
@@ -196,24 +196,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     return nothing
 end
 
-function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam)
-    """
-    Calculate the solid particle concentration residuals using various methods defined by p.numerics.solid_diffusion [mol/m³]
-    """
-
-    if p.numerics.solid_diffusion ∈ (:quadratic, :polynomial)
-        residuals_c_s_avg_polynomial!(res, states, ∂states, p)
-    else
-        if     p.numerics.Fickian_method === :finite_difference # Use the FDM method for the solid phase diffusion
-            residuals_c_s_avg_Fickian_FDM!(res, states, ∂states, p)
-        elseif p.numerics.Fickian_method === :spectral # Use the spectral method for the discretization of the solid phase diffusion
-            residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p)
-        end
-    end
-    return nothing
-end
-
-function residuals_c_s_avg_polynomial!(res, states, ∂states, p)
+function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:polynomial}) where {jac,temp}
     j = states[:j]
         
     ∂c_s_avg = ∂states[:c_s_avg]
@@ -230,8 +213,7 @@ function residuals_c_s_avg_polynomial!(res, states, ∂states, p)
 
     return nothing
 end
-
-function residuals_c_s_avg_Fickian_FDM!(res, states, ∂states, p::AbstractParam)
+function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:Fickian,:finite_difference}) where {jac,temp}
     """
     Calculate the volume-averaged solid particle concentration residuals using a 9th order accurate finite difference method (FDM) [mol/m³]
     """
@@ -330,8 +312,7 @@ function residuals_c_s_avg_Fickian_FDM!(res, states, ∂states, p::AbstractParam
 
     return nothing
 end
-
-function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p::AbstractParam)
+function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:Fickian,:spectral}) where {jac,temp}
     """
     Calculate the volume-averaged solid particle concentration residuals using a spectral method [mol/m³]
     """
@@ -426,7 +407,7 @@ function residuals_c_s_avg_Fickian_spectral!(res, states, ∂states, p::Abstract
     return nothing
 end
 
-function residuals_Q!(res, states, ∂states, p::AbstractParam)
+function residuals_Q!(res, states, ∂states, p::AbstractParam{jac,temp,:quadratic}) where {jac,temp}
     """
     residuals_Q! is used to implement the three parameters reduced model for solid phase diffusion [mol/m⁴]
     This model has been taken from the paper, "Efficient Macro-Micro Scale Coupled
@@ -680,7 +661,7 @@ function residuals_j!(res, states, p::AbstractParam)
     c_s_star = states[:c_s_star]
     c_e = states[:c_e]
     T = states[:T]
-    j = states[:j_orig]
+    j = states[:j]
 
     η = states[:η]
 
@@ -706,7 +687,7 @@ function residuals_j_s!(res, states, p::AbstractParam)
     Calculate the molar flux density side reaction residuals due to SEI resistance [mol/(m²•s)]
     """
     j_s = states[:j_s]
-    j   = states[:j_aging]
+    j   = states[:j_total]
     Φ_s = states[:Φ_s]
     Φ_e = states[:Φ_e]
     film = states[:film]
@@ -720,14 +701,18 @@ function residuals_j_s!(res, states, p::AbstractParam)
     
     I1C = calc_I1C(p)
     
-    η_s = Φ_s.n .- Φ_e.n .- p.θ[:Uref_s] .- F.*j.n.*(p.θ[:R_SEI] .+ film./p.θ[:k_n_aging])
-    
+    R_film = (p.θ[:R_SEI] .+ film./p.θ[:k_n_aging])
+
+    η_s = Φ_s.n .- Φ_e.n .- p.θ[:Uref_s] .- F.*j_s.*R_film
+    α = 0.5
     # If aging is enabled; take into account the SEI resistance
-    j_s_calc = -(p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*exp.(-0.5F./(R.*T.n).*η_s)
+    j_s_calc = (p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*(exp.((1-α).*F./(R.*T.n).*η_s)-exp.(-α.*F./(R.*T.n).*η_s))
+
+    j_s_calc .= [IfElse.ifelse(I_density > 0, x, 0) for x in j_s_calc]
 
     # side reaction residuals
     
-    res_j_s .= [IfElse.ifelse(I_density > 0, j_s[i] .- j_s_calc[i], j_s[i]) for i in eachindex(j_s)]
+    res_j_s .= j_s .- j_s_calc
     
     return nothing
 end
@@ -737,7 +722,7 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     residuals_Φ_e! evaluates residuals for the electrolyte potential equation discretized using method of lines, [V]
     """
 
-    j = states[:j_aging]
+    j = states[:j_total]
     Φ_e = states[:Φ_e]
     c_e = states[:c_e]
     T = states[:T]
@@ -846,7 +831,7 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     residuals_Φ_s! evaluates the residuals of the solid potential equation [V]
     """
 
-    j = states[:j_aging]
+    j = states[:j_total]
     Φ_s = states[:Φ_s]
     I_density = states[:I][1]
 

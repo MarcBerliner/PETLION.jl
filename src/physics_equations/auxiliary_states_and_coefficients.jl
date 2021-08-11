@@ -3,8 +3,8 @@ function build_auxiliary_states!(states, p::AbstractParam)
     Calculates necessary auxiliary states and adds them to the `state` dict
     """
     
-    # create a state j_aging which is a combination of j and j_s
-    build_j_aging!(states, p)
+    # create a state j_total which is a combination of j and j_s
+    build_j_total!(states, p)
 
     # The final value of the x vector can either be I or P,
     # so this function specifically designates the I and P states
@@ -48,47 +48,81 @@ function build_I_V_P!(states, p::AbstractParam)
     return nothing
 end
 
-function build_j_aging!(states, p::AbstractParam)
+function build_j_total!(states, p::AbstractParam)
     """
     Append `j` with possible additions from `j_s`
     """
     j = states[:j]
-    states[:j] = states[:j_orig] = states[:j_aging] = state_new(j, (:p, :n), p)
     
     if !(p.numerics.aging ∈ (:SEI, :R_aging))
+        states[:j_total] = state_new(j, (:p, :n), p)
         return nothing
     end
     
     j_s = states[:j_s]
 
-    j_aging = copy(j)
-    j_aging[p.N.p+1:end] .+= j_s
+    j_total = copy(j)
+    j_total[p.N.p+1:end] .+= j_s
 
-    states[:j_aging] = state_new(j_aging, (:p, :n), p)
-    # redefine the ionic flux
-    states[:j] = state_new(j_aging, (:p, :n), p)
+    states[:j_total] = state_new(j_total, (:p, :n), p)
 
     return nothing
 end
 
-function build_T!(states, p::AbstractParam)
+build_T!(states, p::AbstractParam{jac,true}) where {jac} = nothing
+function build_T!(states, p::AbstractParam{jac,false}) where {jac}
     """
     If temperature is not enabled, include a vector of temperatures using the specified initial temperature.
     """
-    if isempty(states[:T])
-        T = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n+p.N.a+p.N.z))
-        
-        states[:T] = state_new(T, (:a, :p, :s, :n, :z), p)
-    elseif length(states[:T]) === 1
-        T = repeat([states[:T]], (p.N.p+p.N.s+p.N.n+p.N.a+p.N.z))
-        
-        states[:T] = state_new(T, (:a, :p, :s, :n, :z), p)
-    end
+    states[:T] = state_new(T, (:a, :p, :s, :n, :z), p)
     
     return nothing
 end
 
-function build_c_s_star!(states, p::AbstractParam)
+
+function build_c_s_star!(states, p::AbstractParam{jac,temp,:Fickian}) where {jac,temp}
+    """
+    Evaluates the concentration of Li-ions at the electrode surfaces.
+    """
+    c_s_avg = states[:c_s_avg]
+    
+    p_indices = c_s_indices(p,:p; surf=true,offset=false)
+    n_indices = c_s_indices(p,:n; surf=true,offset=false)
+    
+    c_s_star_p = c_s_avg[p_indices]
+    c_s_star_n = c_s_avg[n_indices]
+    
+    # Return the residuals
+    c_s_star = [c_s_star_p; c_s_star_n]
+    
+    states[:c_s_star] = state_new(c_s_star, (:p, :n), p)
+    
+    return nothing
+end
+function build_c_s_star!(states, p::AbstractParam{jac,temp,:quadratic}) where {jac,temp}
+    """
+    Evaluates the concentration of Li-ions at the electrode surfaces.
+    """
+    c_s_avg = states[:c_s_avg]
+    j = states[:j]
+    T = states[:T]
+    
+    # Diffusion coefficients for the solid phase
+    D_sp_eff, D_sn_eff = p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
+    # Evaluates the average surface concentration in both the electrodes.
+    # Cathode
+    c_s_star_p = c_s_avg.p-(p.θ[:Rp_p]./(D_sp_eff.*5)).*j.p
+    # Anode
+    c_s_star_n = c_s_avg.n-(p.θ[:Rp_n]./(D_sn_eff.*5)).*j.n
+    
+    # Return the residuals
+    c_s_star = [c_s_star_p; c_s_star_n]
+    
+    states[:c_s_star] = state_new(c_s_star, (:p, :n), p)
+    
+    return nothing
+end
+function build_c_s_star!(states, p::AbstractParam{jac,temp,:polynomial}) where {jac,temp}
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -97,33 +131,13 @@ function build_c_s_star!(states, p::AbstractParam)
     Q = states[:Q]
     T = states[:T]
     
-    # Check what kind of solid diffusion model has been chosen.
-    if p.numerics.solid_diffusion ∈ (:quadratic, :polynomial)
-
-        # Diffusion coefficients for the solid phase
-        D_sp_eff, D_sn_eff = p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
-        if p.numerics.solid_diffusion === :quadratic # Two peters model
-            # Evaluates the average surface concentration in both the electrodes.
-            # Cathode
-            c_s_star_p = c_s_avg.p-(p.θ[:Rp_p]./(D_sp_eff.*5)).*j.p
-            # Anode
-            c_s_star_n = c_s_avg.n-(p.θ[:Rp_n]./(D_sn_eff.*5)).*j.n
-        elseif p.numerics.solid_diffusion === :polynomial # Three peters model
-            
-            # Cathode
-            c_s_star_p = c_s_avg.p+(p.θ[:Rp_p]./(D_sp_eff.*35)).*(-j.p+8*D_sp_eff.*Q.p)
-            # Anode
-            c_s_star_n = c_s_avg.n+(p.θ[:Rp_n]./(D_sn_eff.*35)).*(-j.n+8*D_sn_eff.*Q.n)
-        end
-
-    # Fickian diffusion
-    elseif p.numerics.solid_diffusion === :Fickian
-        p_indices = p.N.r_p:p.N.r_p:p.N.r_p*p.N.p
-        n_indices = p.N.r_n:p.N.r_n:p.N.r_n*p.N.n
-        
-        c_s_star_p = c_s_avg.p[p_indices]
-        c_s_star_n = c_s_avg.n[n_indices]
-    end
+    # Diffusion coefficients for the solid phase
+    D_sp_eff, D_sn_eff = p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
+    # Cathode
+    c_s_star_p = c_s_avg.p+(p.θ[:Rp_p]./(D_sp_eff.*35)).*(-j.p+8*D_sp_eff.*Q.p)
+    # Anode
+    c_s_star_n = c_s_avg.n+(p.θ[:Rp_n]./(D_sn_eff.*35)).*(-j.n+8*D_sn_eff.*Q.n)
+    
     # Return the residuals
     c_s_star = [c_s_star_p; c_s_star_n]
 
@@ -138,7 +152,7 @@ function build_OCV!(states, p::AbstractParam)
     """
     c_s_star = states[:c_s_star]
     T = states[:T]
-    
+        
     # Put the surface concentration into a fraction
     θ_p = c_s_star.p./p.θ[:c_max_p]
     θ_n = c_s_star.n./p.θ[:c_max_n]
@@ -161,24 +175,23 @@ function build_η!(states, p::AbstractParam)
     Φ_s = states[:Φ_s]
     Φ_e = states[:Φ_e]
     U = states[:U]
-    j = states[:j_aging]
-    # j_aging = states[:j_aging]
+    j = states[:j]
     film = states[:film]
 
     F = const_Faradays
-    R = const_Ideal_Gas
 
     η_p = @. Φ_s.p - Φ_e.p - U.p
     η_n = @. Φ_s.n - Φ_e.n - U.n
 
     if haskey(p.θ, :R_film_n)
-        η_n .+= -j.n.*p.θ[:R_film_n]
+        η_n .+= -j.n.*F.*p.θ[:R_film_n]
     end
     
     if     p.numerics.aging === :SEI
-        η_n .+= @. - F*j.n*(p.θ[:R_SEI] + film/p.θ[:k_n_aging])
+        R_film = p.θ[:R_SEI] .+ film./p.θ[:k_n_aging]
+        η_n .+= @. - F*j.n*R_film
     elseif p.numerics.aging === :R_aging
-        η_n .+= @. - F*j.n*p.θ[:R_aging]
+        #η_n .+= @. - F*j.n*p.θ[:R_aging]
     end
 
     states[:η] = state_new([η_p; η_n], (:p, :n), p)
@@ -204,7 +217,7 @@ function build_heat_generation_rates!(states, p::AbstractParam)
 
     Φ_s = states[:Φ_s]
     Φ_e = states[:Φ_e]
-    j = states[:j_aging]
+    j = states[:j_total]
     T = states[:T]
     c_e = states[:c_e]
     ∂U∂T = states[:∂U∂T]
@@ -506,7 +519,7 @@ end
     """
     Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
     """
-    F = 96485.3365
+    F = 96485.3321233
 
     ϵ_sp = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
     ϵ_sn = 1.0 - (θ[:ϵ_fn] + θ[:ϵ_n])
@@ -552,3 +565,45 @@ dc_s(index::Int64) = dc_s(Val(index))
 export dc_e
 dc_e(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam)-> YP[p.ind.c_e[index]]
 dc_e(index::Int64) = dc_e(Val(index))
+
+function c_s_indices(p::AbstractParam{jac,temp,:Fickian},x...;kw...) where {jac,temp}
+    N = p.N
+
+    ind_p = N.r_p:N.r_p:N.r_p*N.p
+    ind_n = N.r_n:N.r_n:N.r_n*N.n
+    
+    return _c_s_indices(p,ind_p,ind_n,x...;kw...)
+end
+function c_s_indices(p::AbstractParam{jac,temp,:quadratic},x...;kw...) where {jac,temp}
+    N = p.N
+
+    ind_p = 1:N.p
+    ind_n = 1:N.n
+    
+    return _c_s_indices(p,ind_p,ind_n,x...;kw...)
+end
+function c_s_indices(p::AbstractParam{jac,temp,:polynomial},x...;kw...) where {jac,temp}
+    N = p.N
+    
+    ind_p = 1:N.p
+    ind_n = 1:N.n
+    
+    return _c_s_indices(p,ind_p,ind_n,x...;kw...)
+end
+function _c_s_indices(p::AbstractParam,ind_p::T,ind_n::T,section::Symbol;surf::Bool=true,offset::Bool=true) where T<:AbstractRange{Int64}
+    ind = p.ind.c_s_avg
+
+    if     section === :p
+        ind_final = surf ? ind.p[ind_p] : ind.p
+    elseif section === :n
+        ind_final = surf ? ind.n[ind_n] : ind.n
+    else
+        error("Section must be either `:p` or `:n`.")
+    end
+
+    if !offset
+        ind_final = ind_final .- (ind.start-1)
+    end
+
+    return ind_final
+end

@@ -1,10 +1,17 @@
-const const_Faradays  = 96485.3365
+# https://en.wikipedia.org/wiki/2019_redefinition_of_the_SI_base_units
+const const_Faradays  = 96485.3321233
 const const_Ideal_Gas = 8.31446261815324
 
 abstract type AbstractJacobian <: Function end
-abstract type AbstractParam{T<:AbstractJacobian} end
+abstract type AbstractParam{T<:AbstractJacobian,temp,solid_diff,Fickian,age} end
 abstract type AbstractMethod end
 abstract type AbstractRun{T<:AbstractMethod,input<:Any} end
+
+struct method_I   <: AbstractMethod end
+struct method_V   <: AbstractMethod end
+struct method_P   <: AbstractMethod end
+struct method_η_p <: AbstractMethod end
+struct method_res <: AbstractMethod end
 
 struct _discretizations_per_section
     p::Int64
@@ -33,13 +40,6 @@ end
     flag::Int64 = -1
     iterations::Int64 = -1
 end
-
-struct method_I   <: AbstractMethod end
-struct method_V   <: AbstractMethod end
-struct method_P   <: AbstractMethod end
-struct method_η_p <: AbstractMethod end
-struct method_res <: AbstractMethod end
-
 
 struct run_constant{T<:AbstractMethod,in<:Union{Number,Symbol,Function}} <: AbstractRun{T,in}
     input::in
@@ -208,7 +208,11 @@ mutable struct _funcs_numerical
 end
 _funcs_numerical() = _funcs_numerical([emptyfunc for _ in fieldnames(_funcs_numerical)]...)
 
-struct options_numerical
+struct options_numerical{temp,solid_diff,Fickian,age}
+    temperature::Bool
+    solid_diffusion::Symbol
+    Fickian_method::Symbol
+    aging::Union{Bool,Symbol}
     cathode::Function
     anode::Function
     rxn_p::Function
@@ -220,12 +224,10 @@ struct options_numerical
     D_eff::Function
     K_eff::Function
     thermodynamic_factor::Function
-    temperature::Bool
-    solid_diffusion::Symbol
-    Fickian_method::Symbol
-    aging::Union{Bool,Symbol}
     jacobian::Symbol
 end
+options_numerical(temp,solid_diff,Fickian,age,x...) = 
+    options_numerical{temp,solid_diff,Fickian,age}(temp,solid_diff,Fickian,age,x...)
 
 states_logic = model_states{
     Bool,
@@ -238,7 +240,6 @@ indices_states = model_states{
     index_state,
     Nothing,
 }
-
 
 @with_kw mutable struct options_model
     outputs::Tuple = (:t, :V)
@@ -300,9 +301,9 @@ model_funcs(x...) = model_funcs(x...,
     )
 Base.empty!(f::model_funcs) = (for field in fieldnames(model_funcs)[fieldtypes(model_funcs) .<: Dict];empty!(getproperty(f,field));end;f)
 
-struct param{T<:AbstractJacobian} <: AbstractParam{T}
+struct param{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractParam{T,temp,solid_diff,Fickian,age}
     θ::Dict{Symbol,Float64}
-    numerics::options_numerical
+    numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
     ind::indices_states
     opts::options_model
@@ -311,9 +312,9 @@ struct param{T<:AbstractJacobian} <: AbstractParam{T}
     funcs::model_funcs{<:Function,<:Function,<:Function,T,<:AbstractJacobian}
 end
 
-struct param_skeleton <: AbstractParam{AbstractJacobian}
+struct param_skeleton{temp,solid_diff,Fickian,age} <: AbstractParam{AbstractJacobian,temp,solid_diff,Fickian,age}
     θ::Dict{Symbol,Any}
-    numerics::options_numerical
+    numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
     ind::indices_states
     opts::options_model
@@ -345,6 +346,10 @@ Base.isempty(model::model_output) = isempty(model.results)
 function Base.getindex(model::T, i1::Int) where T<:model_output
     ind = model.results[i1].run_index
     T([fields === :results ? [model.results[i1]] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
+end
+function Base.getindex(model::T, i::UnitRange{Int64}) where T<:model_output
+    ind = (model.results[i[1]].run_index[1]):(model.results[i[end]].run_index[end])
+    T([fields === :results ? model.results[i] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
 end
 Base.lastindex(model::T) where T<:model_output = length(model)
 Base.firstindex(::T) where T<:model_output = 1
@@ -482,6 +487,7 @@ function Base.show(io::IO, ind::indices_states)
 
     vars = Symbol[]
     tot = Int64[]
+    types = Symbol[]
     indices = UnitRange{Int64}[]
 
     for field in outputs_tot
@@ -489,6 +495,7 @@ function Base.show(io::IO, ind::indices_states)
         if ind_var.var_type ∈ (:differential, :algebraic)
             push!(vars, field)
             push!(tot, ind_var.start)
+            push!(types, ind_var.var_type)
             push!(indices, ind_var.start:ind_var.stop)
         end
     end
@@ -499,7 +506,7 @@ function Base.show(io::IO, ind::indices_states)
 
     str = [
         "indices_states:";
-        ["  " * rpad("$(var): ", pad) * "$(length(index) > 1 ? index : index[1])" for (index,var) in zip(indices,vars)]
+        ["  " * rpad("$(var): ", pad) * "$(length(index) > 1 ? index : index[1]), $(_type)" for (index,var,_type) in zip(indices,vars,types)]
     ]
     
     print(io, join(str, "\n"))
@@ -543,7 +550,7 @@ function Base.show(io::IO, run::T) where {T<:AbstractRun}
     
     print(io, str)
 end
-
+Base.show(io::IO, funcs::model_funcs) = println(io,"PETLION model functions")
 function Base.show(io::IO, model::model_output)
     results = model.results
     function str_runs()
@@ -563,8 +570,13 @@ function Base.show(io::IO, model::model_output)
             end
         end
 
-        @inbounds for i in 1:length(methods)
+        max_methods = 7
+        @inbounds for i in 1:min(length(methods),max_methods)
             methods[i] = (counts[i] === 1 ? methods[i] : "$(counts[i]) $(methods[i])")
+        end
+        if length(methods) > max_methods
+            deleteat!(methods,max_methods+1:length(methods))
+            push!(methods,"...")
         end
         str *= join(methods, " → ") * "\n"
 

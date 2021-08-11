@@ -7,48 +7,48 @@
     P   = nothing, # constant power.   also accepts :hold if continuing simulation
     η_p = nothing, # plating overpotential
     res = nothing, # custom residual function
-    dT  = nothing, # temperature derivative
+    res_I_guess = 1.0, # initial guess for I when using the residuals function
+    dT         = nothing, # temperature derivative
     dc_s_p_max = nothing,
     dc_s_p_min = nothing,
     dc_s_n_max = nothing,
     dc_s_n_min = nothing,
-    dc_e_max = nothing,
-    dc_e_min = nothing,
-    SOC::Number             = p.opts.SOC, # initial SOC of the simulation. only valid if not continuing simulation
-    outputs::R5             = p.opts.outputs, # model output states
-    abstol::Float64         = p.opts.abstol, # absolute tolerance in DAE solve
-    reltol::Float64         = p.opts.reltol, # relative tolerance in DAE solve
-    abstol_init::Float64    = abstol, # absolute tolerance in initialization
-    reltol_init::Float64    = reltol, # relative tolerance in initialization
-    maxiters::Int64         = p.opts.maxiters, # maximum solver iterations
-    check_bounds::Bool      = p.opts.check_bounds, # check if the boundaries (V_min, SOC_max, etc.) are satisfied
-    reinit::Bool            = p.opts.reinit, # reinitialize the initial guess
-    verbose::Bool           = p.opts.verbose, # print information about the run
-    interp_final::Bool      = p.opts.interp_final, # interpolate the final points if a boundary is hit
-    tstops::AbstractVector  = p.opts.tstops, # times the solver explicitly solves for
-    tdiscon::AbstractVector = p.opts.tdiscon, # times of known discontinuities in the current function
-    interp_bc::Symbol       = p.opts.interp_bc, # :interpolate or :extrapolate
-    save_start::Bool        = p.opts.save_start, # warm-start for the initial guess
-    V_max::Number         = p.bounds.V_max,
-    V_min::Number         = p.bounds.V_min,
-    SOC_max::Number       = p.bounds.SOC_max,
-    SOC_min::Number       = p.bounds.SOC_min,
-    T_max::Number         = p.bounds.T_max,
-    c_s_n_max::Number     = p.bounds.c_s_n_max,
-    I_max::Number         = p.bounds.I_max,
-    I_min::Number         = p.bounds.I_min,
-    η_plating_min::Number = p.bounds.η_plating_min,
-    c_e_min::Number       = p.bounds.c_e_min,
-    kw...
+    dc_e_max   = nothing,
+    dc_e_min   = nothing,
+    SOC::Number   = p.opts.SOC, # initial SOC of the simulation. only valid if not continuing simulation
+    outputs::R2   = p.opts.outputs, # model output states
+    abstol        = p.opts.abstol, # absolute tolerance in DAE solve
+    reltol        = p.opts.reltol, # relative tolerance in DAE solve
+    abstol_init   = abstol, # absolute tolerance in initialization
+    reltol_init   = reltol, # relative tolerance in initialization
+    maxiters      = p.opts.maxiters, # maximum solver iterations
+    check_bounds  = p.opts.check_bounds, # check if the boundaries (V_min, SOC_max, etc.) are satisfied
+    reinit        = p.opts.reinit, # reinitialize the initial guess
+    verbose       = p.opts.verbose, # print information about the run
+    interp_final  = p.opts.interp_final, # interpolate the final points if a boundary is hit
+    tstops        = p.opts.tstops, # times the solver explicitly solves for
+    tdiscon       = p.opts.tdiscon, # times of known discontinuities in the current function
+    interp_bc     = p.opts.interp_bc, # :interpolate or :extrapolate
+    save_start    = p.opts.save_start, # warm-start for the initial guess
+    V_max         = p.bounds.V_max,
+    V_min         = p.bounds.V_min,
+    SOC_max       = p.bounds.SOC_max,
+    SOC_min       = p.bounds.SOC_min,
+    T_max         = p.bounds.T_max,
+    c_s_n_max     = p.bounds.c_s_n_max,
+    I_max         = p.bounds.I_max,
+    I_min         = p.bounds.I_min,
+    η_plating_min = p.bounds.η_plating_min,
+    c_e_min       = p.bounds.c_e_min,
     ) where {
         T1<:param,
         T2<:Union{Number,AbstractVector,Nothing},
         R1<:Union{model_output,Vector{Float64}},
-        R5<:Union{Tuple,Symbol}
+        R2<:Union{Tuple,Symbol}
     }
     
     # Force the outputs into a Tuple
-    if (R5 === Symbol) outputs = (outputs,) end
+    if (R2 === Symbol) outputs = (outputs,) end
         
     # Check if the outputs are the same as in the cache
     if outputs === p.opts.var_keep.results
@@ -70,7 +70,7 @@
     bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min, η_plating_min, c_e_min)
     
     # getting the initial conditions and run setup
-    int, funcs, model = initialize_model!(model, p, run, bounds, opts)
+    int, funcs, model = initialize_model!(model, p, run, bounds, opts, res_I_guess)
 
     if !within_bounds(run)
         if verbose @warn "Instantly hit simulation stop conditions: $(run.info.exit_reason)" end
@@ -142,16 +142,16 @@ end
         func = custom_res!(p,dT,constant_temperature,model)
         method, input, name = method_res(), func, "dT"
     elseif !(d_solid_surf_conc_cathode_max === Nothing)
-        func = custom_res!(p,dc_s_p_max,dc_s((@views @inbounds (p.numerics.solid_diffusion === :Fickian ? p.N.p : 1)*argmax(model.Y[end][p.ind.c_s_avg.p[1:(p.numerics.solid_diffusion === :Fickian ? p.N.p : 1):end]]))),model)
+        func = custom_res!(p,dc_s_p_max,dc_s((@views @inbounds argmax(model.Y[end][c_s_indices(p,:p;surf=true)]))),model)
         method, input, name = method_res(), func, "dc_s_p_max"
     elseif !(d_solid_surf_conc_cathode_min === Nothing)
-        func = custom_res!(p,dc_s_p_min,dc_s((@views @inbounds (p.numerics.solid_diffusion === :Fickian ? p.N.p : 1)*argmin(model.Y[end][p.ind.c_s_avg.p[1:(p.numerics.solid_diffusion === :Fickian ? p.N.p : 1):end]]))),model)
+        func = custom_res!(p,dc_s_p_min,dc_s((@views @inbounds argmin(model.Y[end][c_s_indices(p,:p;surf=true)]))),model)
         method, input, name = method_res(), func, "dc_s_p_min"
     elseif !(d_solid_surf_conc_anode_max === Nothing)
-        func = custom_res!(p,dc_s_n_max,dc_s((@views @inbounds (p.numerics.solid_diffusion === :Fickian ? p.N.r_p*p.N.p : p.N.p) + (p.numerics.solid_diffusion === :Fickian ? p.N.n : 1)*argmax(model.Y[end][p.ind.c_s_avg.n[1:(p.numerics.solid_diffusion === :Fickian ? p.N.n : 1):end]]))),model)
+        func = custom_res!(p,dc_s_n_max,dc_s((@views @inbounds argmax(model.Y[end][c_s_indices(p,:n;surf=true)]))),model)
         method, input, name = method_res(), func, "dc_s_n_max"
     elseif !(d_solid_surf_conc_anode_min === Nothing)
-        func = custom_res!(p,dc_s_n_min,dc_s((@views @inbounds (p.numerics.solid_diffusion === :Fickian ? p.N.r_p*p.N.p : p.N.p) + (p.numerics.solid_diffusion === :Fickian ? p.N.n : 1)*argmin(model.Y[end][p.ind.c_s_avg.n[1:(p.numerics.solid_diffusion === :Fickian ? p.N.n : 1):end]]))),model)
+        func = custom_res!(p,dc_s_n_min,dc_s((@views @inbounds argmin(model.Y[end][c_s_indices(p,:n;surf=true)]))),model)
         method, input, name = method_res(), func, "dc_s_n_min"
     elseif !(d_electrolyte_conc_max === Nothing)
         func = custom_res!(p,dc_e_max,dc_e((@views @inbounds argmax(model.Y[end][p.ind.c_e]))),model)
@@ -200,7 +200,7 @@ end
 
 @inline within_bounds(run::AbstractRun) = run.info.flag === -1
 
-@inline function initialize_model!(model::model_struct, p::param{jac}, run::T, bounds::boundary_stop_conditions, opts::options_model) where {jac<:AbstractJacobian,method<:AbstractMethod,T<:AbstractRun{method,<:Any},model_struct<:Union{model_output,Vector{Float64}}}
+@inline function initialize_model!(model::model_struct, p::param{jac}, run::T, bounds::boundary_stop_conditions, opts::options_model, res_I_guess) where {jac<:AbstractJacobian,method<:AbstractMethod,T<:AbstractRun{method,<:Any},model_struct<:Union{model_output,Vector{Float64}}}
     if !haskey(p.funcs,run)
         get_method_funcs!(p,run)
         funcs = p.funcs(run)
@@ -238,7 +238,7 @@ end
         SOC = @inbounds model.SOC[end]
     end
 
-    initial_current!(Y0,YP0,p,run,model)
+    initial_current!(Y0,YP0,p,run,model,res_I_guess)
     
     ## getting the DAE integrator function
     initialize_states!(p,Y0,YP0,run,opts,funcs,SOC)
@@ -343,12 +343,9 @@ end
         set_var!(model.Y, opts.var_keep.Y, opts.var_keep.Y ? copy(int.u.v) : int.u.v)
     end
 
-    if isempty(model.results)
-        run_index = 1:run.info.iterations
-    else
-        iterations_start = sum(result.info.iterations for result in model.results)
-        run_index = (1:run.info.iterations) .+ iterations_start
-    end
+    iterations_start = isempty(model) ? 0 : (@inbounds @views model.results[end].run_index[end])
+
+    run_index = (1:run.info.iterations) .+ iterations_start
 
     tspan = (run.t0, @inbounds model.t[end])
 
@@ -445,12 +442,12 @@ end
 """
 Current
 """
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model) where {method<:method_I,in<:Number}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model, res_I_guess) where {method<:method_I,in<:Number}
     input = run.input
     @inbounds run.value .= Y0[end] = input
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output) where {method<:method_I,in<:Symbol}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_I,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
         @inbounds run.value .= Y0[end] = model.I[end]
@@ -461,7 +458,7 @@ end
     end
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0::Vector{Float64},p,run::run_function{method,func},model) where {method<:method_I,func<:Function}
+@inline function initial_current!(Y0::Vector{Float64},YP0::Vector{Float64},p,run::run_function{method,func},model, res_I_guess) where {method<:method_I,func<:Function}
     run.value .= Y0[end] = run.func(0.0,Y0,YP0,p)
     return nothing
 end
@@ -469,12 +466,12 @@ end
 """
 Power
 """
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model) where {method<:method_P,in<:Number}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model, res_I_guess) where {method<:method_P,in<:Number}
     input = run.input
     @inbounds run.value .= Y0[end] = input/(calc_V(Y0,p)*p.θ[:I1C])
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output) where {method<:method_P,in<:Symbol}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_P,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
         @inbounds run.value .= Y0[end] = model.P[end]
@@ -485,7 +482,7 @@ end
     end
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0::Vector{Float64},p,run::run_function{method,func},model) where {method<:method_P,func<:Function}
+@inline function initial_current!(Y0::Vector{Float64},YP0::Vector{Float64},p,run::run_function{method,func},model, res_I_guess) where {method<:method_P,func<:Function}
     run.value .= Y0[end] = run.func(0.0,Y0,YP0,p)/(calc_V(Y0,p)*p.θ[:I1C])
     return nothing
 end
@@ -493,7 +490,7 @@ end
 """
 Voltage and η_plating
 """
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output) where {method<:Union{method_V,method_η_p},in<:Number}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:Union{method_V,method_η_p},in<:Number}
     input = run.input
     @inbounds run.value .= input
     if !isempty(model)
@@ -504,7 +501,7 @@ Voltage and η_plating
     end
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output) where {method<:method_V,in<:Symbol}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_V,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
         @inbounds run.value .= model.V[end]
@@ -514,7 +511,7 @@ end
     end
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output) where {method<:method_η_p,in<:Symbol}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_η_p,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
         @inbounds @views run.value .= calc_η_plating(model.Y[end],p)
@@ -524,7 +521,7 @@ end
     end
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_function{method,func},model::model_output) where {method<:Union{method_V,method_η_p},func<:Function}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_function{method,func},model::model_output, res_I_guess) where {method<:Union{method_V,method_η_p},func<:Function}
     @inbounds run.value .= run.func(0.0,Y0,YP0,p)
     if !isempty(model)
         @inbounds Y0[end] = model.I[end]
@@ -536,11 +533,11 @@ end
     return nothing
 end
 
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_residual{method,func},model::model_output) where {method<:method_res,func<:Function}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_residual{method,func},model::model_output, res_I_guess) where {method<:method_res,func<:Function}
     if !isempty(model)
         @inbounds Y0[end] = model.I[end]
     else
-        @inbounds Y0[end] = 0.0
+        @inbounds Y0[end] = res_I_guess
     end
     return nothing
 end

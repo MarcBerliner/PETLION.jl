@@ -85,7 +85,7 @@
         c_s_n_max = -1.0
     end
 
-    if (!(method === method_I) && R3 === run_constant) && (I - bounds.I_max > ϵ)
+    if !(method === method_I) && (I - bounds.I_max > ϵ)
         t_frac = (bounds.I_prev - bounds.I_max)/(bounds.I_prev - I)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -93,7 +93,7 @@
             run.info.exit_reason = "Above maximum permitted C-rate"
         end
     end
-    if (!(method === method_I) && R3 === run_constant) && (bounds.I_min - I > ϵ)
+    if !(method === method_I) && (bounds.I_min - I > ϵ)
         t_frac = (bounds.I_prev - bounds.I_min)/(bounds.I_prev - I)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac

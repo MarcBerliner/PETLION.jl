@@ -53,7 +53,7 @@ function LiC6_Tesla(θ, funcs)
     #for Li-Ion Cells, Ramadass et al. the measurement unit of M_p is wrong as
     #well as the number itself. Please refer to Review of models for predicting
     #the cycling performance of lithium ion batterise, Santhanagopalan et al.
-    θ[:M_n] = 7.3e-4
+    θ[:M_n] = 73*1e-3
     # Admittance                                [S/m]
     θ[:k_n_aging] = 1.0
     # Side reaction current density             [A/m²]
@@ -187,7 +187,7 @@ function θ_System(cathode::typeof(NCA_Tesla), anode::typeof(LiC6_Tesla), θ, fu
     
     #### DO NOT MODIFY BELOW ###
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
-    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
+    numerics = options_numerical(temperature, solid_diffusion, Fickian_method, aging, cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, jacobian)
     
     return θ, bounds, opts, N, numerics
 end
@@ -400,7 +400,7 @@ function θ_System(cathode::typeof(NMC), anode::typeof(LiC6_NMC), θ, funcs;
     
     #### DO NOT MODIFY BELOW ###
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
-    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
+    numerics = options_numerical(temperature, solid_diffusion, Fickian_method, aging, cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, jacobian)
     
     return θ, bounds, opts, N, numerics
 end
@@ -524,7 +524,7 @@ function θ_System(cathode::typeof(LCO), anode::typeof(LiC6), θ, funcs;
     
     #### DO NOT MODIFY BELOW ###
     N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
-    numerics = options_numerical(cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, temperature, solid_diffusion, Fickian_method, aging, jacobian)
+    numerics = options_numerical(temperature, solid_diffusion, Fickian_method, aging, cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, jacobian)
     
     return θ, bounds, opts, N, numerics
 end
