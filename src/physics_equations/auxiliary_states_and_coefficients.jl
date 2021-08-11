@@ -74,6 +74,8 @@ function build_T!(states, p::AbstractParam{jac,false}) where {jac}
     """
     If temperature is not enabled, include a vector of temperatures using the specified initial temperature.
     """
+    T = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n+p.N.a+p.N.z))
+    
     states[:T] = state_new(T, (:a, :p, :s, :n, :z), p)
     
     return nothing
