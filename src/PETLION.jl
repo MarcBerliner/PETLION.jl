@@ -1,14 +1,13 @@
 module PETLION
 
-using DiffEqBase: DAEFunction, DAEProblem, step!, init
+using StatsBase: mean
+using SciMLBase: DAEFunction, DAEProblem, step!, init
 using Dierckx: Spline1D
 using GeneralizedGenerated: mk_function, RuntimeFn
-using LinearAlgebra
-using SparseArrays
+using LinearAlgebra: diagind, Tridiagonal
+using SparseArrays: sparse, findnz, SparseMatrixCSC
 using SparseDiffTools: matrix_colors, ForwardColorJacCache
-using Statistics: mean
 using Parameters: @with_kw
-using ProgressBars: ProgressBar
 using RecursiveArrayTools: VectorOfArray
 using ModelingToolkit
 

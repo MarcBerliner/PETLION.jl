@@ -331,13 +331,12 @@ function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVe
 
     exprs = Vector{Num}(undef, length(I))
 
-    iters = show_progress ? ProgressBar(1:length(I)) : 1:length(I)
     if multithread
-        @inbounds Threads.@threads for iter in iters
+        @inbounds Threads.@threads for iter in 1:length(I)
             @inbounds exprs[iter] = expand_derivatives(Differential(vars[J[iter]])(ops[I[iter]]), simplify)
         end
     else
-        @inbounds for iter in iters
+        @inbounds for iter in 1:length(I)
             @inbounds exprs[iter] = expand_derivatives(Differential(vars[J[iter]])(ops[I[iter]]), simplify)
         end
     end
