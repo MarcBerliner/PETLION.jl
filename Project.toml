@@ -21,7 +21,19 @@ Sundials = "c3572dad-4567-51f8-b174-8c6c989267f4"
 Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 
 [compat]
-RecursiveArrayTools = "2"
+SparseDiffTools = "≥1"
+RecursiveArrayTools = "≥2"
+ProgressBars = "≥1"
+GeneralizedGenerated = "≥0.3"
+Dierckx = "≥0.5"
+SciMLBase = "≥1"
+Plots = "≥1"
+BSON = "≥0.3"
+IfElse = "≥0.1"
+Sundials = "≥4"
+StatsBase = "≥0.33"
+Parameters = "≥0.12"
+Symbolics = "≥3"
 julia = "1.6"
 
 [extras]
