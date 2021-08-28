@@ -105,9 +105,9 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     # dividing by the length and Δx
     ind = 1:p.N.p
     @views @inbounds A_tot[ind,ind] ./= (Δx.p*p.θ[:l_p])^2
-    ind = ind .+ p.N.s
+    ind = (1:p.N.s) .+ ind[end]
     @views @inbounds A_tot[ind,ind] ./= (Δx.s*p.θ[:l_s])^2
-    ind = ind .+ p.N.n
+    ind = (1:p.N.n) .+ ind[end]
     @views @inbounds A_tot[ind,ind] ./= (Δx.n*p.θ[:l_n])^2
 
     # Reset values on the lines for the interfaces conditions
@@ -295,7 +295,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:F
 
         X = repeat(x,1,N+1)
         dX = X .- X'
-        D = (c*(1.0./c)')./(dX .+ I(N+1)) # off-diagonal entries
+        D = (c*(1.0./c)')./(dX .+ LinearAlgebra.I(N+1)) # off-diagonal entries
         D[diagind(D)] .-= sum(D', dims=1)[:]
 
         return D, x
@@ -321,7 +321,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:F
             
             @inbounds rhsCs[(1:N_r) .+ (i-1)*N] .= [
                 rhs_limit_vector[end] # L'hopital's rule at the center of the particle
-                rhs_numerator[2:end]./((reverse(radial_position) .+ 1).^2)
+                rhs_numerator[2:end]./((reverse(radial_position[1:end-1]) .+ 1).^2)
                 ]
         end
         return rhsCs
@@ -335,7 +335,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:F
     return nothing
 end
 
-function residuals_Q!(res, states, ∂states, p::AbstractParam{jac,temp,:quadratic}) where {jac,temp}
+function residuals_Q!(res, states, ∂states, p::AbstractParam{jac,temp,:polynomial}) where {jac,temp}
     """
     residuals_Q! is used to implement the three parameters reduced model for solid phase diffusion [mol/m⁴]
     This model has been taken from the paper "Efficient Macro-Micro Scale Coupled
@@ -662,14 +662,10 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
 
     ind = 1:p.N.p
     A_tot[ind,ind] ./= (Δx.p*p.θ[:l_p])
-    ind = ind .+ p.N.s
+    ind = (1:p.N.s) .+ ind[end]
     A_tot[ind,ind] ./= (Δx.s*p.θ[:l_s])
-    ind = ind .+ p.N.n
+    ind = (1:p.N.n) .+ ind[end]
     A_tot[ind,ind] ./= (Δx.n*p.θ[:l_n])
-
-    # Enforce the BC at x = 0
-    A_tot[1,1] = +K̂_eff_p[1]./(Δx.p*p.θ[:l_p])
-    A_tot[1,2] = -K̂_eff_p[1]./(Δx.p*p.θ[:l_p])
 
     # Φ_e(x = L) = 0
     A_tot[end, end-1:end] .= [0.0, 1.0]
@@ -702,14 +698,14 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     ## Electrolyte concentration interpolation
     # Evaluate the interpolation of the electrolyte concentration values at the
     # edges of the control volumes.
-    c̄_e_p, c̄_e_s, c̄_e_n = interpolate_electrolyte_concentration(c_e, p)
+    c̄_e_p, c̄_e_s, c̄_e_n = PETLION.interpolate_electrolyte_concentration(c_e, p)
     ## Temperature interpolation
     # Evaluate the temperature value at the edges of the control volumes
-    T̄_p, T̄_s, T̄_n = interpolate_temperature(T, p)
+    T̄_p, T̄_s, T̄_n = PETLION.interpolate_temperature(T, p)
     ## Electrolyte fluxes
     # Evaluate the interpolation of the electrolyte concentration fluxes at the
     # edges of the control volumes.
-    c_e_flux_p, c_e_flux_s, c_e_flux_n = interpolate_electrolyte_concetration_fluxes(c_e, p)
+    c_e_flux_p, c_e_flux_s, c_e_flux_n = PETLION.interpolate_electrolyte_concetration_fluxes(c_e, p)
     
     ## RHS arrays
     ν_p,ν_s,ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)

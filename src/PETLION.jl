@@ -14,6 +14,7 @@ using RecipesBase
 using SpecialFunctions: erf
 
 import Sundials
+import LinearAlgebra
 
 # Must be loaded last
 using BSON: @load, @save
