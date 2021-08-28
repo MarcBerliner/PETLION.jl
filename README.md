@@ -3,11 +3,6 @@
 
 # PETLION – Porous Electrode Theory for Li-ion Batteries
 
-[![Build Status](https://travis-ci.com/MarcBerliner/PETLION.jl.svg?branch=master)](https://travis-ci.com/MarcBerliner/PETLION.jl)
-[![Build Status](https://ci.appveyor.com/api/projects/status/github/MarcBerliner/PETLION.jl?svg=true)](https://ci.appveyor.com/project/MarcBerliner/PETLION-jl)
-[![Coverage](https://codecov.io/gh/MarcBerliner/PETLION.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/MarcBerliner/PETLION.jl)
-[![Coverage](https://coveralls.io/repos/github/MarcBerliner/PETLION.jl/badge.svg?branch=master)](https://coveralls.io/github/MarcBerliner/PETLION.jl?branch=master)
-
 PETLION is an open-source, high-performance computing implementation of the porous electrode theory (PET) model in Julia. A typical runtime for a dynamic simulation of full charge or discharge with 301 DAEs is 3 ms on a laptop while allocating about 1 MB of total memory. PETLION is built for efficient parameter estimation, controls, and other complex battery simulations using the rigorous PET model.
 
 # Installation
