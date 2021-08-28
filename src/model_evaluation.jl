@@ -110,7 +110,7 @@ end
         error("Method not supported")
     end
 
-    if input isa Function && method != method_res
+    if input isa Function
         input = redefine_func(input)
     end
 
@@ -125,7 +125,6 @@ end
 
 @inline run_determination(::AbstractMethod,::Any)      = run_constant
 @inline run_determination(::AbstractMethod,::Function) = run_function
-@inline run_determination(::method_res,::Function)     = run_residual
 
 function custom_res!(p::param,x::T,func_RHS::Q,model::model_output;kw...) where {T<:Function,Q<:Function}
     func = redefine_func(x)
