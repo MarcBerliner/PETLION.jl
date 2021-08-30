@@ -8,7 +8,7 @@ PETLION is an open-source, high-performance computing implementation of the poro
 # Installation
 To add the PETLION package, run the following command in Julia (package will be added to the Julia repo shortly)
 ```julia
-julia> import Pkg; Pkg.add(url="https://github.com/MarcBerliner/PETLION.jl")
+julia> import Pkg; Pkg.add("PETLION")
 ```
 
 # Getting started
