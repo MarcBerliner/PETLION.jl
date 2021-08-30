@@ -337,24 +337,24 @@ end
     
     return key, key_exists
 end
-@inline function initialize_states!(p::param{T}, Y0::R1, YP0::R1, run::AbstractRun, opts::options_model, funcs::Jac_and_res, SOC::Float64) where {T<:AbstractJacobian,R1<:Vector{Float64}}
+@inline function initialize_states!(p::param{T}, Y0::R1, YP0::R1, run::AbstractRun, opts::options_model, funcs::Jac_and_res, SOC::Float64;kw...) where {T<:AbstractJacobian,R1<:Vector{Float64}}
     if opts.save_start
         key, key_exists = save_start_init!(Y0, run, p, SOC)
         
-        newtons_method!(p,Y0,YP0,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg)
+        newtons_method!(p,Y0,YP0,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg;kw...)
         
         if !key_exists
             p.cache.save_start_dict[key] = @inbounds Y0[(1:p.N.alg) .+ p.N.diff]
         end
     else
-        newtons_method!(p,Y0,YP0,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg)
+        newtons_method!(p,Y0,YP0,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg;kw...)
     end
     
     return nothing
 end
 
 @inline function newtons_method!(p::param,Y::R1,YP::R1,run,opts::options_model,R_alg::T1,R_diff::T2,J_alg::T3;
-    itermax::Int64=100, t::Float64=0.0, γ::Float64=0.0
+    itermax::Int64=100, t::Float64=0.0
     ) where {R1<:Vector{Float64},T1<:residual_combined,T2<:residual_combined,T3<:jacobian_combined}
 
     res   = p.cache.res
@@ -362,6 +362,7 @@ end
     Y_new = @views @inbounds Y[p.N.diff+1:end]
     YP   .= 0.0
     J     = J_alg.sp
+    γ     = 0.0
 
     # starting loop for Newton's method
     @inbounds for iter in 1:itermax
@@ -452,6 +453,17 @@ end
         @inbounds Y0[end] = model.I[end]
     else
         error("Unsupported input symbol.")
+    end
+    return nothing
+end
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_function{method,func},model::model_output, res_I_guess) where {method<:method_V,func<:Function}
+    @inbounds run.value .= run.func(0.0,Y0,YP0,p)
+    if !isempty(model)
+        @inbounds Y0[end] = model.I[end]
+    else
+        OCV = calc_V(Y0,p)
+        # Arbitrary guess for the initial current. 
+        @inbounds Y0[end] = value(run) > OCV ? +1.0 : -1.0
     end
     return nothing
 end

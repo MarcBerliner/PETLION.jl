@@ -223,10 +223,10 @@ end
 
     value_old = value(run)
     value_new = run.func(t_new,Y,YP,p)
-    run.value .= value_new
     
     if !≈(value_old, value_new, atol=opts.abstol, rtol=opts.reltol)
-        initialize_states!(p,Y,YP,run,opts,funcs,(@inbounds model.SOC[end]))
+        initialize_states!(p,Y,YP,run,opts,funcs,(@inbounds model.SOC[end]); t=t_new)
+        #run.value .= value_new
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
     end

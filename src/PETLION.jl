@@ -20,8 +20,10 @@ import LinearAlgebra
 using BSON: @load, @save
 
 export run_model, run_model!
-export Params
 export model_output
+
+export Params
+export boundary_stop_conditions, options_model, discretizations_per_section, options_numerical
 
 export D_s_eff_isothermal, D_s_eff
 export rxn_rate_isothermal, rxn_rate
@@ -29,11 +31,12 @@ export D_eff_linear, D_eff
 export K_eff, K_eff_isothermal
 export thermodynamic_factor_linear, thermodynamic_factor
 
-export OCV_LCO
-export OCV_LiC6
+export OCV_LCO,  OCV_NMC
+export OCV_LiC6, OCV_LiC6_with_NMC
 
 export rxn_BV, rxn_BV_γMod_01
 export rxn_MHC
+
 
 include("outputs.jl")
 include("structures.jl")

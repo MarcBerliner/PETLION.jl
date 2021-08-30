@@ -1,4 +1,33 @@
 ## Functions to complete the param structure
+function Params(cathode::Function;kwargs...)
+    θ = Dict{Symbol,Float64}()
+    funcs = _funcs_numerical()
+
+    anode, system = cathode(θ,funcs)
+    if anode isa Function && system isa Function
+        anode(θ,funcs)
+        θ, bounds, opts, N, numerics = system(θ, funcs, cathode, anode; kwargs...)
+
+        return initialize_param(θ, bounds, opts, N, numerics)
+    else
+        error("Cathode function must return both anode and system functions.")
+    end
+end
+function Params(;cathode=cathode,anode=anode,system=system, # Input chemistry - can be modified
+    kwargs... # keyword arguments for system
+    )
+    θ = Dict{Symbol,Float64}()
+    funcs = _funcs_numerical()
+
+    cathode(θ, funcs)
+    anode(θ, funcs)
+    θ, bounds, opts, N, numerics = system(θ, funcs; kwargs...)
+
+    p = initialize_param(θ, bounds, opts, N, numerics)
+
+    return p
+end
+
 function initialize_param(θ, bounds, opts, _N, numerics)
     
     ind, N_diff, N_alg, N_tot = state_indices(_N, numerics)
