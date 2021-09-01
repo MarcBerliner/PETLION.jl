@@ -18,7 +18,6 @@ julia> import Pkg; Pkg.add("PETLION")
 To [get started](examples/getting_started.ipynb), we recommend checking out the [list of examples](examples) (more being added soon). To simulate a simple [constant current-constant voltage (CC-CV) charge](examples/CC-CV.ipynb), run the following:
 ```julia
 using PETLION
-
 p = Params(LCO)
 
 model = run_model(p, I=2, SOC=0, V_max=4.1)
