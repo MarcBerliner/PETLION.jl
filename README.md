@@ -6,7 +6,7 @@
 PETLION is an open-source, high-performance computing implementation of the porous electrode theory (PET) model in Julia. A typical runtime for a dynamic simulation of full charge or discharge with 301 DAEs is 3 ms on a laptop while allocating about 1 MB of total memory. PETLION is built for efficient parameter estimation, controls, and other complex battery simulations using the rigorous PET model.
 
 # Installation
-To add the PETLION package, run the following command in Julia
+After [installing Julia](https://julialang.org/downloads/), run the following command to add the PETLION package
 ```julia
 julia> import Pkg; Pkg.add("PETLION")
 ```
