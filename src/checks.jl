@@ -1,5 +1,5 @@
-@views @inbounds @inline function check_simulation_stop!(model::R1, t::Float64, Y::R2,YP::R2, run::R3, p::R4, bounds::R5, opts::R6;
-    ϵ::Float64 = opts.reltol,
+@views @inbounds @inline function check_simulation_stop!(model::R1, t::Float64, Y::R2, run::R3, p::R4, bounds::R5, opts::R6;
+    ϵ::Float64 = t > 1 ? 0.0 : opts.reltol,
     ) where {R1<:model_output, R2<:Vector{Float64}, method<:AbstractMethod, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
     tf = run.tf
     

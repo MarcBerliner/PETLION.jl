@@ -228,33 +228,55 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
     ## Options section
     # everything here can be modified freely
 
+    # `NaN` deactivates the bound
     bounds = boundary_stop_conditions()
+    # Maximum permitted voltage [V]
     bounds.V_min = 2.5
+    # Minimum permitted voltage [V]
     bounds.V_max = 4.3
+    # Maximum permitted SOC [-]
     bounds.SOC_min = 0.0
+    # Minimum permitted SOC [-]
     bounds.SOC_max = 1.0
+    # Maximum permitted temperature [K]
     bounds.T_max = 55 + 273.15
+    # Maximum permitted solid surface concentration in the anode [mol/m³]
     bounds.c_s_n_max = NaN
+    # Maximum permitted current [C-rate]
     bounds.I_max = NaN
+    # Minimum permitted current [C-rate]
     bounds.I_min = NaN
+    # Minimum permitted plating overpotential at the separator-anode interface [V]
     bounds.η_plating_min = NaN
+    # Minimum permitted electrolyte concentration [mol/m³]
     bounds.c_e_min = NaN
 
 
     opts = options_model()
+    # Initial state of charge for a new simulation between 0 and 1
     opts.SOC = SOC # defined above
+    # Saving model states is expensive. What states do you want to keep? See the output of model below for more info. Must be a tuple
     opts.outputs = (:t, :V)
+    # Absolute tolerance of DAE solver
     opts.abstol = 1e-6
+    # Relative tolerance of DAE solver
     opts.reltol = 1e-3
+    # Maximum iterations for the DAE solver
     opts.maxiters = 10_000
+    # Flag to check the bounds during simulation (SOC max/min, V max/min, etc.)
     opts.check_bounds = true
+    # Get a new initial guess for DAE initialization
     opts.reinit = true
+    # Show some outputs during simulation runtime
     opts.verbose = false
+    # Interpolate the final results to match the exact simulation end point
     opts.interp_final = true
+    # Times when the DAE solver explicitly stops
     opts.tstops = Float64[]
+    # For input functions, times when there is a known discontinuity. Unknown discontinuities are handled automatically but less efficiently
     opts.tdiscon = Float64[]
+    # :interpolate or :extrapolate when interpolating the model
     opts.interp_bc = :interpolate
-    opts.save_start = false
 
 
     
@@ -423,33 +445,55 @@ function system_NMC_LiC6(θ, funcs, cathode, anode;
     ## Options section
     # everything here can be modified freely
 
+    # `NaN` deactivates the bound
     bounds = boundary_stop_conditions()
+    # Maximum permitted voltage [V]
     bounds.V_min = 2.8
+    # Minimum permitted voltage [V]
     bounds.V_max = 4.2
+    # Maximum permitted SOC [-]
     bounds.SOC_min = 0.0
+    # Minimum permitted SOC [-]
     bounds.SOC_max = 1.0
+    # Maximum permitted temperature [K]
     bounds.T_max = NaN
+    # Maximum permitted solid surface concentration in the anode [mol/m³]
     bounds.c_s_n_max = NaN
+    # Maximum permitted current [C-rate]
     bounds.I_max = NaN
+    # Minimum permitted current [C-rate]
     bounds.I_min = NaN
+    # Minimum permitted plating overpotential at the separator-anode interface [V]
     bounds.η_plating_min = NaN
+    # Minimum permitted electrolyte concentration [mol/m³]
     bounds.c_e_min = NaN
 
 
     opts = options_model()
+    # Initial state of charge for a new simulation between 0 and 1
     opts.SOC = SOC # defined above
+    # Saving model states is expensive. What states do you want to keep? See the output of model below for more info. Must be a tuple
     opts.outputs = (:t, :V)
+    # Absolute tolerance of DAE solver
     opts.abstol = 1e-6
+    # Relative tolerance of DAE solver
     opts.reltol = 1e-3
+    # Maximum iterations for the DAE solver
     opts.maxiters = 10_000
+    # Flag to check the bounds during simulation (SOC max/min, V max/min, etc.)
     opts.check_bounds = true
+    # Get a new initial guess for DAE initialization
     opts.reinit = true
+    # Show some outputs during simulation runtime
     opts.verbose = false
+    # Interpolate the final results to match the exact simulation end point
     opts.interp_final = true
+    # Times when the DAE solver explicitly stops
     opts.tstops = Float64[]
+    # For input functions, times when there is a known discontinuity. Unknown discontinuities are handled automatically but less efficiently
     opts.tdiscon = Float64[]
+    # :interpolate or :extrapolate when interpolating the model
     opts.interp_bc = :interpolate
-    opts.save_start = false
 
 
     

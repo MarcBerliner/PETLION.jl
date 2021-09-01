@@ -192,7 +192,7 @@ end
     set_vars!(model, p, Y0, YP0, int.t, run, opts, bounds; init_all=new_run)
     set_var!(model.Y, new_run || keep_Y, Y0)
     
-    check_simulation_stop!(model, 0.0, Y0, YP0, run, p, bounds, opts)
+    check_simulation_stop!(model, 0.0, Y0, run, p, bounds, opts)
     return int, funcs, model
 end
 
@@ -270,7 +270,7 @@ end
 
         set_vars!(model, p, Y, YP, t, run, opts, bounds)
         
-        check_simulation_stop!(model, t, Y, YP, run, p, bounds, opts)
+        check_simulation_stop!(model, t, Y, run, p, bounds, opts)
         
         status = check_solve(run, model, int, p, bounds, opts, funcs, keep_Y, iter, Y, t)
     end
@@ -312,12 +312,27 @@ end
 end
 
 @views @inbounds @inline function interp_final_points!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:options_model}
-    YP = opts.var_keep.YP ? model.YP[end] : Float64[]
     t = bounds.t_final_interp_frac*(int.t - int.tprev) + int.tprev
     
-    set_var!(model.Y,  opts.var_keep.Y, bounds.t_final_interp_frac.*(int.u.v .- model.Y[end]) .+ model.Y[end])
-    set_vars!(model, p, model.Y[end], YP, t, run, opts, bounds; modify! = set_var_last!)
-    
+    Y = bounds.t_final_interp_frac.*(int.u.v .- model.Y[end]) .+ model.Y[end]
+    YP = opts.var_keep.YP ? (bounds.t_final_interp_frac.*(int.du.v .- model.YP[end]) .+ model.YP[end]) : Float64[]
+
+    set_var!(model.Y,  opts.var_keep.Y, Y)
+    set_vars!(model, p, Y, YP, t, run, opts, bounds; modify! = set_var_last!)
+
+    # Because there's a tolerance for check_simulation_stop, it may overstep the real transition point
+    if bounds.t_final_interp_frac < 0 && opts.var_keep.t
+        iter_remove = 0
+        for _ in 1:length(model.t)
+            if model.t[end-1] > t + run.t0
+                set_vars!(model, p, Y, Float64[], 0.0, run, opts, bounds; modify! = remove_secondlast!)
+                remove_secondlast!(model.Y, opts.var_keep.Y, 0)
+                run.info.iterations -= 1
+            else
+                break
+            end
+        end
+    end
     return nothing
 end
 

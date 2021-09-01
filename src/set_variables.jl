@@ -65,6 +65,13 @@ end
     @inbounds x[end] .= x_val
 end
 
+@inline function remove_last!(x::T, append, x_val) where {T<:AbstractArray}
+    if append deleteat!(x, length(x)) end
+end
+@inline function remove_secondlast!(x::T, append, x_val) where {T<:AbstractArray}
+    if append deleteat!(x, length(x)-1) end
+end
+
 @inline function interpolate_model(model::R1, tspan::T1, interp_bc::Symbol) where {R1<:model_output,T1<:Union{Number,AbstractVector}}
     dummy = similar(model.t)
 
