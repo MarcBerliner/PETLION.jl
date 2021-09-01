@@ -22,17 +22,17 @@ using PETLION
 p = Params(LCO)
 
 model = run_model(p, I=2, SOC=0, V_max=4.1)
-run_model!(model, p, V=:hold, I_min=1/20)
+run_model!(model, p, 1800, V=:hold, I_min=1/20)
 ```
 <img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CCCV_I.png" width="50%"><img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CCCV_V.png" width="50%">
 ```julia
 PETLION model
   --------
   Runs:    I → V
-  Time:    2444.59 s
+  Time:    2445.64 s
   Voltage: 4.1 V
   Current: 0.1921C
-  Power:   23.0214 W
+  Power:   23.023 W
   SOC:     1.0
   Exit:    Above maximum SOC limit
 ```
