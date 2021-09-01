@@ -3,9 +3,10 @@
 
 # PETLION – Porous Electrode Theory for Li-ion Batteries
 
-High-performance simulations of the porous electrode theory (PET) model in Julia
-+ Full charge or discharge with 301 DAEs is  about 3 ms on a laptop with 1 MB allocated memory
-+ Built for efficient parameter estimation, controls, and other complex battery simulations using the rigorous PET model
+High-performance simulations of the pseudo-2D porous electrode theory (PET) model in Julia
++ Built for efficient controls, parameter estimation, and other complex battery simulations using the rigorous PET model
++ Runs a full charge or discharge with 301 DAEs in ~3 ms on a laptop with 1 MB total memory usage
++ Includes thermal and aging modes
 
 # Installation
 After [installing Julia](https://julialang.org/downloads/), run the following command to add the PETLION package
@@ -41,9 +42,9 @@ If you use PETLION in your work, please cite:
 (coming soon)
 
 # Credits
-+ [Marc D. Berliner](https://marcberliner.com/) – Creating and maintaining the code.
-+ [Richard D. Braatz](https://cheme.mit.edu/profile/richard-d-braatz/) – Technical oversight.
-+ [Richard B. Canty](https://scholar.google.com/citations?user=MqAWccAAAAAJ&hl=en) – Designing the PETLION logo.
++ [Marc D. Berliner](https://marcberliner.com/) – Creating and maintaining the code
++ [Richard D. Braatz](https://cheme.mit.edu/profile/richard-d-braatz/) – Technical oversight
++ [Richard B. Canty](https://scholar.google.com/citations?user=MqAWccAAAAAJ&hl=en) – Designing the PETLION logo
 
 # See also
 Check out these high-quality and open-source battery simulation tools
