@@ -49,7 +49,7 @@ If you use PETLION in your work, please cite [the paper](https://iopscience.iop.
   author={Berliner, Marc D and Cogswell, Daniel A and Bazant, Martin Z and Braatz, Richard D},
   journal={Journal of The Electrochemical Society},
   volume={168},
-  number={9}
+  number={9},
   pages={090504},
   year={2021},
   publisher={IOP Publishing}
