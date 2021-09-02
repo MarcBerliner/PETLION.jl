@@ -36,6 +36,11 @@ PETLION model
   Exit:    Above maximum SOC limit
 ```
 
+# Credits
++ [Marc D. Berliner](https://marcberliner.com/) – Creating and maintaining the code
++ [Richard D. Braatz](https://cheme.mit.edu/profile/richard-d-braatz/) – Technical oversight
++ [Richard B. Canty](https://scholar.google.com/citations?user=MqAWccAAAAAJ&hl=en) – Designing the PETLION logo
+
 # Citations
 If you use PETLION in your work, please cite [the paper](https://iopscience.iop.org/article/10.1149/1945-7111/ac201c):
 ```bibtex
@@ -49,11 +54,6 @@ If you use PETLION in your work, please cite [the paper](https://iopscience.iop.
 	publisher={IOP Publishing}
 }
 ```
-
-# Credits
-+ [Marc D. Berliner](https://marcberliner.com/) – Creating and maintaining the code
-+ [Richard D. Braatz](https://cheme.mit.edu/profile/richard-d-braatz/) – Technical oversight
-+ [Richard B. Canty](https://scholar.google.com/citations?user=MqAWccAAAAAJ&hl=en) – Designing the PETLION logo
 
 # See also
 Check out these high-quality and open-source battery simulation tools
