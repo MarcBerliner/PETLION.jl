@@ -1,5 +1,5 @@
-@views @inbounds @inline function check_simulation_stop!(model::R1, t::Float64, Y::R2, run::R3, p::R4, bounds::R5, opts::R6;
-    ϵ::Float64 = t > 1 ? 0.0 : opts.reltol,
+@views @inbounds @inline function check_simulation_stop!(model::R1, t::Float64, Y::R2,YP::R2, run::R3, p::R4, bounds::R5, opts::R6;
+    ϵ::Float64 = t < 1 ? opts.reltol : 0.0,
     ) where {R1<:model_output, R2<:Vector{Float64}, method<:AbstractMethod, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
     tf = run.tf
     
@@ -152,7 +152,7 @@ end
 check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
 
 @inline function instant_hit_bounds(model::model_output, opts::options_model)
-    var_keep = opts.var_keep
+    #=var_keep = opts.var_keep
     
     fields = fieldnames(model_output)
     types = fieldtypes(model_output)
@@ -164,6 +164,14 @@ check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
             end
         end
     end
+    =#
+    @inbounds for field in fieldnames(model_output)
+        x = getproperty(model, field)
+        if field != :results && length(x) > 1
+            deleteat!(x,length(x))
+        end
+    end
+    return nothing
 end
 
 @inline function check_solve(run::Union{run_constant,run_residual}, model::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}

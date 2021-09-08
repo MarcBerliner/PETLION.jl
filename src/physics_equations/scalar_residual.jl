@@ -227,7 +227,8 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
         J_sp_scalar,
         J_scalar_func,
         θ_tot,
-        θ_keys,
+        θ_keys;
+        lu_decomposition=false,
         )
     
     R_full = residual_combined(
@@ -246,7 +247,8 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
         J_sp_alg_scalar,
         J_scalar_alg_func,
         θ_tot,
-        θ_keys,
+        θ_keys;
+        lu_decomposition=true,
         )
 
     R_diff = residual_combined(
@@ -272,8 +274,14 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
     return Jac_and_res(J_full,R_full,J_alg,R_diff,R_alg,Sundials.IDAIntegrator[])
 end
 
-function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,θ_tot,θ_keys)
+function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,θ_tot,θ_keys;lu_decomposition=false)
     J_sp = [J_sp_base; J_sp_scalar']
+
+    if lu_decomposition
+        L = LinearAlgebra.lu(J_sp)
+    else
+        L = LinearAlgebra.lu(sparse([1],[1],[1.0]))
+    end
 
     ind_base   = findall(J_sp.rowval .< size(J_sp,1))
     ind_scalar = findall(J_sp.rowval .== size(J_sp,1))
@@ -284,7 +292,7 @@ function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,
     J_base   = @views @inbounds J_sp.nzval[ind_base]
     J_scalar = @views @inbounds J_sp.nzval[ind_scalar]
 
-    J = jacobian_combined(J_sp,J_base_func,J_base,J_scalar_func,J_scalar,θ_tot,θ_keys)
+    J = jacobian_combined(J_sp,J_base_func,J_base,J_scalar_func,J_scalar,θ_tot,θ_keys,L)
 
     return J
 end
