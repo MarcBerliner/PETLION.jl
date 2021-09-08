@@ -65,68 +65,42 @@ end
     @inbounds x[end] .= x_val
 end
 
-@inline function remove_last!(x::T, append, x_val) where {T<:AbstractArray}
-    if append deleteat!(x, length(x)) end
-end
-@inline function remove_secondlast!(x::T, append, x_val) where {T<:AbstractArray}
-    if append deleteat!(x, length(x)-1) end
-end
-
-@inline function interpolate_model(model::R1, tspan::T1, interp_bc::Symbol) where {R1<:model_output,T1<:Union{Number,AbstractVector}}
-    dummy = similar(model.t)
-
+@inline function (model::model_output)(tspan::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate, k::Int64=1,kw...)
     if tspan isa UnitRange
         t = collect(tspan)
-    elseif tspan isa Real
-        t = Float64[tspan]
+    elseif tspan isa Number
+        t = Float64[Float64(tspan)]
     else
         t = tspan
     end
 
-    f(x) = interpolate_variable(x, model, t, dummy, interp_bc)
-    
-    # collect all the variables for interpolation
-    states_tot = Any[]
-    @inbounds for field in fieldnames(model_output)
+    var_keep = @inbounds @views model.results[end].opts.var_keep
+    function f(field)
+        x = getproperty(model, field)
         if field === :t
-            push!(states_tot, tspan)
+            return t
+        elseif x isa AbstractArray{Float64} && getproperty(var_keep, field) && length(x) > 1
+            return interpolate_variable(x, model, t, interp_bc; k=k, kw...)
         else
-            x = getproperty(model, field)
-            if x isa AbstractArray{Float64} && length(x) > 1
-                push!(states_tot, f(x))
-            else
-                push!(states_tot, x)
-            end
+            return x
         end
-        
     end
+    
+    states_tot = @inbounds (f(field) for field in fieldnames(model_output))
 
-    model = R1(states_tot...)
+    model = model_output(states_tot...)
 
     return model
 end
-@inline function interpolate_variable(x::R1, model::R2, tspan::T1, dummy::Vector{Float64}, interp_bc::Symbol) where {R1<:Vector{Float64},R2<:model_output,T1<:Union{Real,AbstractArray}}
-    spl = Spline1D(model.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))))
+@inline interpolate_variable(x::Any,y...;kw...) = x
+@inline function interpolate_variable(x::R1, model::R2, tspan::T1, interp_bc::Symbol;kw...) where {R1<:AbstractVector{Float64},R2<:model_output,T1<:Union{Real,AbstractArray}}
+    spl = Spline1D(model.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))),kw...)
     out = spl(tspan)
     
     return out
 end
-@inline function interpolate_variable(x::R1, model::R2, tspan::T1, dummy::Vector{Float64}, interp_bc::Symbol) where {R1<:Union{VectorOfArray{Float64,2,Array{Array{Float64,1},1}},Vector{Vector{Float64}}},R2<:model_output,T1<:Union{Real,AbstractArray}}
-    @inbounds out = [copy(x[1]) for _ in tspan]
+@inline function interpolate_variable(x::R1,y...;kw...) where {R1<:Union{VectorOfArray{Float64,2,Array{Array{Float64,1},1}},Vector{Vector{Float64}}}}
+    out = @inbounds @views hcat([interpolate_variable(x[i,:],y...;kw...) for i in 1:size(x,1)]...)
 
-    @inbounds for i in eachindex(x[1])
-
-        @inbounds for j in eachindex(x)
-            @inbounds dummy[j] = x[j][i]
-        end
-
-        spl = Spline1D(model.t, dummy; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))))
-
-        @inbounds for (j,t) in enumerate(tspan)
-            @inbounds out[j][i] = spl(t)
-        end
-
-    end
-
-    return VectorOfArray(out)
+    return @inbounds VectorOfArray([out[i,:] for i in 1:size(out,1)])
 end

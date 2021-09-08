@@ -462,7 +462,7 @@ function coeff_electrolyte_diffusion_effective(states::Dict, p::AbstractParam)
     return p.numerics.D_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 end
 
-function calc_j(Y, p::AbstractParam)
+function calc_j(Y::AbstractVector, p::AbstractParam)
 
     T_p = repeat([p.θ[:T₀]],p.N.p)
     T_n = repeat([p.θ[:T₀]],p.N.n)
@@ -476,8 +476,8 @@ function calc_j(Y, p::AbstractParam)
     # Calculate the reaction rates
     k_p_eff, k_n_eff = p.numerics.rxn_rate(T_p, T_n, c_s_avg_p, c_s_avg_n, p)
     
-    j_p_calc = p.numerics.rxn_p(c_s_star_p, Y[p.ind.c_e.p], T_p, Y[p.ind.Φ_s.p] .- Y[p.ind.Φ_e.p] .- p.numerics.OCV_p(c_s_star_p./p.θ[:c_max_p])[1], k_p_eff, p.θ[:λ_MHC_p], p.θ[:c_max_p], p)
-    j_n_calc = p.numerics.rxn_n(c_s_star_n, Y[p.ind.c_e.n], T_n, Y[p.ind.Φ_s.n] .- Y[p.ind.Φ_e.n] .- p.numerics.OCV_n(c_s_star_n./p.θ[:c_max_n])[1], k_n_eff, p.θ[:λ_MHC_n], p.θ[:c_max_n], p)
+    j_p_calc = p.numerics.rxn_p(c_s_star_p, Y[p.ind.c_e.p], T_p, Y[p.ind.Φ_s.p] .- Y[p.ind.Φ_e.p] .- p.numerics.OCV_p(c_s_star_p./p.θ[:c_max_p],T_p,p)[1], k_p_eff, p.θ[:λ_MHC_p], p.θ[:c_max_p], p)
+    j_n_calc = p.numerics.rxn_n(c_s_star_n, Y[p.ind.c_e.n], T_n, Y[p.ind.Φ_s.n] .- Y[p.ind.Φ_e.n] .- p.numerics.OCV_n(c_s_star_n./p.θ[:c_max_n],T_n,p)[1], k_n_eff, p.θ[:λ_MHC_n], p.θ[:c_max_n], p)
 
     return [j_p_calc; j_n_calc]
 end

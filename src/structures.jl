@@ -132,6 +132,7 @@ struct jacobian_combined{
     J_scalar::SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}
     θ_tot::Vector{Float64}
     θ_keys::Vector{Symbol}
+    L::SuiteSparse.UMFPACK.UmfpackLU{Float64, Int64}
 end
 Base.getindex(J::jacobian_combined,i...) = getindex(J.sp,i...)
 Base.axes(J::jacobian_combined,i...) = axes(J.sp,i...)
@@ -338,7 +339,7 @@ model_output = model_states{
     VectorOfArray{Float64,2,Array{Array{Float64,1},1}},
     Array{run_results,1},
 }
-(model::model_output)(t::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate) = interpolate_model(model, t, interp_bc)
+
 Base.length(model::model_output) = length(model.results)
 Base.isempty(model::model_output) = isempty(model.results)
 function Base.getindex(model::T, i1::Int) where T<:model_output

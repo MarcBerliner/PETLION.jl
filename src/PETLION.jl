@@ -15,6 +15,7 @@ using SpecialFunctions: erf
 
 import Sundials
 import LinearAlgebra
+import SuiteSparse
 
 # Must be loaded last
 using BSON: @load, @save

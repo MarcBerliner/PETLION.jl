@@ -204,7 +204,7 @@ function _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
     return J_sp, sp_x, sp_xp
 end
 
-function _symbolic_jacobian(p::AbstractParam;inds::T=1:p.N.tot) where T<:UnitRange{Int64}
+function _symbolic_jacobian(p::AbstractParam=Params(LCO);inds::T=1:p.N.tot) where T<:UnitRange{Int64}
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
     res = [_symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym);Y_sym[end]]
 
