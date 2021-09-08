@@ -45,7 +45,7 @@ PETLION model
 If you use PETLION in your work, please cite [the paper](https://iopscience.iop.org/article/10.1149/1945-7111/ac201c):
 ```bibtex
 @article{berliner2021petlion,
-  title={Methods{\textemdash}{PETLION}: Open-Source Software for Millisecond-Scale Porous Electrode Theory-Based Lithium-Ion Battery Simulations},
+  title={Methods---{PETLION}: Open-Source Software for Millisecond-Scale Porous Electrode Theory-Based Lithium-Ion Battery Simulations},
   author={Berliner, Marc D and Cogswell, Daniel A and Bazant, Martin Z and Braatz, Richard D},
   journal={Journal of The Electrochemical Society},
   volume={168},
