@@ -275,8 +275,6 @@ struct cache_run
     constraints::Vector{Int64}
 end
 
-@inline model_states_logic(outputs, cache::cache_run) = model_states_logic(outputs, cache.outputs_tot)
-
 struct model_funcs{T1<:Function,T2<:Function,T3<:Function,T4<:AbstractJacobian,T5<:AbstractJacobian}
     initial_guess!::T1
     f_diff!::T2

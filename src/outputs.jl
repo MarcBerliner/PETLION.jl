@@ -40,12 +40,7 @@ end
     
     use_all = :all ∈ outputs
 
-    x = Vector{Bool}(undef, length(outputs_tot))
-    i = 1
-    @inbounds for field in outputs_tot
-        @inbounds x[i] = use_all || field ∈ outputs
-        i += 1
-    end
+    x = @inbounds (use_all || field ∈ outputs for field in outputs_tot)
     
     return model_states{Bool,Bool,Tuple}(x..., outputs)
 end
