@@ -164,7 +164,7 @@ function build_cache(θ, ind, N, numerics, opts)
 end
 
 
-@with_kw mutable struct state_sections{T} <: AbstractArray{T,1}
+Base.@kwdef mutable struct state_sections{T} <: AbstractArray{T,1}
     tot::AbstractArray{T,1} = nothing
     a = nothing
     p = nothing

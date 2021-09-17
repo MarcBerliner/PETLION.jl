@@ -33,7 +33,7 @@ struct discretizations_per_section
     tot::Int64
 end
 
-@with_kw mutable struct run_info
+Base.@kwdef mutable struct run_info
     exit_reason::String = ""
     flag::Int64 = -1
     iterations::Int64 = -1
@@ -57,18 +57,9 @@ struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
     name::String
     info::run_info
 end
-struct run_residual{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
-    func::func
-    value::Vector{Float64}
-    method::T
-    t0::Float64
-    tf::Float64
-    name::String
-    info::run_info
-end
 @inline value(run::AbstractRun) = @inbounds run.value[1]
 
-@with_kw struct index_state <: AbstractUnitRange{Int64}
+Base.@kwdef struct index_state <: AbstractUnitRange{Int64}
     start::Int64 = 0
     stop::Int64 = 0
     a::UnitRange{Int64} = 0:0
@@ -159,28 +150,30 @@ struct Jac_and_res{T<:Sundials.IDAIntegrator}
     int::Vector{T}
 end
 
-@with_kw mutable struct boundary_stop_conditions{T1<:Number,T2<:Float64}
-    V_max::T1 = -1.0
-    V_min::T1 = -1.0
-    SOC_max::T1 = -1.0
-    SOC_min::T1 = -1.0
-    T_max::T1 = -1.0
-    c_s_n_max::T1 = -1.0
-    I_max::T1 = NaN
-    I_min::T1 = NaN
-    η_plating_min::T1 = NaN
-    c_e_min::T1 = NaN
-    t_final_interp_frac::T2 = +1.0
-    V_prev::T2 = -1.0
-    SOC_prev::T2 = -1.0
-    T_prev::T2 = -1.0
-    c_s_n_prev::T2 = -1.0
-    I_prev::T2 = -1.0
-    η_plating_prev::T2 = -1.0
-    c_e_min_prev::T2 = -1.0
+Base.@kwdef mutable struct boundary_stop_conditions
+    V_max::Float64 = -1.0
+    V_min::Float64 = -1.0
+    SOC_max::Float64 = -1.0
+    SOC_min::Float64 = -1.0
+    T_max::Float64 = -1.0
+    c_s_n_max::Float64 = -1.0
+    I_max::Float64 = NaN
+    I_min::Float64 = NaN
+    η_plating_min::Float64 = NaN
+    c_e_min::Float64 = NaN
+    dfilm_max::Float64 = NaN
+    t_final_interp_frac::Float64 = +1.0
+    V_prev::Float64 = -1.0
+    SOC_prev::Float64 = -1.0
+    T_prev::Float64 = -1.0
+    c_s_n_prev::Float64 = -1.0
+    I_prev::Float64 = -1.0
+    η_plating_prev::Float64 = -1.0
+    c_e_min_prev::Float64 = -1.0
+    dfilm_prev::Float64 = -1.0
 end
 
-@inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number, η_plating_min::Number, c_e_min::Number)
+@inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number, η_plating_min::Number, c_e_min::Number, dfilm_max::Number)
     boundary_stop_conditions(
         Float64(V_max),
         Float64(V_min),
@@ -192,7 +185,8 @@ end
         Float64(I_min),
         Float64(η_plating_min),
         Float64(c_e_min),
-        +1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
+        Float64(dfilm_max),
+        +1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
 end
 
 mutable struct _funcs_numerical
@@ -240,7 +234,7 @@ indices_states = model_states{
     Nothing,
 }
 
-@with_kw mutable struct options_model
+Base.@kwdef mutable struct options_model
     outputs::Tuple = (:t, :V)
     SOC::Number = 1.0
     abstol::Float64 = 1e-6
@@ -298,7 +292,7 @@ model_funcs(x...) = model_funcs(x...,
     Dict{DataType,Dict{DataType,Jac_and_res}}(),
     Dict{DataType,Jac_and_res}()
     )
-Base.empty!(f::model_funcs) = (for field in fieldnames(model_funcs)[fieldtypes(model_funcs) .<: Dict];empty!(getproperty(f,field));end;f)
+Base.empty!(f::model_funcs) = ([empty!(getproperty(f,field)) for (_type,field) in zip(fieldtypes(model_funcs),fieldnames(model_funcs)) if _type <: Dict];nothing)
 
 struct param{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractParam{T,temp,solid_diff,Fickian,age}
     θ::Dict{Symbol,Float64}
@@ -343,11 +337,11 @@ model_output = model_states{
 Base.length(model::model_output) = length(model.results)
 Base.isempty(model::model_output) = isempty(model.results)
 function Base.getindex(model::T, i1::Int) where T<:model_output
-    ind = model.results[i1].run_index
+    ind = (model.results[i1].run_index) .+ (1-model.results[1].run_index[1])
     T([fields === :results ? [model.results[i1]] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
 end
 function Base.getindex(model::T, i::UnitRange{Int64}) where T<:model_output
-    ind = (model.results[i[1]].run_index[1]):(model.results[i[end]].run_index[end])
+    ind = ((model.results[i[1]].run_index[1]):(model.results[i[end]].run_index[end])) .+ (1-model.results[1].run_index[1])
     T([fields === :results ? model.results[i] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
 end
 Base.lastindex(model::T) where T<:model_output = length(model)
@@ -355,7 +349,7 @@ Base.firstindex(::T) where T<:model_output = 1
 
 
 ## Modifying Base functions
-@recipe function plot(model::model_output, x_name::Symbol=:V;linewidth=2)
+@recipe function plot(model::model_output, x_name::Symbol=:V;linewidth=2,legend=false)
     x = getproperty(model, x_name)
     if x isa AbstractMatrix
         x = x'
@@ -392,19 +386,29 @@ Base.firstindex(::T) where T<:model_output = 1
     end
     
     if length(model.t) ≠ length(x) error("$x_name is not in `outputs`") end
-    if model.t[end] ≥ 3600
-        time_scale = 3600.0
-        time_unit = "hr"
-    else
-        time_scale = 1.0
-        time_unit = "s"
-    end
+    
+    time_unit, time_scale = time_units(model.t[end])[2:3]
 
-    legend --> false
+    legend --> legend
     yguide --> ylabel
     xguide --> "Time ($(time_unit))"
     linewidth --> linewidth
     model.t./time_scale, x
+end
+
+function time_units(t::Number)
+    if     t < 3600
+        time_scale = 1.0
+        time_unit = "s"
+    elseif t < 3600*24
+        time_scale = 3600.0
+        time_unit = "hr"
+    else
+        time_scale = 3600.0*24
+        time_unit = "days"
+    end
+    t /= time_scale
+    return t, time_unit, time_scale
 end
 
 function C_rate_string(I::Number;digits::Int64=4)
@@ -573,6 +577,8 @@ end
 Base.show(io::IO, funcs::model_funcs) = println(io,"PETLION model functions")
 function Base.show(io::IO, model::model_output)
     results = model.results
+    p = results[1].p
+    Y = @views @inbounds model.Y[end]
     function str_runs()
     
         str = length(results) === 1 ? "  Run: " : "  Runs:"
@@ -591,17 +597,20 @@ function Base.show(io::IO, model::model_output)
         end
 
         max_methods = 7
+        show_final = 2
         @inbounds for i in 1:min(length(methods),max_methods)
             methods[i] = (counts[i] === 1 ? methods[i] : "$(counts[i]) $(methods[i])")
         end
         if length(methods) > max_methods
-            deleteat!(methods,max_methods+1:length(methods))
-            push!(methods,"...")
+            deleteat!(methods,max_methods-(show_final-1):length(methods)-show_final)
+            insert!(methods, length(methods)-(show_final-1),"...")
         end
         str *= join(methods, " → ") * "\n"
 
         return str
     end
+
+    t, time_unit = time_units(model.t[end])
 
     title = "PETLION model"
     if !isempty(model)
@@ -609,13 +618,13 @@ function Base.show(io::IO, model::model_output)
                 "$title\n",
                 "  --------\n",
                 str_runs(),
-                "  Time:    $(round(model.t[end];   digits = 2)) s\n",
-                "  Voltage: $(round(model.V[end];   digits = 4)) V\n",
-                "  Current: $(C_rate_string(model.I[end];digits=4))\n",
-                "  Power:   $(round(model.P[end];   digits = 4)) W\n",
-                "  SOC:     $(round(model.SOC[end]; digits = 4))\n",
-                length(model.T) > 0 ? 
-                "  Temp.:   $(round(temperature_weighting((@inbounds @views model.T[end]),model.results[end].p)-273.15; digits = 4)) °C\n"
+                "  Time:    $(round(t;                  digits = 2)) $time_unit\n",
+                "  Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
+                "  Current: $(C_rate_string(calc_I(Y,p);digits = 4))\n",
+                "  Power:   $(round(calc_P(Y,p);        digits = 4)) W\n",
+                "  SOC:     $(round(model.SOC[end];     digits = 4))\n",
+                !(p.numerics.temperature === false) ? 
+                "  Temp.:   $(round(temperature_weighting(calc_T(Y,p),p)-273.15; digits = 4)) °C\n"
                 : "",
                 "  Exit:    $(model.results[end].info.exit_reason)",
             )

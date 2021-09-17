@@ -1,4 +1,4 @@
-@with_kw struct model_states{vec1D,vec2D,R1}
+Base.@kwdef struct model_states{vec1D,vec2D,R1}
     """
     If you want to add anything to this struct, you must also check/modify set_vars!`.
     Otherwise, it may not work as intended

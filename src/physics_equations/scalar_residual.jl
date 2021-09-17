@@ -1,6 +1,15 @@
-@inline calc_V(Y::Vector{<:Number}, p::AbstractParam) = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
-@inline calc_I(Y::Vector{<:Number}, p::AbstractParam) = @inbounds Y[end]
-@inline calc_P(Y::Vector{<:Number}, p::AbstractParam) = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
+@inline calc_V(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
+@inline calc_I(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds Y[p.ind.I[1]]
+@inline calc_P(Y::Vector{<:Number}, p::AbstractParam)       = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
+@inline calc_T(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.T]
+@inline calc_c_e(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.c_e]
+@inline calc_c_s_avg(Y::Vector{<:Number}, p::AbstractParam) = @inbounds @views Y[p.ind.c_s_avg]
+@inline calc_j(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.j]
+@inline calc_Φ_e(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.Φ_e]
+@inline calc_Φ_s(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.Φ_s]
+@inline calc_film(Y::Vector{<:Number}, p::AbstractParam)    = @inbounds @views Y[p.ind.film]
+@inline calc_j_s(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.j_s]
+@inline calc_Q(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.Q]
 
 @inline method_I(Y, p)   = calc_I(Y,p)
 @inline method_V(Y, p)   = calc_V(Y,p)
@@ -100,7 +109,7 @@ end
 end
 
 function _get_method_funcs(p::param, run::run_function)
-    θ_sym, Y, YP, t, SOC, I, γ, p_sym, θ_keys = get_symbolic_vars(p)
+    θ_sym, Y, YP, t, SOC, I, γ, p_sym, θ_keys = get_symbolic_vars(p; original_keys=p.cache.θ_keys)
     res = similar(Y) .= 0.0
 
     scalar_residual!(res,t,Y,YP,p_sym,run)
@@ -123,20 +132,7 @@ function _get_method_funcs(p::param, run::run_function)
     end
 end
 
-function _get_method_funcs(p::param, run::run_residual)
-    θ_sym, Y, YP, t, SOC, I, γ, p_sym, θ_keys = get_symbolic_vars(p)
-    res = similar(Y) .= 0.0
-
-    scalar_residual!(res,t,Y,YP,p_sym,run)
-    
-    J_Y  = @inbounds sparsejacobian([res[end]], Y)[:]
-    J_YP = @inbounds sparsejacobian([res[end]], YP)[:]
-    J_vec = J_Y .+ γ.*J_YP
-
-    return differentiate_residual_func(p,run,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys)
-end
-
-function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys) where T<:Union{run_function,run_residual}
+function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys) where T<:run_function
     scalar_contains_Y_diff = @inbounds !isempty(J_Y[1:p.N.diff].nzval)
     scalar_contains_YP     = !isempty(J_YP.nzval)
 

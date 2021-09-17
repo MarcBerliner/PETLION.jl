@@ -1,5 +1,5 @@
-@views @inbounds @inline function check_simulation_stop!(model::R1, t::Float64, Y::R2,YP::R2, run::R3, p::R4, bounds::R5, opts::R6;
-    ϵ::Float64 = t < 1 ? opts.reltol : 0.0,
+@inline function check_simulation_stop!(model::R1, t::Float64, Y::R2, YP::R2, run::R3, p::R4, bounds::R5, opts::R6;
+    ϵ::Float64 = t < 1.0 ? opts.reltol : 0.0,
     ) where {R1<:model_output, R2<:Vector{Float64}, method<:AbstractMethod, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
     tf = run.tf
     
@@ -11,8 +11,8 @@
     # continue checking the bounds or return after only evaluating the time
     !opts.check_bounds && (return nothing)
     
-    V = model.V[end]
-    I = model.I[end]
+    V = calc_V(Y,p)
+    I = calc_I(Y,p)
     if !(method === method_V)
         if (bounds.V_min - V > ϵ) && I < 0
             t_frac = (bounds.V_prev - bounds.V_min)/(bounds.V_prev - V)
@@ -22,7 +22,7 @@
                 run.info.exit_reason = "Below minimum voltage limit"
             end
         end
-
+        
         if (V - bounds.V_max > ϵ) && I > 0
             t_frac = (bounds.V_prev - bounds.V_max)/(bounds.V_prev - V)
             if t_frac < bounds.t_final_interp_frac
@@ -32,8 +32,7 @@
             end
         end
     end
-    
-    SOC = model.SOC[end]
+    SOC = @inbounds model.SOC[end]
     if (bounds.SOC_min - SOC > ϵ) && I < 0
         t_frac = (bounds.SOC_prev - bounds.SOC_min)/(bounds.SOC_prev - SOC)
         if t_frac < bounds.t_final_interp_frac
@@ -52,7 +51,7 @@
     end
     
     if p.numerics.temperature
-        T = temperature_weighting((@inbounds @views Y[p.ind.T]),p)
+        T = temperature_weighting(calc_T(Y,p),p)
         if T - bounds.T_max > ϵ
             t_frac = (bounds.T_prev - bounds.T_max)/(bounds.T_prev - T)
             if t_frac < bounds.t_final_interp_frac
@@ -65,12 +64,12 @@
         T = -1.0
     end
     
-    c_s_avg = Y[p.ind.c_s_avg]
+    c_s_avg = calc_c_s_avg(Y,p)
     if !isnan(bounds.c_s_n_max) && I > 0
         if p.numerics.solid_diffusion === :Fickian
-            c_s_n_max = maximum(c_s_avg[(p.N.p)*(p.N.r_p)+1:end])
+            c_s_n_max = maximum((@inbounds @views c_s_avg[(p.N.p)*(p.N.r_p)+1:end]))
         else
-            c_s_n_max = maximum(c_s_avg[(p.N.p)+1:end])
+            c_s_n_max = maximum((@inbounds @views c_s_avg[(p.N.p)+1:end]))
         end
         
         if c_s_n_max - bounds.c_s_n_max*p.θ[:c_max_n] > ϵ
@@ -102,7 +101,7 @@
         end
     end
 
-    η_plating = Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+    η_plating = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
     if !isnan(bounds.η_plating_min) && bounds.η_plating_min - η_plating > ϵ
         t_frac = (bounds.η_plating_prev - bounds.η_plating_min)/(bounds.η_plating_prev - η_plating)
         if t_frac < bounds.t_final_interp_frac
@@ -112,7 +111,7 @@
         end
     end
 
-    c_e_min = minimum(Y[p.ind.c_e])
+    c_e_min = minimum(calc_c_e(Y,p))
     if !isnan(bounds.c_e_min) && bounds.c_e_min - c_e_min > ϵ
         t_frac = (bounds.c_e_min_prev - bounds.c_e_min)/(bounds.c_e_min_prev - c_e_min)
         if t_frac < bounds.t_final_interp_frac
@@ -120,6 +119,20 @@
             run.info.flag = 9
             run.info.exit_reason = "Below minimum permitted c_e"
         end
+    end
+
+    if !(p.numerics.aging === false)
+        dfilm = maximum(calc_film(YP,p))
+        if !isnan(bounds.dfilm_max) && dfilm - bounds.dfilm_max > ϵ
+            t_frac = (bounds.dfilm_prev - bounds.dfilm_max)/(bounds.dfilm_prev - dfilm)
+            if t_frac < bounds.t_final_interp_frac
+                bounds.t_final_interp_frac = t_frac
+                run.info.flag = 10
+                run.info.exit_reason = "Above maximum film growth rate"
+            end
+        end
+    else
+        dfilm = -1.0
     end
 
     if within_bounds(run)
@@ -130,51 +143,13 @@
         bounds.c_s_n_prev     = c_s_n_max
         bounds.c_e_min_prev   = c_e_min
         bounds.η_plating_prev = η_plating
+        bounds.dfilm_prev     = dfilm
     end
 
     return nothing
 end
 
-function get_corrected_methods(methods)
-    """
-    Corrects the input methods to `Params`
-    """
-    if methods isa Symbol
-        methods = (methods,)
-    elseif isempty(methods)
-        error("methods cannot be empty")
-    end
-    check_appropriate_method.(methods)
-    
-    return methods
-end
-
-check_appropriate_method(method::Symbol) = @assert method ∈ (:I, :P, :V)
-
-@inline function instant_hit_bounds(model::model_output, opts::options_model)
-    #=var_keep = opts.var_keep
-    
-    fields = fieldnames(model_output)
-    types = fieldtypes(model_output)
-    @inbounds for (field,_type) in zip(fields,types)
-        if _type <: AbstractArray{Float64} && getproperty(var_keep, field)
-            x = getproperty(model, field)
-            if length(x) > 1
-                deleteat!(x, length(x))
-            end
-        end
-    end
-    =#
-    @inbounds for field in fieldnames(model_output)
-        x = getproperty(model, field)
-        if field != :results && length(x) > 1
-            deleteat!(x,length(x))
-        end
-    end
-    return nothing
-end
-
-@inline function check_solve(run::Union{run_constant,run_residual}, model::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
+@inline function check_solve(run::run_constant, model::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
     if t === int.tprev
         # Sometimes the initial step at t = 0 can be too large. This reduces the step size
         if t === 0.0
@@ -191,7 +166,7 @@ end
     elseif within_bounds(run)
         # update Y only after checking the stop conditions. this is done to store a copy of the
         # previous model run in case any back-interpolation is needed
-        set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
+        set_var!(model.Y, keep_Y ? copy(Y) : Y, keep_Y)
     else # no errors and run.info.flag ≠ -1
         return false
     end
@@ -205,7 +180,7 @@ end
     elseif within_bounds(run)
         # update Y only after checking the stop conditions. this is done to store a copy of the
         # previous model run in case any back-interpolation is needed
-        set_var!(model.Y, keep_Y, keep_Y ? copy(Y) : Y)
+        set_var!(model.Y, keep_Y ? copy(Y) : Y, keep_Y)
         
         # check to see if the run needs to be reinitialized
         if t - int.tprev < 1e-3opts.reltol

@@ -7,9 +7,8 @@ using GeneralizedGenerated: mk_function, RuntimeFn
 using LinearAlgebra: diagind, Tridiagonal, norm
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
-using Parameters: @with_kw
 using RecursiveArrayTools: VectorOfArray
-using Symbolics: @variables, Num, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, simplify, build_function, IfElse
+using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse
 using RecipesBase
 using SpecialFunctions: erf
 

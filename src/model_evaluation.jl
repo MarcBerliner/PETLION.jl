@@ -30,6 +30,7 @@
     I_min         = p.bounds.I_min,
     η_plating_min = p.bounds.η_plating_min,
     c_e_min       = p.bounds.c_e_min,
+    dfilm_max     = p.bounds.dfilm_max,
     ) where {
         T1<:param,
         T2<:Union{Number,AbstractVector,Nothing},
@@ -59,14 +60,15 @@
     
     # putting opts and bounds into a structure. 
     opts = options_model(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, save_start, var_keep)
-    bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min, η_plating_min, c_e_min)
+    bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min, η_plating_min, c_e_min, dfilm_max)
     
     # getting the initial conditions and run setup
     int, funcs, model = initialize_model!(model, p, run, bounds, opts)
 
     if !within_bounds(run)
         if verbose @warn "Instantly hit simulation stop conditions: $(run.info.exit_reason)" end
-        instant_hit_bounds(model, opts)
+        exit_simulation!(p, model, run, bounds, int, opts; cancel_interp=true)
+
         return model
     end
 
@@ -175,7 +177,7 @@ end
     elseif new_run
         SOC = opts.SOC
         if opts.reinit
-            initial_guess!(Y0, SOC, θ_tot, 0.0)
+            initial_guess!(Y0, SOC, θ_tot, res_I_guess)
         end
     else # continue from previous simulation
         Y0 .= @inbounds keep_Y ? copy(model.Y[end]) : model.Y[end]
@@ -189,8 +191,8 @@ end
     
     int = retrieve_integrator(run,p,funcs,Y0,YP0,opts,new_run)
     
-    set_vars!(model, p, Y0, YP0, int.t, run, opts, bounds; init_all=new_run)
-    set_var!(model.Y, new_run || keep_Y, Y0)
+    set_vars!(model, p, Y0, YP0, int.t, run, opts, bounds; init_all=new_run, SOC=SOC)
+    set_var!(model.Y, Y0, new_run || keep_Y)
     
     check_simulation_stop!(model, 0.0, Y0, YP0, run, p, bounds, opts)
     return int, funcs, model
@@ -232,7 +234,7 @@ end
 
     prob = DAEProblem(DAEfunc, YP0, Y0, (0.0, run.tf), run, differential_vars=p.cache.id)
 
-    int = init(prob, Sundials.IDA(linear_solver=:KLU, init_all=false), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
+    int = init(prob, Sundials.IDA(;linear_solver=:KLU, init_all=false), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
 
     if isempty(funcs.int)
         push!(funcs.int, int)
@@ -279,12 +281,14 @@ end
     return nothing
 end
 
-@inline function exit_simulation!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:options_model}
+@inline function exit_simulation!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6; cancel_interp::Bool=false) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:options_model}
     # if a stop condition (besides t = tf) was reached
-    if opts.interp_final && !(run.info.flag === 0)
-        interp_final_points!(p, model, run, bounds, int, opts)
-    else
-        set_var!(model.Y, opts.var_keep.Y, opts.var_keep.Y ? copy(int.u.v) : int.u.v)
+    if !cancel_interp
+        if opts.interp_final && !(run.info.flag === 0)
+            interp_final_points!(p, model, run, bounds, int, opts)
+        else
+            set_var!(model.Y, opts.var_keep.Y ? copy(int.u.v) : int.u.v, opts.var_keep.Y)
+        end
     end
 
     iterations_start = isempty(model) ? 0 : (@inbounds @views model.results[end].run_index[end])
@@ -315,7 +319,7 @@ end
     YP = opts.var_keep.YP ? model.YP[end] : Float64[]
     t = bounds.t_final_interp_frac*(int.t - int.tprev) + int.tprev
     
-    set_var!(model.Y,  opts.var_keep.Y, bounds.t_final_interp_frac.*(int.u.v .- model.Y[end]) .+ model.Y[end])
+    set_var!(model.Y,  bounds.t_final_interp_frac.*(int.u.v .- model.Y[end]) .+ model.Y[end], opts.var_keep.Y)
     set_vars!(model, p, model.Y[end], YP, t, run, opts, bounds; modify! = set_var_last!)
     
     return nothing
@@ -397,7 +401,7 @@ end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_I,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
-        @inbounds run.value .= Y0[end] = model.I[end]
+        @inbounds run.value .= Y0[end] = calc_I((@views @inbounds model.Y[end]), p)
     elseif input === :rest
         @inbounds run.value .= Y0[end] = 0.0
     else
@@ -421,7 +425,7 @@ end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_P,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
-        @inbounds run.value .= Y0[end] = model.P[end]
+        @inbounds run.value .= Y0[end] = calc_P((@views @inbounds model.Y[end]), p)
     elseif input === :rest
         @inbounds run.value .= Y0[end] = 0.0
     else
@@ -441,7 +445,7 @@ Voltage and η_plating
     input = run.input
     @inbounds run.value .= input
     if !isempty(model)
-        @inbounds Y0[end] = model.I[end]
+        @inbounds Y0[end] = calc_I((@views @inbounds model.Y[end]), p)
     else
         OCV = calc_V(Y0,p)
         @inbounds Y0[end] = input > OCV ? +1.0 : -1.0
@@ -451,8 +455,9 @@ end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_V,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
-        @inbounds run.value .= model.V[end]
-        @inbounds Y0[end] = model.I[end]
+        Y = @views @inbounds model.Y[end]
+        @inbounds run.value .= calc_V(Y, p)
+        @inbounds Y0[end] = calc_V(Y, p)
     else
         error("Unsupported input symbol.")
     end
@@ -461,10 +466,10 @@ end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_function{method,func},model::model_output, res_I_guess) where {method<:method_V,func<:Function}
     @inbounds run.value .= run.func(0.0,Y0,YP0,p)
     if !isempty(model)
-        @inbounds Y0[end] = model.I[end]
+        @inbounds Y0[end] = calc_I((@views @inbounds model.Y[end]), p)
     else
-        OCV = calc_V(Y0,p)
         # Arbitrary guess for the initial current. 
+        OCV = calc_V(Y0,p)
         @inbounds Y0[end] = value(run) > OCV ? +1.0 : -1.0
     end
     return nothing

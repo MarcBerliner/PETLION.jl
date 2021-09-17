@@ -522,6 +522,15 @@ end
 
     return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
 end
+@inline function calc_SOC(SOC::E, Y::T, t::E, model::model_output, p::param) where {E<:Float64,T<:Vector{E}}
+    """
+    Calculate the SOC (dimensionless fraction) using the trapezoidal rule
+    """
+    Y_prev = @inbounds @views model.Y[end]
+    t_prev = @inbounds model.t[end]
+    SOC_new = SOC + 0.5*(t - t_prev)*(calc_I(Y,p) + calc_I(Y_prev,p))/3600.0
+    return SOC_new
+end
 
 @inline function temperature_weighting(T::AbstractVector{<:Number},p::AbstractParam)
     @views @inbounds (
@@ -540,13 +549,9 @@ temperature_weighting(T::VectorOfArray,p::AbstractParam) = [temperature_weightin
 calc_η_plating(Y::AbstractVector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
 calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
 
-export dc_s
-dc_s(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam)-> YP[p.ind.c_s_avg[index]]
-dc_s(index::Int64) = dc_s(Val(index))
 
-export dc_e
-dc_e(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam)-> YP[p.ind.c_e[index]]
-dc_e(index::Int64) = dc_e(Val(index))
+d_x(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam) -> YP[index]
+d_x(index::Int64) = d_x(Val(index))
 
 function c_s_indices(p::AbstractParam{jac,temp,:Fickian},x...;kw...) where {jac,temp}
     N = p.N

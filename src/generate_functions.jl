@@ -176,7 +176,7 @@ end
 
 function _symbolic_initial_guess(p::AbstractParam, SOC_sym, θ_sym, X_applied)
     
-    Y0_sym = guess_init(p, +1.0)[1]
+    Y0_sym = guess_init(p, X_applied)[1]
 
     deleteat!(Y0_sym, p.N.tot)
 
@@ -305,8 +305,20 @@ function update_θ!(θ::Vector{Float64},keys::Vector{Symbol},θ_Dict::Dict{Symbo
     return nothing
 end
 
-function get_symbolic_vars(p::AbstractParam)
-    θ_keys = sort!(Symbol.(keys(p.θ))) # sorted for convenience
+function get_symbolic_vars(p::AbstractParam;
+    original_keys=nothing)
+    if isnothing(original_keys)
+        θ_keys = sort!(Symbol.(keys(p.θ)))
+    else
+        θ_keys = deepcopy(original_keys)
+        all_keys = sort!(Symbol.(keys(p.θ)))
+        
+        @inbounds for key in all_keys
+            if !(key ∈ θ_keys)
+                push!(θ_keys, key)
+            end
+        end
+    end
 
     @variables Y_sym[1:p.N.tot], YP_sym[1:p.N.tot], t_sym, SOC_sym, X_applied, γ_sym
     @variables θ_sym[1:length(θ_keys)]
