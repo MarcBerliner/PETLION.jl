@@ -252,7 +252,7 @@ end
     sort!(tstops)
 
     # the model can fail is tstops includes 0
-    if (@inbounds iszero(tstops[1])) deleteat!(tstops, 1) end
+    if (@inbounds tstops[1]) ≤ 0.0 deleteat!(tstops, 1:findfirst(tstops .≤ 0)) end
     return nothing
 end
 
