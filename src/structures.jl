@@ -483,7 +483,7 @@ function Base.show(io::IO, p::AbstractParam)
     show_bounds("SOC", p.bounds.SOC_min, p.bounds.SOC_max),
     show_bounds("Current", p.bounds.I_min, p.bounds.I_max, "C"),
     p.numerics.temperature ?
-    show_bounds("Temperature", NaN, p.bounds.T_max, " °C") : "",
+    show_bounds("Temperature", NaN, p.bounds.T_max-273.15, " °C") : "",
     show_bounds("Anode sat.", NaN, p.bounds.c_s_n_max),
     "  --------\n",
     p.numerics.temperature ?

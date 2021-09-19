@@ -90,12 +90,14 @@ function generate_functions_symbolic(p::AbstractParam; verbose=true)
 
     if options[:SAVE_SYMBOLIC_FUNCTIONS]
         dir = strings_directory_func(p; create_dir=true) * "/"
+
+        save_string(x) = (string(x) |> remove_comments |> rearrange_if_statements |> join)
         
-        write(dir * "initial_guess.jl", string(Y0Func))
-        write(dir * "J_y.jl",           string(jacFunc))
-        write(dir * "f_alg.jl",         string(res_algFunc))
-        write(dir * "J_y_alg.jl",       string(jac_algFunc))
-        write(dir * "f_diff.jl",        string(res_diffFunc))
+        write(dir * "initial_guess.jl", save_string(Y0Func))
+        write(dir * "J_y.jl",           save_string(jacFunc))
+        write(dir * "f_alg.jl",         save_string(res_algFunc))
+        write(dir * "J_y_alg.jl",       save_string(jac_algFunc))
+        write(dir * "f_diff.jl",        save_string(res_diffFunc))
             
         @save dir * "J_sp.jl" J_y_sp θ_keys
     end
@@ -320,21 +322,21 @@ function get_symbolic_vars(p::AbstractParam;
         end
     end
 
-    @variables Y_sym[1:p.N.tot], YP_sym[1:p.N.tot], t_sym, SOC_sym, X_applied, γ_sym
-    @variables θ_sym[1:length(θ_keys)]
+    @variables Y[1:p.N.tot], YP[1:p.N.tot], t, SOC, X_applied, γ
+    @variables θ[1:length(θ_keys)]
 
-    Y_sym  = collect(Y_sym)
-    YP_sym = collect(YP_sym)
-    θ_sym  = collect(θ_sym)
+    Y  = collect(Y)
+    YP = collect(YP)
+    θ  = collect(θ)
 
-    p_sym = param_skeleton([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(param_skeleton),fieldtypes(param_skeleton))]...)
-    p_sym.opts.SOC = SOC_sym
+    p = param_skeleton([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(param_skeleton),fieldtypes(param_skeleton))]...)
+    p.opts.SOC = SOC
 
     @inbounds for (i,key) in enumerate(θ_keys)
-        p_sym.θ[key] = θ_sym[i]
+        p.θ[key] = θ[i]
     end
 
-    return θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys
+    return θ, Y, YP, t, SOC, X_applied, γ, p, θ_keys
 end
 
 function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVector{<:Num};
@@ -359,4 +361,104 @@ function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVe
 
     jac = sparse(I,J, exprs, length(ops), length(vars))
     return jac
+end
+
+remove_comments(str::String,x...) = remove_comments(collect(str),x...)
+function remove_comments(str::Vector{Char},first::String="#=",last::String="=#")
+    """
+    An annoying aspect of Symbolics is that saving the output of `build_function` has tons of comments,
+    severely adding to the memory size of the stored functions. This removes all comments
+    """
+    
+    ind_first = find_in_string(str, first, 1)
+    ind_last = find_in_string(str, last, length(last))
+
+    @assert length(ind_first) === length(ind_last)
+
+    ind_first = reverse(ind_first)
+    ind_last  = reverse(ind_last)
+
+    @inbounds for (l,u) in zip(ind_first,ind_last)
+        index = l:u
+        deleteat!(str,index)
+    end
+    return str
+end
+
+find_in_string(str::String,x...) = find_in_string(collect(str),x...)
+function find_in_string(str::AbstractVector,x::String,I::T=1:length(x)) where T
+    N = length(str)
+
+    m = length(x)
+    
+    ind_vec = T[]
+    @inbounds for i in 1:N - (m-1)
+        index = i:(i+(m-1))
+        y = @views @inbounds join(str[index])
+        if y == x
+            push!(ind_vec, (@inbounds index[I]))
+        end
+    end
+    return ind_vec
+end
+
+function replace_repeated(str,x...)
+    len_prev = length(str)
+    len_new = 0
+    @inbounds while len_prev != len_new
+        len_prev = length(str)
+        str = replace(str, x...)
+        len_new = length(str)
+    end
+    return str
+end
+
+find_next(str::String,x...;kw...) = find_next(collect(str),x...;kw...)
+function find_next(str,first,x::AbstractArray;itermax=900000)
+    ind = first .+ (0:length(x)-1)
+    iter = 0
+    while (@views @inbounds str[ind]) != x
+        ind = ind .+ 1
+        iter += 1
+        if ind[end] > length(str) error("Couldn't find the string") end
+    end
+    return ind
+end
+function find_next(str,first,x;itermax=900000)
+    ind = first
+    iter = 0
+    while (@inbounds str[ind]) != x
+        ind = ind .+ 1
+        iter += 1
+        if iter === itermax error(str[ind]) end
+    end
+    return ind
+end
+
+rearrange_if_statements(str::String) = rearrange_if_statements(collect(str))
+function rearrange_if_statements(str::Vector{Char})
+    inds = find_in_string(str, "if")
+    @inbounds for ind_start in reverse(inds), _ in 1:4
+        ind = find_next(str,ind_start[1] .+ (-1:0),['\n', ' '])
+        while str[ind] == ['\n', ' ']
+            deleteat!(str, ind[end])
+        end
+
+        str[ind[1]] = ';'
+    end
+    str = join(str)
+
+    return str
+end
+
+convert_to_ifelse(str::String) = convert_to_ifelse(collect(str))
+function convert_to_ifelse(str::Vector{Char})
+    
+    str = join(str)
+    str = replace(str, "; else; " => ", ")
+    str = replace(str, "; end" => ")")
+    str = replace(str, ";" => ",")
+    str = replace(str, "if" => "IfElse.ifelse(")
+
+    return str
 end

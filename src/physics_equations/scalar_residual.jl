@@ -172,7 +172,13 @@ function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
 
         res_algebraic = @inbounds res[end]
 
-        residuals_PET!(res,t,Y,YP,p_sym)
+        try
+            if !options[:SAVE_SYMBOLIC_FUNCTIONS] error() end
+            f_new! = truncated_res_diff(p,ind_differential)
+            f_new!(res,t,Y,YP,θ_sym_slim)
+        catch
+            residuals_PET!(res,t,Y,YP,p_sym)
+        end
         @inbounds for ind in ind_differential
             res_algebraic = substitute(res_algebraic, Dict(YP[ind] => res[ind] + YP[ind]))
         end
@@ -197,6 +203,39 @@ function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     end
 
     return combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,θ_tot,θ_keys,scalar_residual!,scalar_residal_alg!,J_scalar_alg_func,J_sp_alg_scalar)
+end
+
+function truncated_res_diff(p::AbstractParam,ind_differential)
+    path = strings_directory_func(p; create_dir=false) * "/f_diff.jl"
+    str_old = join(readlines(path), "\n");
+
+    # If the function doesn't have rearranged `if` statements
+    if !contains(str_old, ";")
+        str_old = rearrange_if_statements(str_old)
+    end
+
+    str_old = PETLION.convert_to_ifelse(str_old)
+
+    str = collect(str_old)
+
+    # Remove all the unnecessary lines
+    out_char(i::Int) = collect("ˍ₋out[$i]")
+    ind = PETLION.find_next(str, 1, out_char(1))
+
+    @inbounds for i in 1:p.N.diff
+        ind = PETLION.find_next(str, ind[1], out_char(i))
+        ind_last = PETLION.find_next(str, ind[end], '\n')
+        if i ∈ ind_differential
+            # skip this one
+            ind = ind_last[end]
+        else
+            deleteat!(str, ind[1]:ind_last[end])
+        end
+    end
+
+    f_new = eval(Meta.parse(join(str)))
+
+    return f_new
 end
 
 function _get_method_funcs_no_differentiation(p::param, run::AbstractRun)
