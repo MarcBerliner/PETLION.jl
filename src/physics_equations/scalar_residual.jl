@@ -1,15 +1,18 @@
 @inline calc_V(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
 @inline calc_I(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds Y[p.ind.I[1]]
 @inline calc_P(Y::Vector{<:Number}, p::AbstractParam)       = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
-@inline calc_T(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.T]
 @inline calc_c_e(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.c_e]
 @inline calc_c_s_avg(Y::Vector{<:Number}, p::AbstractParam) = @inbounds @views Y[p.ind.c_s_avg]
+@inline calc_SOH(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.SOH[1]]
 @inline calc_j(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.j]
 @inline calc_Φ_e(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.Φ_e]
 @inline calc_Φ_s(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.Φ_s]
 @inline calc_film(Y::Vector{<:Number}, p::AbstractParam)    = @inbounds @views Y[p.ind.film]
 @inline calc_j_s(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.j_s]
 @inline calc_Q(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.Q]
+
+@inline calc_T(Y::Vector{<:Number}, p::AbstractParamTemp{true}) = @inbounds @views Y[p.ind.T]
+@inline calc_T(::Vector{<:Number}, p::AbstractParamTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
 
 @inline method_I(Y, p)   = calc_I(Y,p)
 @inline method_V(Y, p)   = calc_V(Y,p)
@@ -226,7 +229,7 @@ function truncated_res_diff(p::AbstractParam,ind_differential)
         ind = PETLION.find_next(str, ind[1], out_char(i))
         ind_last = PETLION.find_next(str, ind[end], '\n')
         if i ∈ ind_differential
-            # skip this one
+            # keep this line and skip over it
             ind = ind_last[end]
         else
             deleteat!(str, ind[1]:ind_last[end])

@@ -55,20 +55,18 @@ function load_functions_symbolic(p::AbstractParam)
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys
 end
 
-function generate_functions_symbolic(p::AbstractParam; verbose=true)
+function generate_functions_symbolic(p::AbstractParam; verbose=options[:SAVE_SYMBOLIC_FUNCTIONS])
     
-    println_v(x...) = verbose ? println(x...) : nothing
-
-    println_v("Creating the functions for $p\n\nMay take a few minutes...")
+    if verbose println("Creating the functions for $p\n\nMay take a few minutes...") end
 
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
 
     ## Y0 function
-    println_v("1/4: Making initial guess function")
+    if verbose println("1/4: Making initial guess function") end
     Y0_sym = _symbolic_initial_guess(p_sym, SOC_sym, θ_sym, X_applied)
 
     ## batteryModel function
-    println_v("2/4: Making symbolic model")
+    if verbose println("2/4: Making symbolic model") end
     res = _symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym)
 
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
@@ -76,10 +74,10 @@ function generate_functions_symbolic(p::AbstractParam; verbose=true)
     Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false)[2]
 
     ## jacobian
-    println_v("3/4: Making symbolic Jacobian")
+    if verbose println("3/4: Making symbolic Jacobian") end
     Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, verbose=verbose)
 
-    println_v("4/4: Making initial condition functions")
+    if verbose println("4/4: Making initial condition functions") end
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
 
     jac_algFunc = _symbolic_initial_conditions_jac(p, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)
@@ -102,7 +100,7 @@ function generate_functions_symbolic(p::AbstractParam; verbose=true)
         @save dir * "J_sp.jl" J_y_sp θ_keys
     end
 
-    println_v("Finished\n")
+    if verbose println("Finished\n") end
 
     return Y0Func, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys
 end

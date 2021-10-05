@@ -341,7 +341,7 @@ end
     
     return key, key_exists
 end
-@inline function initialize_states!(p::param{T}, Y0::R1, YP0::R1, run::AbstractRun, opts::options_model, funcs::Jac_and_res, SOC::Float64;kw...) where {T<:AbstractJacobian,R1<:Vector{Float64}}
+@inline function initialize_states!(p::param, Y0::T, YP0::T, run::AbstractRun, opts::options_model, funcs::Jac_and_res, SOC::Float64;kw...) where {T<:Vector{Float64}}
     if opts.save_start
         key, key_exists = save_start_init!(Y0, run, p, SOC)
         
@@ -378,7 +378,7 @@ end
         
         Y_old .= Y_new
         Y_new .-= L\res
-        if norm(Y_old .- Y_new) < opts.reltol_init || maximum(abs, res) < opts.abstol_init
+        if norm(Y_old .- Y_new) < opts.reltol_init # || maximum(abs, res) < opts.abstol_init
             break
         elseif iter === itermax
             error("Could not initialize DAE in $itermax iterations.")

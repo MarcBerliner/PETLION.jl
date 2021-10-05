@@ -11,15 +11,6 @@ struct method_I   <: AbstractMethod end
 struct method_V   <: AbstractMethod end
 struct method_P   <: AbstractMethod end
 
-struct _discretizations_per_section
-    p::Int64
-    s::Int64
-    n::Int64
-    a::Int64
-    z::Int64
-    r_p::Int64
-    r_n::Int64
-end
 struct discretizations_per_section
     p::Int64
     s::Int64
@@ -32,6 +23,7 @@ struct discretizations_per_section
     alg::Int64
     tot::Int64
 end
+discretizations_per_section(p,s,n,a,z,r_p,r_n) = discretizations_per_section(p,s,n,a,z,r_p,r_n,-1,-1,-1)
 
 Base.@kwdef mutable struct run_info
     exit_reason::String = ""
@@ -222,13 +214,13 @@ end
 options_numerical(temp,solid_diff,Fickian,age,x...) = 
     options_numerical{temp,solid_diff,Fickian,age}(temp,solid_diff,Fickian,age,x...)
 
-states_logic = model_states{
+const states_logic = model_states{
     Bool,
     Bool,
     Tuple
 }
 
-indices_states = model_states{
+const indices_states = model_states{
     index_state,
     index_state,
     Nothing,
@@ -303,6 +295,18 @@ struct param{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractParam{T
     funcs::model_funcs{<:Function,<:Function,<:Function,T,<:AbstractJacobian}
 end
 
+const param_jac{jac}               = param{jac,<:Any,<:Any,<:Any,<:Any}
+const param_temp{temp}             = param{<:AbstractJacobian,temp,<:Any,<:Any,<:Any}
+const param_solid_diff{solid_diff} = param{<:AbstractJacobian,<:Any,solid_diff,<:Any,<:Any}
+const param_Fickian{Fickian}       = param{<:AbstractJacobian,<:Any,<:Any,Fickian,<:Any}
+const param_age{age}               = param{<:AbstractJacobian,<:Any,<:Any,<:Any,age}
+
+const AbstractParamJac{jac}              = AbstractParam{jac,<:Any,<:Any,<:Any,<:Any}
+const AbstractParamTemp{temp}            = AbstractParam{<:AbstractJacobian,temp,<:Any,<:Any,<:Any}
+const AbstractParamSolidDiff{solid_diff} = AbstractParam{<:AbstractJacobian,<:Any,solid_diff,<:Any,<:Any}
+const AbstractParamFickian{Fickian}      = AbstractParam{<:AbstractJacobian,<:Any,<:Any,Fickian,<:Any}
+const AbstractParamAge{age}              = AbstractParam{<:AbstractJacobian,<:Any,<:Any,<:Any,age}
+
 struct param_skeleton{temp,solid_diff,Fickian,age} <: AbstractParam{AbstractJacobian,temp,solid_diff,Fickian,age}
     θ::Dict{Symbol,Any}
     numerics::options_numerical{temp,solid_diff,Fickian,age}
@@ -326,7 +330,7 @@ struct run_results{T<:AbstractRun}
     p::param
 end
 
-model_output = model_states{
+const model_output = model_states{
     Array{Float64,1},
     VectorOfArray{Float64,2,Array{Array{Float64,1},1}},
     Array{run_results,1},

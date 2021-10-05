@@ -313,6 +313,7 @@ function state_indices(N, numerics)
     Q_tot       = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
     j_tot       = 1:(N.p+N.n)
     j_s_tot     = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
+    SOH_tot     = numerics.aging ∈ (:SEI, :R_aging) ? 1 : nothing
     Φ_e_tot     = 1:(N.p+N.s+N.n)
     Φ_s_tot     = 1:(N.p+N.n)
     I_tot       = 1
@@ -322,6 +323,7 @@ function state_indices(N, numerics)
     T       = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
     film    = add(:film,    film_tot,    (:n,),                :differential)
     Q       = add(:Q,       Q_tot,       (:p, :n),             :differential)
+    SOH     = add(:SOH,     SOH_tot,     (),                   :differential)
     j       = add(:j,       j_tot,       (:p, :n),             :algebraic)
     j_s     = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
     Φ_e     = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
@@ -334,7 +336,7 @@ function state_indices(N, numerics)
     Y = YP = t = V = P = SOC = index_state()
     runs = nothing
     
-    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, runs)
+    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, SOH, runs)
 
     return ind, N_diff, N_alg, N_tot
 end
@@ -360,36 +362,27 @@ end
 
     build_OCV!(states, p)
     
-    function guess_differential!()
+    # differential
+    states[:c_e] = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
         
-        states[:c_e] = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
+    states[:T] = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
         
-        states[:T] = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
+    states[:film] = zeros(p.N.n)
         
-        states[:film] = zeros(p.N.n)
-        
-        states[:Q] = zeros(p.N.p+p.N.n)
-    
-        return nothing
-    end
-    
-    function guess_algebraic!()
-        states[:j] = 0.0
-        
-        states[:Φ_e] = 0.0
-        
-        states[:Φ_s] = states[:U]
-        
-        states[:I] = X_applied
-    
-        if !isempty(states[:j_s]) states[:j_s] .= 0.0 end
+    states[:Q] = zeros(p.N.p+p.N.n)
 
-        return nothing
-    end
-
-    # creating initial guess vectors Y and YP
-    guess_differential!()
-    guess_algebraic!()
+    if p.numerics.aging ∈ (:SEI, :R_aging) states[:SOH] = 1.0 end
+    
+    # algebraic
+    states[:j] = 0.0
+        
+    states[:Φ_e] = 0.0
+        
+    states[:Φ_s] = states[:U]
+        
+    states[:I] = X_applied
+    
+    if !isempty(states[:j_s]) states[:j_s] .= 0.0 end
 
     build_residuals!(Y0, states, p)
 
@@ -435,4 +428,46 @@ function strings_directory_func(p::AbstractParam, x; create_dir=false)
     strings_directory = string("$(strings_directory_func(p; create_dir=create_dir))/$x.jl")
 
     return strings_directory
+end
+
+
+@inline function trapz(x::T1,y::T2) where {T1<:AbstractVector,T2<:AbstractVector}
+    """
+    Trapezoidal rule with SIMD vectorization
+    """
+    @assert length(x) === length(y)
+    out = 0.0
+    @inbounds @simd for i in 2:length(x)
+        out += 0.5*(x[i] - x[i-1])*(y[i] + y[i-1])
+    end
+    return out
+end
+
+function extrap_x_0(x::AbstractVector,y::AbstractVector)
+    @inbounds y[1] - ((y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))*((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[1]^2)) - ((y[2] - y[1] - (((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[2]^2 - (x[1]^2))*(y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))))*((x[2] - x[1])^-1)*x[1])
+end
+function extrapolate_section(y::AbstractVector,p::AbstractParam,section::Symbol)
+    """
+    Extrapolate to the edges of the FVM sections with a second-order polynomial
+    """
+    
+    N = getproperty(p.N, section)
+    
+    x_range = [
+        0
+        collect(range(1/2N,1-1/2N,length=N))
+        1
+    ]
+    
+    x_interp = @views @inbounds x_range[2:4]
+    
+    y_range = [
+        extrap_x_0(x_interp,y)
+        y
+        extrap_x_0(x_interp,(@inbounds @views y[end:-1:end-2]))
+    ]
+    
+    x_range *= p.θ[Symbol(:l_,section)]
+    
+    return x_range, y_range
 end

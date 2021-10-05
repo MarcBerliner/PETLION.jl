@@ -21,6 +21,7 @@ Base.@kwdef struct model_states{vec1D,vec2D,R1}
     V::vec1D = ( vec1D === Array{Float64,1} ) ? Float64[] : nothing
     P::vec1D = ( vec1D === Array{Float64,1} ) ? Float64[] : nothing
     SOC::vec1D = ( vec1D === Array{Float64,1} ) ? Float64[] : nothing
+    SOH::vec1D = ( vec1D === Array{Float64,1} ) ? Float64[] : nothing
     # Culmination of all the runs
     results::R1 = R1 === Array{run_results,1} ? run_results[] : nothing
 end

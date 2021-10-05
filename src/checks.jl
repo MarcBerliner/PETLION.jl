@@ -1,37 +1,84 @@
-@inline function check_simulation_stop!(model::R1, t::Float64, Y::R2, YP::R2, run::R3, p::R4, bounds::R5, opts::R6;
+@inline function check_simulation_stop!(model, t::Float64, Y, YP, run::AbstractRun, p, bounds, opts::options_model;
     ϵ::Float64 = t < 1.0 ? opts.reltol : 0.0,
-    ) where {R1<:model_output, R2<:Vector{Float64}, method<:AbstractMethod, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
-    tf = run.tf
+    )
     
-    if t ≥ tf
+    if t ≥ run.tf
         run.info.flag = 0
         run.info.exit_reason = "Final time reached"
+        return nothing
     end
 
     # continue checking the bounds or return after only evaluating the time
     !opts.check_bounds && (return nothing)
-    
-    V = calc_V(Y,p)
+
     I = calc_I(Y,p)
-    if !(method === method_V)
-        if (bounds.V_min - V > ϵ) && I < 0
-            t_frac = (bounds.V_prev - bounds.V_min)/(bounds.V_prev - V)
-            if t_frac < bounds.t_final_interp_frac
-                bounds.t_final_interp_frac = t_frac
-                run.info.flag = 1
-                run.info.exit_reason = "Below minimum voltage limit"
-            end
+    
+    check_stop_I(         p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_V(         p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_SOC(       p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_T(         p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_c_s_surf(  p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_c_e(       p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_η_plating( p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_dfilm(     p, run, model, Y, YP, bounds, ϵ, I)
+
+    return nothing
+end
+
+@inline check_stop_I(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun{method_I},R4<:param,R5<:boundary_stop_conditions} = nothing
+@inline function check_stop_I(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions}
+    
+    if (I - bounds.I_max > ϵ)
+        t_frac = (bounds.I_prev - bounds.I_max)/(bounds.I_prev - I)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 7
+            run.info.exit_reason = "Above maximum permitted C-rate"
         end
-        
-        if (V - bounds.V_max > ϵ) && I > 0
-            t_frac = (bounds.V_prev - bounds.V_max)/(bounds.V_prev - V)
-            if t_frac < bounds.t_final_interp_frac
-                bounds.t_final_interp_frac = t_frac
-                run.info.flag = 2
-                run.info.exit_reason = "Above maximum voltage limit"
-            end
+    elseif (bounds.I_min - I > ϵ)
+        t_frac = (bounds.I_prev - bounds.I_min)/(bounds.I_prev - I)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 8
+            run.info.exit_reason = "Below minimum permitted C-rate"
         end
     end
+    bounds.I_prev = I    
+
+    return nothing
+end
+
+@inline check_stop_V(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+) where {R2<:Vector{Float64}, R3<:AbstractRun{method_V},R4<:param,R5<:boundary_stop_conditions} = nothing
+@inline function check_stop_V(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions}
+    
+    V = calc_V(Y,p)
+    if (bounds.V_min - V > ϵ) && I < 0
+        t_frac = (bounds.V_prev - bounds.V_min)/(bounds.V_prev - V)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 1
+            run.info.exit_reason = "Below minimum voltage limit"
+        end
+    elseif (V - bounds.V_max > ϵ) && I > 0
+        t_frac = (bounds.V_prev - bounds.V_max)/(bounds.V_prev - V)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 2
+            run.info.exit_reason = "Above maximum voltage limit"
+        end
+    end
+    bounds.V_prev = V
+
+    return nothing
+end
+
+@inline function check_stop_SOC(p::R4, run::R3, model::model_output, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions}
+    
     SOC = @inbounds model.SOC[end]
     if (bounds.SOC_min - SOC > ϵ) && I < 0
         t_frac = (bounds.SOC_prev - bounds.SOC_min)/(bounds.SOC_prev - SOC)
@@ -40,8 +87,7 @@
             run.info.flag = 3
             run.info.exit_reason = "Below minimum SOC limit"
         end
-    end
-    if (SOC - bounds.SOC_max > ϵ) && I > 0
+    elseif (SOC - bounds.SOC_max > ϵ) && I > 0
         t_frac = (bounds.SOC_prev - bounds.SOC_max)/(bounds.SOC_prev - SOC)
         if t_frac < bounds.t_final_interp_frac
             bounds.t_final_interp_frac = t_frac
@@ -49,8 +95,16 @@
             run.info.exit_reason = "Above maximum SOC limit"
         end
     end
-    
-    if p.numerics.temperature
+    bounds.SOC_prev = SOC
+
+    return SOC
+end
+
+@inline check_stop_T(p::param_temp{false}, run, model, Y, YP, bounds, ϵ, I) = nothing
+@inline function check_stop_T(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:param_temp{true},R5<:boundary_stop_conditions}
+
+    if !isnan(bounds.T_max)
         T = temperature_weighting(calc_T(Y,p),p)
         if T - bounds.T_max > ϵ
             t_frac = (bounds.T_prev - bounds.T_max)/(bounds.T_prev - T)
@@ -60,48 +114,75 @@
                 run.info.exit_reason = "Above maximum permitted temperature"
             end
         end
-    else
-        T = -1.0
+        bounds.T_prev = T
     end
+
+    return nothing
+end
+
+@inline function c_s_n_maximum(Y::Vector{Float64},p::param_solid_diff{:Fickian})
+    c_s_n_max = -Inf
+    @inbounds for i in 1:p.N.n
+        @inbounds c_s_n_max = max(c_s_n_max, Y[p.ind.c_s_avg.n[p.N.r_n*(i-1)]])
+    end
+    return c_s_n_max
+end
+@inline function c_s_n_maximum(Y::Vector{Float64},p::Union{param_solid_diff{:polynomial},param_solid_diff{:quadratic}})
+    c_s_n_max = -Inf
+    @inbounds for ind in p.ind.c_s_avg.n
+        @inbounds c_s_n_max = max(c_s_n_max, Y[ind])
+    end
+    return c_s_n_max
+end
+
+@inline function check_stop_c_s_surf(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions}
     
-    c_s_avg = calc_c_s_avg(Y,p)
-    if !isnan(bounds.c_s_n_max) && I > 0
-        if p.numerics.solid_diffusion === :Fickian
-            c_s_n_max = maximum((@inbounds @views c_s_avg[(p.N.p)*(p.N.r_p)+1:end]))
-        else
-            c_s_n_max = maximum((@inbounds @views c_s_avg[(p.N.p)+1:end]))
-        end
-        
-        if c_s_n_max - bounds.c_s_n_max*p.θ[:c_max_n] > ϵ
-            t_frac = (bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]))/(bounds.c_s_n_prev - c_s_n_max)
-            if t_frac < bounds.t_final_interp_frac
-                bounds.t_final_interp_frac = t_frac
-                run.info.flag = 6
-                run.info.exit_reason = "Above c_s_n saturation threshold"
+    if !isnan(bounds.c_s_n_max)
+        c_s_n_max = c_s_n_maximum(Y,p)
+
+        if I > 0
+            if c_s_n_max - bounds.c_s_n_max*p.θ[:c_max_n] > ϵ
+                t_frac = (bounds.c_s_n_prev - bounds.c_s_n_max*(p.θ[:c_max_n]))/(bounds.c_s_n_prev - c_s_n_max)
+                if t_frac < bounds.t_final_interp_frac
+                    bounds.t_final_interp_frac = t_frac
+                    run.info.flag = 6
+                    run.info.exit_reason = "Above c_s_n saturation threshold"
+                end
             end
         end
-    else
-        c_s_n_max = -1.0
+        bounds.c_s_n_prev = c_s_n_max
     end
 
-    if !(method === method_I) && (I - bounds.I_max > ϵ)
-        t_frac = (bounds.I_prev - bounds.I_max)/(bounds.I_prev - I)
-        if t_frac < bounds.t_final_interp_frac
-            bounds.t_final_interp_frac = t_frac
-            run.info.flag = 7
-            run.info.exit_reason = "Above maximum permitted C-rate"
+    return nothing
+end
+
+@inline function check_stop_c_e(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:param, R5<:boundary_stop_conditions}
+    
+    if !isnan(bounds.c_e_min)
+        c_e_min = -Inf
+        @inbounds for ind in p.ind.c_e
+            @inbounds c_e_min = max(c_e_min, Y[ind])
         end
-    end
-    if !(method === method_I) && (bounds.I_min - I > ϵ)
-        t_frac = (bounds.I_prev - bounds.I_min)/(bounds.I_prev - I)
-        if t_frac < bounds.t_final_interp_frac
-            bounds.t_final_interp_frac = t_frac
-            run.info.flag = 8
-            run.info.exit_reason = "Below minimum permitted C-rate"
+        if bounds.c_e_min - c_e_min > ϵ
+            t_frac = (bounds.c_e_min_prev - bounds.c_e_min)/(bounds.c_e_min_prev - c_e_min)
+            if t_frac < bounds.t_final_interp_frac
+                bounds.t_final_interp_frac = t_frac
+                run.info.flag = 9
+                run.info.exit_reason = "Below minimum permitted c_e"
+            end
         end
+        bounds.c_e_min_prev = c_e_min
     end
 
-    η_plating = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+    return nothing
+end
+
+@inline function check_stop_η_plating(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:param, R5<:boundary_stop_conditions}
+    
+    η_plating = calc_η_plating(Y,p)
     if !isnan(bounds.η_plating_min) && bounds.η_plating_min - η_plating > ϵ
         t_frac = (bounds.η_plating_prev - bounds.η_plating_min)/(bounds.η_plating_prev - η_plating)
         if t_frac < bounds.t_final_interp_frac
@@ -110,44 +191,34 @@
             run.info.exit_reason = "Below minimum permitted η_plating"
         end
     end
-
-    c_e_min = minimum(calc_c_e(Y,p))
-    if !isnan(bounds.c_e_min) && bounds.c_e_min - c_e_min > ϵ
-        t_frac = (bounds.c_e_min_prev - bounds.c_e_min)/(bounds.c_e_min_prev - c_e_min)
-        if t_frac < bounds.t_final_interp_frac
-            bounds.t_final_interp_frac = t_frac
-            run.info.flag = 9
-            run.info.exit_reason = "Below minimum permitted c_e"
-        end
-    end
-
-    if !(p.numerics.aging === false)
-        dfilm = maximum(calc_film(YP,p))
-        if !isnan(bounds.dfilm_max) && dfilm - bounds.dfilm_max > ϵ
-            t_frac = (bounds.dfilm_prev - bounds.dfilm_max)/(bounds.dfilm_prev - dfilm)
-            if t_frac < bounds.t_final_interp_frac
-                bounds.t_final_interp_frac = t_frac
-                run.info.flag = 10
-                run.info.exit_reason = "Above maximum film growth rate"
-            end
-        end
-    else
-        dfilm = -1.0
-    end
-
-    if within_bounds(run)
-        bounds.V_prev         = V
-        bounds.I_prev         = I
-        bounds.SOC_prev       = SOC
-        bounds.T_prev         = T
-        bounds.c_s_n_prev     = c_s_n_max
-        bounds.c_e_min_prev   = c_e_min
-        bounds.η_plating_prev = η_plating
-        bounds.dfilm_prev     = dfilm
-    end
+    bounds.η_plating_prev = η_plating
 
     return nothing
 end
+
+@inline check_stop_dfilm(::param_age{false}, run, model, Y, YP, bounds, ϵ, I) = nothing
+@inline function check_stop_dfilm(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:param_age{:SEI}, R5<:boundary_stop_conditions}
+    
+    dfilm_max = -Inf
+    @inbounds for i in 1:p.N.n
+        @inbounds dfilm_max = max(dfilm_max, YP[p.ind.film[i]])
+    end
+    
+    if !isnan(bounds.dfilm_max) && dfilm_max - bounds.dfilm_max > ϵ
+        t_frac = (bounds.dfilm_prev - bounds.dfilm_max)/(bounds.dfilm_prev - dfilm_max)
+        if t_frac < bounds.t_final_interp_frac
+            bounds.t_final_interp_frac = t_frac
+            run.info.flag = 10
+            run.info.exit_reason = "Above maximum film growth rate"
+        end
+    end
+    bounds.dfilm_prev = dfilm_max
+
+    return nothing
+end
+
+
 
 @inline function check_solve(run::run_constant, model::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
     if t === int.tprev

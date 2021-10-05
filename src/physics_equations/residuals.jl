@@ -37,6 +37,7 @@ function residuals_PET!(residuals, t, x, ẋ, p::AbstractParam)
     # Lithium plating film thickness, film
     if p.numerics.aging === :SEI
         residuals_film!(res, states, ∂states, p)
+        residuals_SOH!(res, states, ∂states, p)
     end
 
     # Check if the thermal dynamics are enabled.
@@ -204,7 +205,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     return nothing
 end
 
-function residuals_c_s_avg!(res, states, ∂states, p::Union{AbstractParam{jac,temp,:quadratic},AbstractParam{jac,temp,:polynomial}}) where {jac,temp}
+function residuals_c_s_avg!(res, states, ∂states, p::Union{AbstractParamSolidDiff{:quadratic},AbstractParamSolidDiff{:polynomial}})
     """
     Calculate the solid particle concentrations residuals with quadratic or polynomial approximations [mol/m³]
     """
@@ -224,7 +225,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::Union{AbstractParam{jac,t
 
     return nothing
 end
-function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:Fickian,:finite_difference}) where {jac,temp}
+function residuals_c_s_avg!(res, states, ∂states, p::AbstractParamFickian{:finite_difference}) where {jac,temp}
     """
     Calculate the volume-averaged solid particle concentration residuals using a 9th order accurate finite difference method (FDM) [mol/m³]
     """
@@ -278,7 +279,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:F
 
     return nothing
 end
-function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:Fickian,:spectral}) where {jac,temp}
+function residuals_c_s_avg!(res, states, ∂states, p::AbstractParamSolidDiff{:spectral})
     """
     Calculate the volume-averaged solid particle concentration residuals using a spectral method [mol/m³]
     """
@@ -335,7 +336,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParam{jac,temp,:F
     return nothing
 end
 
-function residuals_Q!(res, states, ∂states, p::AbstractParam{jac,temp,:polynomial}) where {jac,temp}
+function residuals_Q!(res, states, ∂states, p::AbstractParamSolidDiff{:polynomial})
     """
     residuals_Q! is used to implement the three parameters reduced model for solid phase diffusion [mol/m⁴]
     This model has been taken from the paper "Efficient Macro-Micro Scale Coupled
@@ -374,6 +375,28 @@ function residuals_film!(res, states, ∂states, p::AbstractParam)
     rhs_film = -j_s.*p.θ[:M_n]./p.θ[:ρ_n]
 
     res_film .= rhs_film .- ∂film
+
+    return nothing
+end
+
+function residuals_SOH!(res, states, ∂states, p::AbstractParam)
+    """
+    residuals_SOH! integrates the SOH when aging is enabled and there are losses
+    """
+
+    j_s = states[:j_s]
+    I = states[:I][1]/calc_I1C(p)
+
+    ∂SOH = ∂states[:SOH][1]
+
+    res_SOH = res[:SOH]
+
+    j_s_int = -trapz(extrapolate_section(j_s, p, :n)...)
+    j_s_int *= const_Faradays*surface_area_to_volume_ratio(p)[2]/(3600*calc_I1C(p.θ))
+
+    rhs_SOH = -j_s_int
+
+    res_SOH .= rhs_SOH - ∂SOH
 
     return nothing
 end

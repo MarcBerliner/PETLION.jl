@@ -45,23 +45,25 @@
     # exist as an optional output if the model uses them
     if ( p.numerics.temperature === true           && keep.T    ) modify!(model.T,    calc_T(Y,p)    ) end
     if ( p.numerics.aging === :SEI                 && keep.film ) modify!(model.film, calc_film(Y,p) ) end
+    if ( p.numerics.aging === :SEI                 && keep.SOH  ) modify!(model.SOH,  calc_SOH(Y, p) ) end
     if ( !(p.numerics.aging === false)             && keep.j_s  ) modify!(model.j_s,  calc_j_s(Y,p)  ) end
     if ( p.numerics.solid_diffusion === :quadratic && keep.Q    ) modify!(model.Q,    calc_Q(Y,p)    ) end
 
     return nothing
 end
 
-@inline function set_var!(x::T1, x_val::T2, append::Bool=true) where {T1<:Vector{Float64},T2<:Float64}
-    append ? push!(x, x_val) : (@inbounds x[1] = x_val)
+@inline set_var!(x, x_val) = push!(x, x_val)
+@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:Vector{Float64},T2<:Float64}
+    keep ? push!(x, x_val) : (@inbounds x[1] = x_val)
 end
-@inline function set_var!(x::T1, x_val::T2, append::Bool=true) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
-    append ? push!(x, x_val) : (@inbounds x[1] .= x_val)
+@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
+    keep ? push!(x, x_val) : (@inbounds x[1] .= x_val)
 end
 
-@inline function set_var_last!(x::T1, x_val::T2, append=true) where {T1<:Vector{Float64},T2<:Float64}
+@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:Vector{Float64},T2<:Float64}
     @inbounds x[end] = x_val
 end
-@inline function set_var_last!(x::T1, x_val::T2, append=true) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
+@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
     @inbounds x[end] .= x_val
 end
 
