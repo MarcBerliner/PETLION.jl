@@ -281,7 +281,7 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
 
     
     #### DO NOT MODIFY BELOW ###
-    N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
+    N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n)
     numerics = options_numerical(temperature, solid_diffusion, Fickian_method, aging, cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, jacobian)
     
     return θ, bounds, opts, N, numerics
@@ -498,7 +498,7 @@ function system_NMC_LiC6(θ, funcs, cathode, anode;
 
     
     #### DO NOT MODIFY BELOW ###
-    N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n, -1, -1, -1)
+    N = discretizations_per_section(N_p, N_s, N_n, N_a, N_z, N_r_p, N_r_n)
     numerics = options_numerical(temperature, solid_diffusion, Fickian_method, aging, cathode, anode, rxn_p, rxn_n, OCV_p, OCV_n, D_s_eff, rxn_rate, D_eff, K_eff, thermodynamic_factor, jacobian)
     
     return θ, bounds, opts, N, numerics

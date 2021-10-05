@@ -74,8 +74,8 @@ function build_j_total!(states, p::AbstractParam)
     return nothing
 end
 
-build_T!(states, p::AbstractParam{jac,true}) where {jac} = nothing
-function build_T!(states, p::AbstractParam{jac,false}) where {jac}
+build_T!(states, p::AbstractParamTemp{true}) = nothing
+function build_T!(states, p::AbstractParamTemp{false})
     """
     If temperature is not enabled, include a vector of temperatures using the specified initial temperature.
     """
@@ -87,7 +87,7 @@ function build_T!(states, p::AbstractParam{jac,false}) where {jac}
 end
 
 
-function build_c_s_star!(states, p::AbstractParam{jac,temp,:Fickian}) where {jac,temp}
+function build_c_s_star!(states, p::AbstractParamSolidDiff{:Fickian})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -106,7 +106,7 @@ function build_c_s_star!(states, p::AbstractParam{jac,temp,:Fickian}) where {jac
     
     return nothing
 end
-function build_c_s_star!(states, p::AbstractParam{jac,temp,:quadratic}) where {jac,temp}
+function build_c_s_star!(states, p::AbstractParamSolidDiff{:quadratic})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -128,7 +128,7 @@ function build_c_s_star!(states, p::AbstractParam{jac,temp,:quadratic}) where {j
     
     return nothing
 end
-function build_c_s_star!(states, p::AbstractParam{jac,temp,:polynomial}) where {jac,temp}
+function build_c_s_star!(states, p::AbstractParamSolidDiff{:polynomial})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -533,43 +533,105 @@ end
 end
 
 @inline function temperature_weighting(T::AbstractVector{<:Number},p::AbstractParam)
-    @views @inbounds (
-        mean(T[1:p.N.a])*p.θ[:l_a]+
-        mean(T[1:p.N.p .+ (p.N.a)])*p.θ[:l_p]+
-        mean(T[1:p.N.s .+ (p.N.a+p.N.p)])*p.θ[:l_s]+
-        mean(T[1:p.N.n .+ (p.N.a+p.N.p+p.N.s)])*p.θ[:l_n]+
-        mean(T[1:p.N.z .+ (p.N.a+p.N.p+p.N.s+p.N.n)])*p.θ[:l_z]
-    )/(p.θ[:l_a]+p.θ[:l_p]+p.θ[:l_s]+p.θ[:l_n]+p.θ[:l_z])
+    l_a,l_p,l_s,l_n,l_z = (p.θ[:l_a], p.θ[:l_p], p.θ[:l_s], p.θ[:l_n], p.θ[:l_z])
+
+    ratio_a = l_a/p.N.a
+    ratio_p = l_p/p.N.p
+    ratio_s = l_s/p.N.s
+    ratio_n = l_n/p.N.n
+    ratio_z = l_z/p.N.z
+
+    T_mean = 0.0
+    @inbounds for i in (1:p.N.a)
+        T_mean += T[i]*ratio_a
+    end
+    @inbounds for i in (1:p.N.p) .+ (p.N.a)
+        T_mean += T[i]*ratio_p
+    end
+    @inbounds for i in (1:p.N.s) .+ (p.N.a+p.N.p)
+        T_mean += T[i]*ratio_s
+    end
+    @inbounds for i in (1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)
+        T_mean += T[i]*ratio_n
+    end
+    @inbounds for i in (1:p.N.z) .+ (p.N.a+p.N.p+p.N.s+p.N.n)
+        T_mean += T[i]*ratio_z
+    end
+
+    return T_mean/(l_a+l_p+l_s+l_n+l_z)
 end
 @inline function constant_temperature(t,Y,YP::AbstractVector{<:Number},p::AbstractParam)
     temperature_weighting((@views @inbounds YP[p.ind.T]),p)
 end
 temperature_weighting(T::VectorOfArray,p::AbstractParam) = [temperature_weighting(_T,p) for _T in T]
 
-calc_η_plating(Y::AbstractVector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+export calc_η_plating
+calc_η_plating(Y::Vector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
 calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
+
+export calc_OCV
+function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractParam)
+    """
+    Calculate the open circuit voltages for the positive & negative electrodes
+    """
+    p_indices = c_s_indices(p, :p; surf=true, offset=false)
+    n_indices = c_s_indices(p, :n; surf=true, offset=false)
+
+    c_s_star_p = @views @inbounds Y[p_indices]
+    c_s_star_n = @views @inbounds Y[n_indices]
+
+    T = calc_T(Y,p)
+    T_p = T[(1:p.N.p) .+ (p.N.a)]
+    T_n = T[(1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)]
+
+    # Put the surface concentration into a fraction
+    θ_p = c_s_star_p./p.θ[:c_max_p]
+    θ_n = c_s_star_n./p.θ[:c_max_n]
+    
+    # Compute the OCV for the positive & negative electrodes.
+    U_p = p.numerics.OCV_p(θ_p, T_p, p)[1]
+    U_n = p.numerics.OCV_n(θ_n, T_n, p)[1]
+
+    return return U_p, U_n
+end
+
+export calc_R_internal
+function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractParam)
+    I = calc_I(Y,p)*calc_I1C(p)
+    V = calc_V(Y,p)
+    
+    U_p, U_n = calc_OCV(Y,p)
+    OCV = @inbounds U_p[1] - U_n[end]
+
+    R_internal = abs((V - OCV)/I)
+
+    return R_internal
+end
+
+Base.broadcasted(f::typeof(calc_η_plating),  Y::T, p::AbstractParam) where T<:PETLION.VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = Float64[f(y,p) for y in Y]
+Base.broadcasted(f::typeof(calc_R_internal), Y::T, p::AbstractParam) where T<:PETLION.VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = Float64[f(y,p) for y in Y]
 
 
 d_x(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam) -> YP[index]
 d_x(index::Int64) = d_x(Val(index))
 
-function c_s_indices(p::AbstractParam{jac,temp,:Fickian},x...;kw...) where {jac,temp}
+function c_s_indices(p::AbstractParamSolidDiff{:Fickian}, section::Symbol; surf::Bool=true,offset::Bool=true)
     N = p.N
 
     ind_p = N.r_p:N.r_p:N.r_p*N.p
     ind_n = N.r_n:N.r_n:N.r_n*N.n
     
-    return _c_s_indices(p,ind_p,ind_n,x...;kw...)
+    return _c_s_indices(p, ind_p, ind_n, section, surf, offset)
 end
-function c_s_indices(p::Union{AbstractParam{jac,temp,:quadratic},AbstractParam{jac,temp,:polynomial}},x...;kw...) where {jac,temp}
+function c_s_indices(p::Union{AbstractParamSolidDiff{:quadratic},AbstractParamSolidDiff{:polynomial}}, section::Symbol; surf::Bool=true,offset::Bool=true)
     N = p.N
 
     ind_p = 1:N.p
     ind_n = 1:N.n
     
-    return _c_s_indices(p,ind_p,ind_n,x...;kw...)
+    return _c_s_indices(p, ind_p, ind_n, section, surf, offset)
 end
-function _c_s_indices(p::AbstractParam,ind_p::T,ind_n::T,section::Symbol;surf::Bool=true,offset::Bool=true) where T<:AbstractRange{Int64}
+function _c_s_indices(p::AbstractParam,ind_p::T,ind_n::T,section::Symbol,surf::Bool,offset::Bool) where T<:AbstractRange{Int64}
     ind = p.ind.c_s_avg
 
     if     section === :p

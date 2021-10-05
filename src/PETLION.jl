@@ -11,6 +11,7 @@ using RecursiveArrayTools: VectorOfArray
 using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse
 using RecipesBase
 using SpecialFunctions: erf
+using SHA: sha1
 
 import Sundials
 import LinearAlgebra

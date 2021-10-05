@@ -313,6 +313,7 @@ function state_indices(N, numerics)
     Q_tot       = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
     j_tot       = 1:(N.p+N.n)
     j_s_tot     = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
+    SOH_tot     = numerics.aging ∈ (:SEI, :R_aging) ? 1 : nothing
     Φ_e_tot     = 1:(N.p+N.s+N.n)
     Φ_s_tot     = 1:(N.p+N.n)
     I_tot       = 1
@@ -322,6 +323,7 @@ function state_indices(N, numerics)
     T       = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
     film    = add(:film,    film_tot,    (:n,),                :differential)
     Q       = add(:Q,       Q_tot,       (:p, :n),             :differential)
+    SOH     = add(:SOH,     SOH_tot,     (),                   :differential)
     j       = add(:j,       j_tot,       (:p, :n),             :algebraic)
     j_s     = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
     Φ_e     = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
@@ -334,7 +336,7 @@ function state_indices(N, numerics)
     Y = YP = t = V = P = SOC = index_state()
     runs = nothing
     
-    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, runs)
+    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, SOH, runs)
 
     return ind, N_diff, N_alg, N_tot
 end
@@ -360,45 +362,58 @@ end
 
     build_OCV!(states, p)
     
-    function guess_differential!()
+    # differential
+    states[:c_e] = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
         
-        states[:c_e] = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
+    states[:T] = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
         
-        states[:T] = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
+    states[:film] = zeros(p.N.n)
         
-        states[:film] = zeros(p.N.n)
-        
-        states[:Q] = zeros(p.N.p+p.N.n)
-    
-        return nothing
-    end
-    
-    function guess_algebraic!()
-        states[:j] = 0.0
-        
-        states[:Φ_e] = 0.0
-        
-        states[:Φ_s] = states[:U]
-        
-        states[:I] = X_applied
-    
-        if !isempty(states[:j_s]) states[:j_s] .= 0.0 end
+    states[:Q] = zeros(p.N.p+p.N.n)
 
-        return nothing
-    end
-
-    # creating initial guess vectors Y and YP
-    guess_differential!()
-    guess_algebraic!()
+    if p.numerics.aging ∈ (:SEI, :R_aging) states[:SOH] = 1.0 end
+    
+    # algebraic
+    states[:j] = 0.0
+        
+    states[:Φ_e] = 0.0
+        
+    states[:Φ_s] = states[:U]
+        
+    states[:I] = X_applied
+    
+    if !isempty(states[:j_s]) states[:j_s] .= 0.0 end
 
     build_residuals!(Y0, states, p)
 
     return Y0, YP0
 end
 
-function strings_directory_func(N::discretizations_per_section, numerics::numerical; create_dir=false) where numerical<:options_numerical
+model_info(p::AbstractParam) = model_info(p.N, p.numerics)
+function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T2<:options_numerical}
+    version = "PETLION version: v"*join(Symbol.(PETLION.PETLION_VERSION),".")
 
-    dir_saved_models = "saved_models"
+    numerical = ["$field: $(getproperty(numerics,field))" for field in fieldnames(T2)]
+    
+    discretization = [
+        "N.p: $(N.p)";
+        "N.s: $(N.s)";
+        "N.n: $(N.n)";
+        numerics.temperature                  ? "N.a: $(N.a)\nN.z: $(N.z)" : "";
+        numerics.solid_diffusion === :Fickian ? "N.r_p: $(N.r_p)\nN.r_n: $(N.r_n)" : "";
+        ]
+    filter!(!isempty,discretization)
+    
+    str  = version * "\n"^2
+    str *= "options_numerical\n" * join(numerical, "\n") * "\n"^2
+    str *= "discretizations_per_section\n" * join(discretization, "\n")
+
+    return str
+end
+
+function strings_directory_func(N::discretizations_per_section, numerics::T; create_dir=false) where T<:options_numerical
+
+    dir_saved_models = joinpath(options[:FILE_DIRECTORY], "saved_models")
     
     if create_dir && !isdir(dir_saved_models)
         mkdir(dir_saved_models)
@@ -408,7 +423,7 @@ function strings_directory_func(N::discretizations_per_section, numerics::numeri
 
     str = join(
         [
-            ["$(getproperty(numerics,field))" for field in filter(x->!(x ∈ (:cathode,:anode)), fieldnames(numerical))];
+            ["$(getproperty(numerics,field))" for field in filter(x->!(x ∈ (:cathode,:anode)), fieldnames(T))];
             "Np$(N.p)";
             "Ns$(N.s)";
             "Nn$(N.n)";
@@ -418,12 +433,18 @@ function strings_directory_func(N::discretizations_per_section, numerics::numeri
         "_"
     )
 
+    str = Base.bytes2hex(sha1(str))
+
     dir = "$dir_cell/$str"
 
-    if create_dir && !isdir(dir_saved_models) mkdir(dir_saved_models) end
-    if create_dir && !isdir(dir_cell)         mkdir(dir_cell) end
-    if create_dir && !isdir(dir)              mkdir(dir) end
-
+    if create_dir
+        for x in (dir_saved_models, dir_cell, dir)
+            if !isdir(x)
+                mkdir(x)
+            end
+        end
+    end
+    
     return dir
 end
 
@@ -431,8 +452,50 @@ function strings_directory_func(p::AbstractParam; create_dir=false)
     strings_directory_func(p.N, p.numerics; create_dir=create_dir)
 end
 
-function strings_directory_func(p::AbstractParam, x; create_dir=false)
-    strings_directory = string("$(strings_directory_func(p; create_dir=create_dir))/$x.jl")
+function strings_directory_func(p::AbstractParam, x; kw...)
+    strings_directory = string("$(strings_directory_func(p; kw...))/$x.jl")
 
     return strings_directory
+end
+
+
+@inline function trapz(x::T1,y::T2) where {T1<:AbstractVector,T2<:AbstractVector}
+    """
+    Trapezoidal rule with SIMD vectorization
+    """
+    @assert length(x) === length(y)
+    out = 0.0
+    @inbounds @simd for i in 2:length(x)
+        out += 0.5*(x[i] - x[i-1])*(y[i] + y[i-1])
+    end
+    return out
+end
+
+function extrap_x_0(x::AbstractVector,y::AbstractVector)
+    @inbounds y[1] - ((y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))*((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[1]^2)) - ((y[2] - y[1] - (((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[2]^2 - (x[1]^2))*(y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))))*((x[2] - x[1])^-1)*x[1])
+end
+function extrapolate_section(y::AbstractVector,p::AbstractParam,section::Symbol)
+    """
+    Extrapolate to the edges of the FVM sections with a second-order polynomial
+    """
+    
+    N = getproperty(p.N, section)
+    
+    x_range = [
+        0
+        collect(range(1/2N,1-1/2N,length=N))
+        1
+    ]
+    
+    x_interp = @views @inbounds x_range[2:4]
+    
+    y_range = [
+        extrap_x_0(x_interp,y)
+        y
+        extrap_x_0(x_interp,(@inbounds @views y[end:-1:end-2]))
+    ]
+    
+    x_range *= p.θ[Symbol(:l_,section)]
+    
+    return x_range, y_range
 end
