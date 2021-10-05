@@ -161,9 +161,9 @@ end
     ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:param, R5<:boundary_stop_conditions}
     
     if !isnan(bounds.c_e_min)
-        c_e_min = -Inf
+        c_e_min = +Inf
         @inbounds for ind in p.ind.c_e
-            @inbounds c_e_min = max(c_e_min, Y[ind])
+            @inbounds c_e_min = min(c_e_min, Y[ind])
         end
         if bounds.c_e_min - c_e_min > ϵ
             t_frac = (bounds.c_e_min_prev - bounds.c_e_min)/(bounds.c_e_min_prev - c_e_min)

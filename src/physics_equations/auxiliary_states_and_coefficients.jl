@@ -87,7 +87,7 @@ function build_T!(states, p::AbstractParamTemp{false})
 end
 
 
-function build_c_s_star!(states, p::AbstractParam{jac,temp,:Fickian}) where {jac,temp}
+function build_c_s_star!(states, p::AbstractParamSolidDiff{:Fickian})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -106,7 +106,7 @@ function build_c_s_star!(states, p::AbstractParam{jac,temp,:Fickian}) where {jac
     
     return nothing
 end
-function build_c_s_star!(states, p::AbstractParam{jac,temp,:quadratic}) where {jac,temp}
+function build_c_s_star!(states, p::AbstractParamSolidDiff{:quadratic})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -128,7 +128,7 @@ function build_c_s_star!(states, p::AbstractParam{jac,temp,:quadratic}) where {j
     
     return nothing
 end
-function build_c_s_star!(states, p::AbstractParam{jac,temp,:polynomial}) where {jac,temp}
+function build_c_s_star!(states, p::AbstractParamSolidDiff{:polynomial})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """

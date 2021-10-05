@@ -205,7 +205,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     return nothing
 end
 
-function residuals_c_s_avg!(res, states, ∂states, p::Union{AbstractParamSolidDiff{:quadratic},AbstractParamSolidDiff{:polynomial}})
+function residuals_c_s_avg!(res, states, ∂states, p::T) where {T<:Union{AbstractParamSolidDiff{:polynomial},AbstractParamSolidDiff{:quadratic}}}
     """
     Calculate the solid particle concentrations residuals with quadratic or polynomial approximations [mol/m³]
     """
@@ -225,7 +225,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::Union{AbstractParamSolidD
 
     return nothing
 end
-function residuals_c_s_avg!(res, states, ∂states, p::AbstractParamFickian{:finite_difference}) where {jac,temp}
+function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:AbstractParam{jac,temp,:Fickian,:finite_difference}}
     """
     Calculate the volume-averaged solid particle concentration residuals using a 9th order accurate finite difference method (FDM) [mol/m³]
     """
@@ -279,7 +279,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::AbstractParamFickian{:fin
 
     return nothing
 end
-function residuals_c_s_avg!(res, states, ∂states, p::AbstractParamSolidDiff{:spectral})
+function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:AbstractParam{jac,temp,:Fickian,:spectral}}
     """
     Calculate the volume-averaged solid particle concentration residuals using a spectral method [mol/m³]
     """
