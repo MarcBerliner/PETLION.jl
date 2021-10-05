@@ -1,5 +1,7 @@
-options = Dict{Symbol,Bool}(
+const PETLION_VERSION = (0,1,5)
+const options = Dict{Symbol,Any}(
     :SAVE_SYMBOLIC_FUNCTIONS => true,
+    :FILE_DIRECTORY => pwd(),
 )
 
 function load_functions(p::AbstractParam)
@@ -88,6 +90,13 @@ function generate_functions_symbolic(p::AbstractParam; verbose=options[:SAVE_SYM
 
     if options[:SAVE_SYMBOLIC_FUNCTIONS]
         dir = strings_directory_func(p; create_dir=true) * "/"
+        
+        ## file info
+        str = model_info(p)
+ 
+        open(dir * "info.txt", "w") do f
+            write(f, str)
+        end
 
         save_string(x) = (string(x) |> remove_comments |> rearrange_if_statements |> join)
         

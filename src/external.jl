@@ -389,9 +389,31 @@ end
     return Y0, YP0
 end
 
-function strings_directory_func(N::discretizations_per_section, numerics::numerical; create_dir=false) where numerical<:options_numerical
+model_info(p::AbstractParam) = model_info(p.N, p.numerics)
+function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T2<:options_numerical}
+    version = "PETLION version: v"*join(Symbol.(PETLION.PETLION_VERSION),".")
 
-    dir_saved_models = "saved_models"
+    numerical = ["$field: $(getproperty(numerics,field))" for field in fieldnames(T2)]
+    
+    discretization = [
+        "N.p: $(N.p)";
+        "N.s: $(N.s)";
+        "N.n: $(N.n)";
+        numerics.temperature                  ? "N.a: $(N.a)\nN.z: $(N.z)" : "";
+        numerics.solid_diffusion === :Fickian ? "N.r_p: $(N.r_p)\nN.r_n: $(N.r_n)" : "";
+        ]
+    filter!(!isempty,discretization)
+    
+    str  = version * "\n"^2
+    str *= "options_numerical\n" * join(numerical, "\n") * "\n"^2
+    str *= "discretizations_per_section\n" * join(discretization, "\n")
+
+    return str
+end
+
+function strings_directory_func(N::discretizations_per_section, numerics::T; create_dir=false) where T<:options_numerical
+
+    dir_saved_models = joinpath(options[:FILE_DIRECTORY], "saved_models")
     
     if create_dir && !isdir(dir_saved_models)
         mkdir(dir_saved_models)
@@ -401,7 +423,7 @@ function strings_directory_func(N::discretizations_per_section, numerics::numeri
 
     str = join(
         [
-            ["$(getproperty(numerics,field))" for field in filter(x->!(x ∈ (:cathode,:anode)), fieldnames(numerical))];
+            ["$(getproperty(numerics,field))" for field in filter(x->!(x ∈ (:cathode,:anode)), fieldnames(T))];
             "Np$(N.p)";
             "Ns$(N.s)";
             "Nn$(N.n)";
@@ -411,12 +433,18 @@ function strings_directory_func(N::discretizations_per_section, numerics::numeri
         "_"
     )
 
+    str = Base.bytes2hex(sha1(str))
+
     dir = "$dir_cell/$str"
 
-    if create_dir && !isdir(dir_saved_models) mkdir(dir_saved_models) end
-    if create_dir && !isdir(dir_cell)         mkdir(dir_cell) end
-    if create_dir && !isdir(dir)              mkdir(dir) end
-
+    if create_dir
+        for x in (dir_saved_models, dir_cell, dir)
+            if !isdir(x)
+                mkdir(x)
+            end
+        end
+    end
+    
     return dir
 end
 
@@ -424,8 +452,8 @@ function strings_directory_func(p::AbstractParam; create_dir=false)
     strings_directory_func(p.N, p.numerics; create_dir=create_dir)
 end
 
-function strings_directory_func(p::AbstractParam, x; create_dir=false)
-    strings_directory = string("$(strings_directory_func(p; create_dir=create_dir))/$x.jl")
+function strings_directory_func(p::AbstractParam, x; kw...)
+    strings_directory = string("$(strings_directory_func(p; kw...))/$x.jl")
 
     return strings_directory
 end
