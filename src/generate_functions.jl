@@ -1,4 +1,4 @@
-const PETLION_VERSION = (0,1,5)
+const PETLION_VERSION = (0,1,4)
 const options = Dict{Symbol,Any}(
     :SAVE_SYMBOLIC_FUNCTIONS => true,
     :FILE_DIRECTORY => pwd(),
