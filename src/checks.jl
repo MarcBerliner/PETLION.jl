@@ -123,7 +123,7 @@ end
 @inline function c_s_n_maximum(Y::Vector{Float64},p::param_solid_diff{:Fickian})
     c_s_n_max = -Inf
     @inbounds for i in 1:p.N.n
-        @inbounds c_s_n_max = max(c_s_n_max, Y[p.ind.c_s_avg.n[p.N.r_n*(i-1)]])
+        @inbounds c_s_n_max = max(c_s_n_max, Y[p.ind.c_s_avg.n[p.N.r_n*i]])
     end
     return c_s_n_max
 end
