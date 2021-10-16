@@ -1,4 +1,4 @@
-![PETLION_logo](docs/logo/PETLION_medium.png)
+<img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/logo/PETLION_official.png" width="100%">
 
 
 # PETLION – Porous Electrode Theory for Li-ion Batteries
@@ -11,7 +11,7 @@ High-performance simulations of the pseudo-2D porous electrode theory (PET) mode
 # Installation
 After [installing Julia](https://julialang.org/downloads/), run the following command to add the PETLION package
 ```julia
-julia> import Pkg; Pkg.add("PETLION")
+import Pkg; Pkg.add("PETLION")
 ```
 
 # Getting started
