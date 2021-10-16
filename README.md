@@ -1,4 +1,4 @@
-![PETLION_logo](docs/logo/PETLION_medium.png)
+![PETLION_logo](docs/logo/PETLION_small.png)
 
 
 # PETLION – Porous Electrode Theory for Li-ion Batteries
