@@ -420,7 +420,7 @@ function residuals_T!(res, states, ∂states, p)
     T_BC_sx =  p.θ[:h_cell]*(p.θ[:T_amb]-T[1])/(Δx.a*p.θ[:l_a])
     T_BC_dx = -p.θ[:h_cell]*(T[end]-p.θ[:T_amb])/(Δx.z*p.θ[:l_z])
 
-    block_tridiag(N) = sparse(Tridiagonal{eltype(I_density)}(ones(N-1),-[1;2ones(N-1)],ones(N-1)))
+    block_tridiag(N) = sparse(Matrix(Tridiagonal{eltype(I_density)}(ones(N-1),-[1;2ones(N-1)],ones(N-1))))
 
     # Positive current collector
     A_a = p.θ[:λ_a].*block_tridiag(p.N.a)
@@ -789,7 +789,7 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     f_p[1]   += -I_density*(Δx.p*p.θ[:l_p]/σ_eff_p)
     f_n[end] += +I_density*(Δx.n*p.θ[:l_n]/σ_eff_n)
 
-    block_tridiag(N) = sparse(Tridiagonal{eltype(j.p)}(ones(N-1),-[1;2ones(N-2);1],ones(N-1)))
+    block_tridiag(N) = sparse(Matrix(Tridiagonal{eltype(j.p)}(ones(N-1),-[1;2ones(N-2);1],ones(N-1))))
     
     A_p = block_tridiag(p.N.p)
     A_n = block_tridiag(p.N.n)
