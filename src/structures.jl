@@ -28,7 +28,7 @@ discretizations_per_section(p,s,n,a,z,r_p,r_n) = discretizations_per_section(p,s
 Base.@kwdef mutable struct run_info
     exit_reason::String = ""
     flag::Int64 = -1
-    iterations::Int64 = -1
+    iterations::Int64 = 1
 end
 
 struct run_constant{T<:AbstractMethod,in<:Union{Number,Symbol,Function}} <: AbstractRun{T,in}
