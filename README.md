@@ -56,6 +56,10 @@ If you use PETLION in your work, please cite [the paper](https://iopscience.iop.
 }
 ```
 
+# Acknowledgements
+This work was supported by the Toyota Research Institute through the D3BATT Center on Data-Driven-Design of Rechargeable Batteries.
+
+
 # See also
 Check out these high-quality and open-source battery simulation tools
 + [LIONSIMBA](https://github.com/lionsimbatoolbox/LIONSIMBA)
