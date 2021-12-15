@@ -245,7 +245,8 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
 
         rhsCs = zeros(eltype(j), N*N_r)
         @inbounds for i in 1:N
-            c_s = @inbounds @views c_s_avg[(i-1)*N_r+1:i*N_r]
+            ind = (1:N_r) .+ N_r*(i-1)
+            c_s = @inbounds @views c_s_avg[ind]
             
             # First order derivatives matrix multiplication
             ∂ₓc_s_avg = deriv[1](c_s)
@@ -263,7 +264,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
             ∂ₓₓc_s_avg[end] += 50deriv[2].Δx*∂ₓc_s_avg[N_r]*(deriv[2].coeff)
     
             # Make the RHS vector for this particle
-            @inbounds rhsCs[(1:N_r) .+ (i-1)*N] .= (D_s_eff[i]./Rp^2) .* [
+            @inbounds rhsCs[ind] .= (D_s_eff[i]./Rp^2) .* [
                 3∂ₓₓc_s_avg[1]
                 ∂ₓₓc_s_avg[2:end]+2.0./range(1/(N_r-1), 1, length=N_r-1).*∂ₓc_s_avg[2:end]
                 ]
@@ -281,7 +282,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
 end
 function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:AbstractParam{jac,temp,:Fickian,:spectral}}
     """
-    Calculate the volume-averaged solid particle concentration residuals using a spectral method [mol/m³]
+    BETA: Calculate the volume-averaged solid particle concentration residuals using a spectral method [mol/m³]
     """
     j = states[:j]
     c_s_avg = states[:c_s_avg]
@@ -310,7 +311,8 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
 
         rhsCs = zeros(eltype(j),N*N_r)
         @inbounds for i in 1:N
-            c_s = c_s_avg[(i-1)*N_r+1:i*N_r]
+            ind = ind = (1:N_r) .+ N_r*(i-1)
+            c_s = c_s_avg[ind]
             
             ∂ₓc_s_avg = diffusion_matrix*reverse(c_s)
             ∂ₓc_s_avg[1] = -j[i]*Rp*0.5/D_s_eff[i] # modified BC value due to cheb scheme
@@ -320,7 +322,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
             
             rhs_limit_vector = (4*D_s_eff[i]/Rp^2)*3*(diffusion_matrix*∂ₓc_s_avg) # limit at r_tilde tends to -1 (at center)
             
-            @inbounds rhsCs[(1:N_r) .+ (i-1)*N] .= [
+            @inbounds rhsCs[ind] .= [
                 rhs_limit_vector[end] # L'hopital's rule at the center of the particle
                 rhs_numerator[2:end]./((reverse(radial_position[1:end-1]) .+ 1).^2)
                 ]
