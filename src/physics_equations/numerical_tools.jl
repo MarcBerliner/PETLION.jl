@@ -199,21 +199,21 @@ function interpolate_electrolyte_concetration_fluxes(c_e, p::AbstractParam)
     Δx = Δx_values(p.N)
 
     # Fluxes within the positive electrode
-    @inbounds @views c_e_flux_p = (c_e[2:p.N.p] .- c_e[1:p.N.p-1])/(Δx.p*p.θ[:l_p])
+    @inbounds @views ∂ₓc_e_p = (c_e[2:p.N.p] .- c_e[1:p.N.p-1])/(Δx.p*p.θ[:l_p])
 
     # Fluxes at the separator-positive interface
-    @inbounds @views c_e_flux_ps = (c_e[p.N.p+1] .- c_e[p.N.p]) / ((Δx.p*p.θ[:l_p]/2+Δx.s*p.θ[:l_s]/2))
+    @inbounds @views ∂ₓc_e_ps = (c_e[p.N.p+1] .- c_e[p.N.p]) / ((Δx.p*p.θ[:l_p]/2+Δx.s*p.θ[:l_s]/2))
 
     # Fluxes within the separator
-    @inbounds @views c_e_flux_s = (c_e[p.N.p+2:p.N.p+p.N.s] .- c_e[p.N.p+1:p.N.p+p.N.s-1])/(Δx.s*p.θ[:l_s])
+    @inbounds @views ∂ₓc_e_s = (c_e[p.N.p+2:p.N.p+p.N.s] .- c_e[p.N.p+1:p.N.p+p.N.s-1])/(Δx.s*p.θ[:l_s])
 
     # Fluxes at the separator-negative interface
-    @inbounds @views c_e_flux_sn = (c_e[p.N.p+p.N.s+1] .- c_e[p.N.p+p.N.s]) / ((Δx.n*p.θ[:l_n]/2+Δx.s*p.θ[:l_s]/2))
+    @inbounds @views ∂ₓc_e_sn = (c_e[p.N.p+p.N.s+1] .- c_e[p.N.p+p.N.s]) / ((Δx.n*p.θ[:l_n]/2+Δx.s*p.θ[:l_s]/2))
 
     # Fluxes within the negative electrode
-    @inbounds @views c_e_flux_n = (c_e[p.N.p+p.N.s+2:end] .- c_e[p.N.p+p.N.s+1:end-1])/(Δx.n*p.θ[:l_n])
+    @inbounds @views ∂ₓc_e_n = (c_e[p.N.p+p.N.s+2:end] .- c_e[p.N.p+p.N.s+1:end-1])/(Δx.n*p.θ[:l_n])
 
-    return [c_e_flux_p; c_e_flux_ps], [c_e_flux_s; c_e_flux_sn], c_e_flux_n
+    return [∂ₓc_e_p; ∂ₓc_e_ps], [∂ₓc_e_s; ∂ₓc_e_sn], ∂ₓc_e_n
 end
 
 Δx_values(N) = (p=1/N.p, s=1/N.s, n=1/N.n, a=1/N.a, z=1/N.z)

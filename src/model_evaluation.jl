@@ -367,14 +367,14 @@ end
     YP   .= 0.0
     J     = J_alg.sp
     γ     = 0.0
-    L     = J_alg.L
+    L     = J_alg.L # KLU factorization
     
     # starting loop for Newton's method
     @inbounds for iter in 1:itermax
         # updating res, Y, and J
         R_alg(res,t,Y,YP,p,run)
         J_alg(t,Y,YP,γ,p,run)
-        LinearAlgebra.lu!(L, J)
+        klu!(L, J)
         
         Y_old .= Y_new
         Y_new .-= L\res

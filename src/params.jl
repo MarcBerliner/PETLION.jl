@@ -404,7 +404,7 @@ function system_NMC_LiC6(θ, funcs, cathode, anode;
     # Effective electrolyte conductivity function
     K_eff = K_eff,
     # Thermodynamic factor, ∂ln(f)/∂ln(c_e)
-    thermodynamic_factor = thermodynamic_factor,
+    thermodynamic_factor = thermodynamic_factor_linear,
     # By default, this
     ## Custon functions
     # Reaction rate equation will use the reaction defined by the cathode

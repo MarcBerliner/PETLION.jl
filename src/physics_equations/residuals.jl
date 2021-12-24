@@ -249,24 +249,24 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
             c_s = @inbounds @views c_s_avg[ind]
             
             # First order derivatives matrix multiplication
-            ∂ₓc_s_avg = deriv[1](c_s)
+            ∂ᵣc_s = deriv[1](c_s)
     
             # Boundary condition at r = 1
-            ∂ₓc_s_avg[N_r] = -j[i]/D_s_eff[i]*Rp
+            ∂ᵣc_s[N_r] = -j[i]/D_s_eff[i]*Rp
     
             # Boundary condition at r = 0
-            ∂ₓc_s_avg[1] = 0
+            ∂ᵣc_s[1] = 0
     
             # Second order derivatives matrix multiplication
-            ∂ₓₓc_s_avg = deriv[2](c_s)
+            ∂ᵣᵣc_s = deriv[2](c_s)
     
             # Neumann BC at r = 1
-            ∂ₓₓc_s_avg[end] += 50deriv[2].Δx*∂ₓc_s_avg[N_r]*(deriv[2].coeff)
+            ∂ᵣᵣc_s[end] += 50deriv[2].Δx*∂ᵣc_s[N_r]*(deriv[2].coeff)
     
             # Make the RHS vector for this particle
             @inbounds rhsCs[ind] .= (D_s_eff[i]./Rp^2) .* [
-                3∂ₓₓc_s_avg[1]
-                ∂ₓₓc_s_avg[2:end]+2.0./range(1/(N_r-1), 1, length=N_r-1).*∂ₓc_s_avg[2:end]
+                3∂ᵣᵣc_s[1]
+                ∂ᵣᵣc_s[2:end]+2.0./range(1/(N_r-1), 1, length=N_r-1).*∂ᵣc_s[2:end]
                 ]
 
         end
@@ -314,13 +314,13 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
             ind = ind = (1:N_r) .+ N_r*(i-1)
             c_s = c_s_avg[ind]
             
-            ∂ₓc_s_avg = diffusion_matrix*reverse(c_s)
-            ∂ₓc_s_avg[1] = -j[i]*Rp*0.5/D_s_eff[i] # modified BC value due to cheb scheme
-            ∂ₓc_s_avg[end] = 0 # no flux BC
+            ∂ᵣc_s = diffusion_matrix*reverse(c_s)
+            ∂ᵣc_s[1] = -j[i]*Rp*0.5/D_s_eff[i] # modified BC value due to cheb scheme
+            ∂ᵣc_s[end] = 0 # no flux BC
             
-            rhs_numerator = reverse(diffusion_matrix*(4*D_s_eff[i]*((radial_position .+ 1).^2).*∂ₓc_s_avg/(Rp^2)))
+            rhs_numerator = reverse(diffusion_matrix*(4*D_s_eff[i]*((radial_position .+ 1).^2).*∂ᵣc_s/(Rp^2)))
             
-            rhs_limit_vector = (4*D_s_eff[i]/Rp^2)*3*(diffusion_matrix*∂ₓc_s_avg) # limit at r_tilde tends to -1 (at center)
+            rhs_limit_vector = (4*D_s_eff[i]/Rp^2)*3*(diffusion_matrix*∂ᵣc_s) # limit at r_tilde tends to -1 (at center)
             
             @inbounds rhsCs[ind] .= [
                 rhs_limit_vector[end] # L'hopital's rule at the center of the particle
@@ -422,7 +422,11 @@ function residuals_T!(res, states, ∂states, p)
     T_BC_sx =  p.θ[:h_cell]*(p.θ[:T_amb]-T[1])/(Δx.a*p.θ[:l_a])
     T_BC_dx = -p.θ[:h_cell]*(T[end]-p.θ[:T_amb])/(Δx.z*p.θ[:l_z])
 
-    block_tridiag(N) = sparse(Matrix(Tridiagonal{eltype(I_density)}(ones(N-1),-[1;2ones(N-1)],ones(N-1))))
+    block_tridiag(N) = block_tridiag(N) = spdiagm(
+        -1 => ones(eltype(I_density),N-1),
+        0 => -[1;2ones(eltype(I_density),N-2);1],
+        +1 => ones(eltype(I_density),N-1),
+        )
 
     # Positive current collector
     A_a = p.θ[:λ_a].*block_tridiag(p.N.a)
@@ -649,7 +653,7 @@ function residuals_j_s!(res, states, p::AbstractParam)
     η_s = Φ_s.n .- Φ_e.n .- p.θ[:Uref_s] .- F.*j_s.*R_film
     α = 0.5
 
-    j_s_calc = (p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*(exp.((1-α).*F./(R.*T.n).*η_s)-exp.(-α.*F./(R.*T.n).*η_s))
+    j_s_calc = -abs.((p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*(-exp.(-α.*F./(R.*T.n).*η_s)))
 
     # Only activate the side reaction during charge
     j_s_calc .= [IfElse.ifelse(I_density > 0, x, 0) for x in j_s_calc]
@@ -730,7 +734,7 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     ## Electrolyte fluxes
     # Evaluate the interpolation of the electrolyte concentration fluxes at the
     # edges of the control volumes.
-    c_e_flux_p, c_e_flux_s, c_e_flux_n = PETLION.interpolate_electrolyte_concetration_fluxes(c_e, p)
+    ∂ₓc_e_p, ∂ₓc_e_s, ∂ₓc_e_n = PETLION.interpolate_electrolyte_concetration_fluxes(c_e, p)
     
     ## RHS arrays
     ν_p,ν_s,ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
@@ -739,9 +743,9 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     K = 2R.*(1-p.θ[:t₊]).*ν[1:end-1]/F
 
     prod_tot = [
-        K̂_eff_p.*T̄_p.*c_e_flux_p./c̄_e_p # p
-        K̂_eff_s.*T̄_s.*c_e_flux_s./c̄_e_s # s
-        K̂_eff_n[1:end-1].*T̄_n.*c_e_flux_n./c̄_e_n # n
+        K̂_eff_p.*T̄_p.*∂ₓc_e_p./c̄_e_p # p
+        K̂_eff_s.*T̄_s.*∂ₓc_e_s./c̄_e_s # s
+        K̂_eff_n[1:end-1].*T̄_n.*∂ₓc_e_n./c̄_e_n # n
     ]
     
     prod_tot[2:end] .-= prod_tot[1:end-1]
@@ -791,7 +795,11 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     f_p[1]   += -I_density*(Δx.p*p.θ[:l_p]/σ_eff_p)
     f_n[end] += +I_density*(Δx.n*p.θ[:l_n]/σ_eff_n)
 
-    block_tridiag(N) = sparse(Matrix(Tridiagonal{eltype(j.p)}(ones(N-1),-[1;2ones(N-2);1],ones(N-1))))
+    block_tridiag(N) = spdiagm(
+        -1 => ones(eltype(j.p),N-1),
+        0 => -[1;2ones(eltype(j.p),N-2);1],
+        +1 => ones(eltype(j.p),N-1),
+        )
     
     A_p = block_tridiag(p.N.p)
     A_n = block_tridiag(p.N.n)

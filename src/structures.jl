@@ -115,7 +115,7 @@ struct jacobian_combined{
     J_scalar::SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}
     θ_tot::Vector{Float64}
     θ_keys::Vector{Symbol}
-    L::SuiteSparse.UMFPACK.UmfpackLU{Float64, Int64}
+    L::KLUFactorization{Float64, Int64}
 end
 Base.getindex(J::jacobian_combined,i...) = getindex(J.sp,i...)
 Base.axes(J::jacobian_combined,i...) = axes(J.sp,i...)
@@ -576,6 +576,7 @@ function Base.show(io::IO, run::T) where {T<:AbstractRun}
     
     print(io, str)
 end
+(funcs::model_funcs)(model::model_output) = (@assert !isempty(model); (@inbounds funcs(model.results[end].run)))
 Base.show(io::IO, funcs::model_funcs) = println(io,"PETLION model functions")
 function Base.show(io::IO, model::model_output)
     results = model.results
@@ -650,6 +651,7 @@ end
     print(io, str[1:end-1])
 end
 
+#=
 function _MTK_MatVecProd(A, x; simple::Bool = true)
     """
     Change matrix-vector multiplication in Symbolics to ignore 0s in the matrix.
@@ -682,6 +684,7 @@ end
 # overloads of * to use _MTK_MatVecProd when appropriate
 Base.:*(A::AbstractMatrix, x::AbstractVector{Num}; simple::Bool = true) = _MTK_MatVecProd(A, x; simple=simple)
 Base.:*(A::Union{Array{T,2}, Array{T,2}, Array{T,2}, Array{T,2}}, x::StridedArray{Num, 1}; simple::Bool = true) where {T<:Union{Float32, Float64}} = _MTK_MatVecProd(A, x; simple=simple)
+=#
 
 Base.deleteat!(a::VectorOfArray, i::Integer) = (Base._deleteat!(a.u, i, 1); a.u)
 

@@ -13,6 +13,8 @@
 
 @inline calc_T(Y::Vector{<:Number}, p::AbstractParamTemp{true}) = @inbounds @views Y[p.ind.T]
 @inline calc_T(::Vector{<:Number}, p::AbstractParamTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
+@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractParamTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
+@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractParamTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
 
 @inline method_I(Y, p)   = calc_I(Y,p)
 @inline method_V(Y, p)   = calc_V(Y,p)
@@ -316,9 +318,9 @@ function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,
     J_sp = [J_sp_base; J_sp_scalar']
 
     if lu_decomposition
-        L = LinearAlgebra.lu(J_sp)
+        L = klu(J_sp)
     else
-        L = LinearAlgebra.lu(sparse([1],[1],[1.0]))
+        L = klu(sparse([1],[1],[1.0]))
     end
 
     ind_base   = findall(J_sp.rowval .< size(J_sp,1))

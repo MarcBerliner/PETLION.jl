@@ -1,4 +1,4 @@
-const PETLION_VERSION = (0,1,6)
+const PETLION_VERSION = (0,2,0)
 const options = Dict{Symbol,Any}(
     :SAVE_SYMBOLIC_FUNCTIONS => true,
     :FILE_DIRECTORY => pwd(),
@@ -24,11 +24,49 @@ function load_functions(p::AbstractParam)
     return funcs
 end
 
+function get_saved_model_version(p::AbstractParam)
+    """
+    Gets the version of PETLION used to generate the saved model
+    """
+    str = strings_directory_func(p)
+    str *= "/info.txt"
+    
+    out = readline(str)
+    out = replace(out, "PETLION version: v" => "")
+    # convert this to a tuple
+    out = (Meta.parse.(split(out,"."))...,)
+end
+
+function remove_model_files(p::AbstractParam)
+    """
+    Removes symbolic files for the model
+    """
+    str = strings_directory_func(p) * "/"
+    for x in readdir(str)
+        rm(str*x)
+    end
+end
+
 function load_functions_symbolic(p::AbstractParam)
     dir = strings_directory_func(p) * "/"
     files_exist = isdir(dir)
 
-    if files_exist && options[:SAVE_SYMBOLIC_FUNCTIONS]
+    if files_exist
+        file_version = get_saved_model_version(p)
+        
+        # have there been any breaking changes since creating the functions?
+        no_breaking_changes = (file_version[1] == PETLION_VERSION[1]) && (file_version[2] == PETLION_VERSION[2])
+
+        if !no_breaking_changes
+            @warn "Breaking updates encountered: re-evaluating model..."
+            remove_model_files(p)
+        end
+
+    else
+        no_breaking_changes = false
+    end
+
+    if files_exist && no_breaking_changes && options[:SAVE_SYMBOLIC_FUNCTIONS]
         ## residuals
         initial_guess! = include(dir * "initial_guess.jl")
         f_alg!         = include(dir * "f_alg.jl")

@@ -5,7 +5,8 @@ using SciMLBase: DAEFunction, DAEProblem, step!, init
 using Dierckx: Spline1D
 using GeneralizedGenerated: mk_function, RuntimeFn
 using LinearAlgebra: diagind, Tridiagonal, norm
-using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros
+using KLU: klu, klu!, KLUFactorization
+using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
 using RecursiveArrayTools: VectorOfArray
 using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse
@@ -15,7 +16,6 @@ using SHA: sha1
 
 import Sundials
 import LinearAlgebra
-import SuiteSparse
 
 # Must be loaded last
 using BSON: @load, @save
