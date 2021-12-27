@@ -107,6 +107,7 @@ struct jacobian_combined{
     T1<:Function,
     T2<:Union{SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false},SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}},
     T3<:Function,
+    T4<:LinearAlgebra.Factorization{Float64},
     }
     sp::SparseMatrixCSC{Float64,Int64}
     base_func::T1
@@ -115,7 +116,7 @@ struct jacobian_combined{
     J_scalar::SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}
     θ_tot::Vector{Float64}
     θ_keys::Vector{Symbol}
-    L::KLUFactorization{Float64, Int64}
+    L::T4
 end
 Base.getindex(J::jacobian_combined,i...) = getindex(J.sp,i...)
 Base.axes(J::jacobian_combined,i...) = axes(J.sp,i...)
@@ -226,7 +227,8 @@ const indices_states = model_states{
     Nothing,
 }
 
-Base.@kwdef mutable struct options_model
+abstract type AbstractOptionsModel end
+Base.@kwdef mutable struct options_model <: AbstractOptionsModel
     outputs::Tuple = (:t, :V)
     SOC::Number = 1.0
     abstol::Float64 = 1e-6
@@ -243,7 +245,31 @@ Base.@kwdef mutable struct options_model
     interp_bc::Symbol = :interpolate
     save_start::Bool = false
     var_keep::states_logic = model_states_logic()
+    stop_function::Function = (x...) -> nothing
+    calc_integrator::Bool = false
 end
+struct options_model_immutable{T<:Function} <: AbstractOptionsModel
+    outputs::Tuple
+    SOC::Number
+    abstol::Float64
+    reltol::Float64
+    abstol_init::Float64
+    reltol_init::Float64
+    maxiters::Int64
+    check_bounds::Bool
+    reinit::Bool
+    verbose::Bool
+    interp_final::Bool
+    tstops::Vector{Float64}
+    tdiscon::Vector{Float64}
+    interp_bc::Symbol
+    save_start::Bool
+    var_keep::states_logic
+    stop_function::T
+    calc_integrator::Bool
+end
+# convert from the mutable to immutable struct
+options_model_immutable(opts::options_model) = options_model_immutable((getproperty(opts,field) for field in fieldnames(options_model))...)
 
 struct save_start_info{T<:AbstractMethod}
     method::T
@@ -282,7 +308,6 @@ model_funcs(x...) = model_funcs(x...,
     Dict{DataType,Dict{DataType,Jac_and_res}}(),
     Dict{DataType,Jac_and_res}()
     )
-Base.empty!(f::model_funcs) = ([empty!(getproperty(f,field)) for (_type,field) in zip(fieldtypes(model_funcs),fieldnames(model_funcs)) if _type <: Dict];nothing)
 
 struct param{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractParam{T,temp,solid_diff,Fickian,age}
     θ::Dict{Symbol,Float64}
@@ -323,7 +348,7 @@ struct run_results{T<:AbstractRun}
     info::run_info
     run_index::UnitRange{Int64}
     int::Sundials.IDAIntegrator
-    opts::options_model
+    opts::options_model_immutable
     bounds::boundary_stop_conditions
     N::discretizations_per_section
     numerics::options_numerical
@@ -348,6 +373,9 @@ function Base.getindex(model::T, i::UnitRange{Int64}) where T<:model_output
 end
 Base.lastindex(model::T) where T<:model_output = length(model)
 Base.firstindex(::T) where T<:model_output = 1
+
+Base.empty!(f::model_funcs) = ([empty!(getproperty(f,field)) for (_type,field) in zip(fieldtypes(model_funcs),fieldnames(model_funcs)) if _type <: Dict];nothing)
+Base.empty!(p::param) = empty!(p.funcs)
 
 
 ## Modifying Base functions
@@ -438,7 +466,6 @@ function C_rate_string(I::Number;digits::Int64=4)
 end
 
 function Base.show(io::IO, p::AbstractParam)
-    
     function show_bounds(title, min, max, units="")
         if isnan(min) && isnan(max)
             return ""

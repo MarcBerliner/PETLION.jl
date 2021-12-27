@@ -489,10 +489,13 @@ function limiting_electrode(p::AbstractParam)
     θ = p.θ
     ϵ_sp, ϵ_sn = active_material(p)
 
-    if ϵ_sp*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p]) > ϵ_sn*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n])
-        return :p
+    Q_p = ϵ_sp*θ[:l_p]*θ[:c_max_p]*(θ[:θ_min_p] - θ[:θ_max_p])
+    Q_n = ϵ_sn*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n])
+
+    if Q_p > Q_n
+        return :p, Q_p
     else
-        return :n
+        return :n, Q_n
     end
 end
 
@@ -501,8 +504,8 @@ end
     """
     Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
     """
-    F = 96485.3321233
-
+    F = const_Faradays
+    
     ϵ_sp = 1.0 - (θ[:ϵ_fp] + θ[:ϵ_p])
     ϵ_sn = 1.0 - (θ[:ϵ_fn] + θ[:ϵ_n])
 

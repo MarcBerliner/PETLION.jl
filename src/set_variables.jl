@@ -8,7 +8,7 @@
         R3<:Vector{Float64},
         R4<:Float64,
         R5<:AbstractRun,
-        R6<:options_model,
+        R6<:AbstractOptionsModel,
         R7<:boundary_stop_conditions,
         R8<:Function,
         }

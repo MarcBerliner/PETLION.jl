@@ -5,21 +5,23 @@
     I   = nothing, # constant current C-rate. also accepts :rest
     V   = nothing, # constant voltage. also accepts :hold if continuing simulation
     P   = nothing, # constant power.   also accepts :hold if continuing simulation
-    SOC::Number   = p.opts.SOC, # initial SOC of the simulation. only valid if not continuing simulation
-    outputs::R2   = p.opts.outputs, # model output states
-    abstol        = p.opts.abstol, # absolute tolerance in DAE solve
-    reltol        = p.opts.reltol, # relative tolerance in DAE solve
-    abstol_init   = abstol, # absolute tolerance in initialization
-    reltol_init   = reltol, # relative tolerance in initialization
-    maxiters      = p.opts.maxiters, # maximum solver iterations
-    check_bounds  = p.opts.check_bounds, # check if the boundaries (V_min, SOC_max, etc.) are satisfied
-    reinit        = p.opts.reinit, # reinitialize the initial guess
-    verbose       = p.opts.verbose, # print information about the run
-    interp_final  = p.opts.interp_final, # interpolate the final points if a boundary is hit
-    tstops        = p.opts.tstops, # times the solver explicitly solves for
-    tdiscon       = p.opts.tdiscon, # times of known discontinuities in the current function
-    interp_bc     = p.opts.interp_bc, # :interpolate or :extrapolate
-    save_start    = p.opts.save_start, # warm-start for the initial guess
+    SOC::Number     = p.opts.SOC, # initial SOC of the simulation. only valid if not continuing simulation
+    outputs::R2     = p.opts.outputs, # model output states
+    abstol          = p.opts.abstol, # absolute tolerance in DAE solve
+    reltol          = p.opts.reltol, # relative tolerance in DAE solve
+    abstol_init     = abstol, # absolute tolerance in initialization
+    reltol_init     = reltol, # relative tolerance in initialization
+    maxiters        = p.opts.maxiters, # maximum solver iterations
+    check_bounds    = p.opts.check_bounds, # check if the boundaries (V_min, SOC_max, etc.) are satisfied
+    reinit          = p.opts.reinit, # reinitialize the initial guess
+    verbose         = p.opts.verbose, # print information about the run
+    interp_final    = p.opts.interp_final, # interpolate the final points if a boundary is hit
+    tstops          = p.opts.tstops, # times the solver explicitly solves for
+    tdiscon         = p.opts.tdiscon, # times of known discontinuities in the current function
+    interp_bc       = p.opts.interp_bc, # :interpolate or :extrapolate
+    save_start      = p.opts.save_start, # warm-start for the initial guess
+    stop_function   = p.opts.stop_function,
+    calc_integrator = p.opts.calc_integrator,
     V_max         = p.bounds.V_max,
     V_min         = p.bounds.V_min,
     SOC_max       = p.bounds.SOC_max,
@@ -59,7 +61,7 @@
     run = get_run(I,V,P,t0,tf,p,model)
     
     # putting opts and bounds into a structure. 
-    opts = options_model(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, save_start, var_keep)
+    opts = options_model_immutable(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, save_start, var_keep, stop_function, calc_integrator)
     bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min, η_plating_min, c_e_min, dfilm_max)
     
     # getting the initial conditions and run setup
@@ -146,7 +148,7 @@ end
 
 @inline within_bounds(run::AbstractRun) = run.info.flag === -1
 
-@inline function initialize_model!(model::model_struct, p::param{jac}, run::T, bounds::boundary_stop_conditions, opts::options_model, res_I_guess=1.0) where {jac<:AbstractJacobian,method<:AbstractMethod,T<:AbstractRun{method,<:Any},model_struct<:Union{model_output,Vector{Float64}}}
+@inline function initialize_model!(model::model_struct, p::param{jac}, run::T, bounds::boundary_stop_conditions, opts::AbstractOptionsModel, res_I_guess=nothing) where {jac<:AbstractJacobian,method<:AbstractMethod,T<:AbstractRun{method,<:Any},model_struct<:Union{model_output,Vector{Float64}}}
     if !haskey(p.funcs,run)
         get_method_funcs!(p,run)
         funcs = p.funcs(run)
@@ -198,13 +200,13 @@ end
     return int, funcs, model
 end
 
-@inline function retrieve_integrator(run::T, p::param, funcs::Jac_and_res{<:Sundials.IDAIntegrator}, Y0, YP0, opts::options_model, new_run::Bool) where {method<:AbstractMethod,T<:AbstractRun{method,<:Any}}
+@inline function retrieve_integrator(run::T, p::param, funcs::Jac_and_res{<:Sundials.IDAIntegrator}, Y0, YP0, opts::AbstractOptionsModel, new_run::Bool) where {method<:AbstractMethod,T<:AbstractRun{method,<:Any}}
     """
     If the model has previously been evaluated for a constant run simulation, you can reuse
     the integrator function with its cache instead of creating a new one
     """
     
-    if isempty(funcs.int)
+    if isempty(funcs.int) || opts.calc_integrator
         int = create_integrator(run, p, funcs, Y0, YP0, opts)
     else
         # reuse the integrator cache
@@ -223,7 +225,7 @@ end
     return int
 end
 
-@inline function create_integrator(run::T, p::param, funcs::Q, Y0, YP0, opts::options_model) where {T<:AbstractRun,Q<:Jac_and_res}
+@inline function create_integrator(run::T, p::param, funcs::Q, Y0, YP0, opts::AbstractOptionsModel) where {T<:AbstractRun,Q<:Jac_and_res}
     R_full = funcs.R_full
     J_full = funcs.J_full
     DAEfunc = DAEFunction(
@@ -242,7 +244,7 @@ end
 
     return int
 end
-@inline function postfix_integrator!(int::Sundials.IDAIntegrator, run::AbstractRun, opts::options_model, new_run::Bool)
+@inline function postfix_integrator!(int::Sundials.IDAIntegrator, run::AbstractRun, opts::AbstractOptionsModel, new_run::Bool)
     tstops = int.opts.tstops.valtree
     empty!(tstops)
     
@@ -258,7 +260,7 @@ end
     return nothing
 end
 
-@inline function solve!(model,int::R1,run::R2,p,bounds,opts::R3,funcs) where {R1<:Sundials.IDAIntegrator,R2<:AbstractRun,R3<:options_model}
+@inline function solve!(model,int::R1,run::R2,p,bounds,opts::R3,funcs) where {R1<:Sundials.IDAIntegrator,R2<:AbstractRun,R3<:AbstractOptionsModel}
     keep_Y = opts.var_keep.Y
     Y  = int.u.v
     YP = int.du.v
@@ -281,10 +283,10 @@ end
     return nothing
 end
 
-@inline function exit_simulation!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6; cancel_interp::Bool=false) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:options_model}
+@inline function exit_simulation!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6; cancel_interp::Bool=false) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
     # if a stop condition (besides t = tf) was reached
     if !cancel_interp
-        if opts.interp_final && !(run.info.flag === 0)
+        if opts.interp_final && !(run.info.flag === 0) && int.t > 1
             interp_final_points!(p, model, run, bounds, int, opts)
         else
             set_var!(model.Y, opts.var_keep.Y ? copy(int.u.v) : int.u.v, opts.var_keep.Y)
@@ -315,8 +317,13 @@ end
     return nothing
 end
 
-@views @inbounds @inline function interp_final_points!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:options_model}
-    YP = opts.var_keep.YP ? model.YP[end] : Float64[]
+@views @inbounds @inline function interp_final_points!(p::R1, model::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:param,R2<:model_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
+    if opts.var_keep.YP
+        YP = length(model.YP) > 1 ? bounds.t_final_interp_frac.*(model.YP[end] .- model.YP[end-1]) .+ model.YP[end-1] : model.YP[end]
+    else
+        YP = Float64[]
+    end
+    
     t = bounds.t_final_interp_frac*(int.t - int.tprev) + int.tprev
     
     set_var!(model.Y,  bounds.t_final_interp_frac.*(int.u.v .- model.Y[end]) .+ model.Y[end], opts.var_keep.Y)
@@ -341,7 +348,7 @@ end
     
     return key, key_exists
 end
-@inline function initialize_states!(p::param, Y0::T, YP0::T, run::AbstractRun, opts::options_model, funcs::Jac_and_res, SOC::Float64;kw...) where {T<:Vector{Float64}}
+@inline function initialize_states!(p::param, Y0::T, YP0::T, run::AbstractRun, opts::AbstractOptionsModel, funcs::Jac_and_res, SOC::Float64;kw...) where {T<:Vector{Float64}}
     if opts.save_start
         key, key_exists = save_start_init!(Y0, run, p, SOC)
         
@@ -357,7 +364,10 @@ end
     return nothing
 end
 
-@inline function newtons_method!(p::param,Y::R1,YP::R1,run,opts::options_model,R_alg::T1,R_diff::T2,J_alg::T3;
+
+@inline factorization!(L::SuiteSparse.UMFPACK.UmfpackLU{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = LinearAlgebra.lu!(L,A)
+@inline factorization!(L::KLUFactorization{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = klu!(L,A)
+@inline function newtons_method!(p::param,Y::R1,YP::R1,run,opts::AbstractOptionsModel,R_alg::T1,R_diff::T2,J_alg::T3;
     itermax::Int64=100, t::Float64=0.0
     ) where {R1<:Vector{Float64},T1<:residual_combined,T2<:residual_combined,T3<:jacobian_combined}
 
@@ -367,14 +377,14 @@ end
     YP   .= 0.0
     J     = J_alg.sp
     γ     = 0.0
-    L     = J_alg.L # KLU factorization
+    L     = J_alg.L # factorization
     
     # starting loop for Newton's method
     @inbounds for iter in 1:itermax
         # updating res, Y, and J
         R_alg(res,t,Y,YP,p,run)
         J_alg(t,Y,YP,γ,p,run)
-        klu!(L, J)
+        factorization!(L, J)
         
         Y_old .= Y_new
         Y_new .-= L\res

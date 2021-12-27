@@ -314,13 +314,25 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
     return Jac_and_res(J_full,R_full,J_alg,R_diff,R_alg,Sundials.IDAIntegrator[])
 end
 
+function factorization(x...;kw...)
+    method =  Symbol(lowercase(String(options[:FACTORIZATION_METHOD])))
+    if method === :lu
+        L = LinearAlgebra.lu(x...;kw...)
+    elseif method === :klu
+        L = klu(x...;kw...)
+    else
+        error("FACTORIZATION_METHOD $(options[:FACTORIZATION_METHOD]) is not supported.")
+    end
+    return L
+end
 function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,θ_tot,θ_keys;lu_decomposition=false)
     J_sp = [J_sp_base; J_sp_scalar']
 
     if lu_decomposition
-        L = klu(J_sp)
+        J_sp.nzval .= rand(length(J_sp.nzval))
+        L = factorization(J_sp)
     else
-        L = klu(sparse([1],[1],[1.0]))
+        L = factorization(sparse([1],[1],[1.0]))
     end
 
     ind_base   = findall(J_sp.rowval .< size(J_sp,1))

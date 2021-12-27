@@ -14,6 +14,7 @@ using RecipesBase
 using SpecialFunctions: erf
 using SHA: sha1
 
+import SuiteSparse
 import Sundials
 import LinearAlgebra
 

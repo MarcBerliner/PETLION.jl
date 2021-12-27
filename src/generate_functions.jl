@@ -1,7 +1,8 @@
-const PETLION_VERSION = (0,2,0)
+const PETLION_VERSION = (0,2,1)
 const options = Dict{Symbol,Any}(
     :SAVE_SYMBOLIC_FUNCTIONS => true,
-    :FILE_DIRECTORY => pwd(),
+    :FILE_DIRECTORY => nothing,
+    :FACTORIZATION_METHOD => :KLU, # :KLU or :LU
 )
 
 function load_functions(p::AbstractParam)

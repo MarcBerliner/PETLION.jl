@@ -1,20 +1,21 @@
+const empty_vector_of_array = VectorOfArray(Array{Vector{Float64}}(Float64[]))
 Base.@kwdef struct model_states{vec1D,vec2D,R1}
     """
     If you want to add anything to this struct, you must also check/modify set_vars!`.
     Otherwise, it may not work as intended
     """
     # Matrices (vectors in space and time)
-    Y::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    YP::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    c_e::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    c_s_avg::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    T::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    film::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    Q::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    j::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    j_s::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    Φ_e::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
-    Φ_s::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? VectorOfArray(Array{Vector{Float64}}([])) : nothing
+    Y::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    YP::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    c_e::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    c_s_avg::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    T::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    film::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    Q::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    j::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    j_s::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    Φ_e::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
+    Φ_s::vec2D = ( vec2D === VectorOfArray{Float64,2,Array{Array{Float64,1},1}} ) ? copy(empty_vector_of_array) : nothing
     # Vectors (vectors in time, not space)
     I::vec1D = ( vec1D === Array{Float64,1} ) ? Float64[] : nothing
     t::vec1D = ( vec1D === Array{Float64,1} ) ? Float64[] : nothing

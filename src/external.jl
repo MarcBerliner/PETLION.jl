@@ -413,7 +413,11 @@ end
 
 function strings_directory_func(N::discretizations_per_section, numerics::T; create_dir=false) where T<:options_numerical
 
-    dir_saved_models = joinpath(options[:FILE_DIRECTORY], "saved_models")
+    dir_saved_models = "saved_models"
+    # If the file directory is not specified, use the current working directory
+    if !isnothing(options[:FILE_DIRECTORY])
+        dir_saved_models = joinpath(options[:FILE_DIRECTORY], dir_saved_models)
+    end
     
     if create_dir && !isdir(dir_saved_models)
         mkdir(dir_saved_models)

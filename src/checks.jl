@@ -1,6 +1,6 @@
-@inline function check_simulation_stop!(model, t::Float64, Y, YP, run::AbstractRun, p, bounds, opts::options_model;
+@inline function check_simulation_stop!(model, t::Float64, Y, YP, run::AbstractRun, p, bounds, opts::options_model_immutable{T};
     ϵ::Float64 = t < 1.0 ? opts.reltol : 0.0,
-    )
+    ) where T<:Function
     
     if t ≥ run.tf
         run.info.flag = 0
@@ -21,6 +21,7 @@
     check_stop_c_e(       p, run, model, Y, YP, bounds, ϵ, I)
     check_stop_η_plating( p, run, model, Y, YP, bounds, ϵ, I)
     check_stop_dfilm(     p, run, model, Y, YP, bounds, ϵ, I)
+    opts.stop_function(   p, run, model, Y, YP, bounds, ϵ, I)
 
     return nothing
 end
@@ -220,7 +221,7 @@ end
 
 
 
-@inline function check_solve(run::run_constant, model::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
+@inline function check_solve(run::run_constant, model::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if t === int.tprev
         # Sometimes the initial step at t = 0 can be too large. This reduces the step size
         if t === 0.0
@@ -245,7 +246,7 @@ end
     return true
 end
 
-@inline function check_solve(run::run_function, model::R1, int::R2, p::param, bounds::boundary_stop_conditions, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:options_model}
+@inline function check_solve(run::run_function, model::R1, int::R2, p::param, bounds::boundary_stop_conditions, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if iter === opts.maxiters
         error("Reached max iterations of $(opts.maxiters) at t = $(int.t)")
     elseif within_bounds(run)
@@ -264,7 +265,7 @@ end
     end
 end
 
-@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, funcs) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:options_model}
+@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, funcs) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:AbstractOptionsModel}
     """
     Checking the current function for discontinuities.
     If there is a significant change in current after a step size of dt = reltol,
@@ -273,21 +274,23 @@ end
     
     Y = int.u.v
     YP = int.du.v
+    # take a step of Δt = the relative tolerance
     t_new = int.t + opts.reltol
 
     value_old = value(run)
     value_new = run.func(t_new,Y,YP,p)
     
+    # if the function values at t vs. t + Δt are very different (i.e., there is a discontinuity)
+    # then reinitialize the DAE at t + Δt
     if !≈(value_old, value_new, atol=opts.abstol, rtol=opts.reltol)
         initialize_states!(p,Y,YP,run,opts,funcs,(@inbounds model.SOC[end]); t=t_new)
-        #run.value .= value_new
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
     end
     return nothing
 end
 
-@inline function check_errors_parameters_runtime(p::R1,opts::R2) where {R1<:param,R2<:options_model}
+@inline function check_errors_parameters_runtime(p::R1,opts::R2) where {R1<:param,R2<:AbstractOptionsModel}
     ϵ_sp, ϵ_sn = active_material(p)
 
     if ( ϵ_sp > 1 ) error("ϵ_p + ϵ_fp must be ∈ [0, 1)") end
@@ -307,4 +310,4 @@ function check_errors_initial(θ, numerics, N)
 end
 
 check_is_hold(x::Symbol,model::model_output) = (x===:hold) && (!isempty(model) ? true : error("Cannot use `:hold` without a previous model."))
-check_is_hold(x,model) = false
+check_is_hold(::Any,::model_output) = false
