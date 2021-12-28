@@ -633,7 +633,7 @@ function Base.show(io::IO, model::model_output)
         end
         if length(methods) > max_methods
             deleteat!(methods,max_methods-(show_final-1):length(methods)-show_final)
-            insert!(methods, length(methods)-(show_final-1),"...")
+            insert!(methods, length(methods)-(show_final-1),"…")
         end
         str *= join(methods, " → ") * "\n"
 
@@ -649,10 +649,13 @@ function Base.show(io::IO, model::model_output)
                 "  --------\n",
                 str_runs(),
                 "  Time:    $(round(t;                  digits = 2)) $time_unit\n",
-                "  Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
                 "  Current: $(C_rate_string(calc_I(Y,p);digits = 4))\n",
+                "  Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
                 "  Power:   $(round(calc_P(Y,p);        digits = 4)) W\n",
                 "  SOC:     $(round(model.SOC[end];     digits = 4))\n",
+                !(p.numerics.aging === false) ? 
+                "  SOH:     $(round(model.SOH[end];     digits = 4))\n"
+                : "",
                 !(p.numerics.temperature === false) ? 
                 "  Temp.:   $(round(temperature_weighting(calc_T(Y,p),p)-273.15; digits = 4)) °C\n"
                 : "",
