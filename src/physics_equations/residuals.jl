@@ -422,7 +422,7 @@ function residuals_T!(res, states, ∂states, p)
     T_BC_sx =  p.θ[:h_cell]*(p.θ[:T_amb]-T[1])/(Δx.a*p.θ[:l_a])
     T_BC_dx = -p.θ[:h_cell]*(T[end]-p.θ[:T_amb])/(Δx.z*p.θ[:l_z])
 
-    block_tridiag(N) = block_tridiag(N) = spdiagm(
+    block_tridiag(N) = spdiagm(
         -1 => ones(eltype(I_density),N-1),
         0 => -[1;2ones(eltype(I_density),N-2);1],
         +1 => ones(eltype(I_density),N-1),

@@ -391,7 +391,7 @@ end
 
 model_info(p::AbstractParam) = model_info(p.N, p.numerics)
 function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T2<:options_numerical}
-    version = "PETLION version: v"*join(Symbol.(PETLION.PETLION_VERSION),".")
+    version = "PETLION version: v"*join(Symbol.(VERSION),".")
 
     numerical = ["$field: $(getproperty(numerics,field))" for field in fieldnames(T2)]
     

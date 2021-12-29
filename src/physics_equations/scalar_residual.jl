@@ -16,6 +16,55 @@
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractParamTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractParamTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
 
+calc_η_plating(Y::Vector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
+
+function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractParam)
+    """
+    Calculate the open circuit voltages for the positive & negative electrodes
+    """
+    p_indices = c_s_indices(p, :p; surf=true, offset=true)
+    n_indices = c_s_indices(p, :n; surf=true, offset=true)
+
+    c_s_star_p = @views @inbounds Y[p_indices]
+    c_s_star_n = @views @inbounds Y[n_indices]
+
+    T = calc_T(Y,p)
+    T_p = T[(1:p.N.p) .+ (p.N.a)]
+    T_n = T[(1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)]
+
+    # Put the surface concentration into a fraction
+    θ_p = c_s_star_p./p.θ[:c_max_p]
+    θ_n = c_s_star_n./p.θ[:c_max_n]
+    
+    # Compute the OCV for the positive & negative electrodes.
+    U_p = p.numerics.OCV_p(θ_p, T_p, p)[1]
+    U_n = p.numerics.OCV_n(θ_n, T_n, p)[1]
+
+    return return U_p, U_n
+end
+
+function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractParam)
+    I = calc_I(Y,p)*calc_I1C(p)
+    V = calc_V(Y,p)
+    
+    U_p, U_n = calc_OCV(Y,p)
+    OCV = @inbounds U_p[1] - U_n[end]
+
+    R_internal = abs((V - OCV)/I)
+
+    return R_internal
+end
+
+# Metaprogramming to broadcast calc_x
+for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:K_eff,:η_plating,:OCV,:R_internal)
+    name = "calc_$x"
+    str = "Base.broadcasted(f::typeof($name),  Y::T, p::AbstractParam) where T<:VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = [f(y,p) for y in Y]"
+
+    str = replace(str, "$(@__MODULE__)."=>"")
+    eval(Meta.parse(str))
+end
+
 @inline method_I(Y, p)   = calc_I(Y,p)
 @inline method_V(Y, p)   = calc_V(Y,p)
 @inline method_P(Y, p)   = calc_P(Y,p)

@@ -1,10 +1,3 @@
-const PETLION_VERSION = (0,2,1)
-const options = Dict{Symbol,Any}(
-    :SAVE_SYMBOLIC_FUNCTIONS => true,
-    :FILE_DIRECTORY => nothing,
-    :FACTORIZATION_METHOD => :KLU, # :KLU or :LU
-)
-
 function load_functions(p::AbstractParam)
     if     p.numerics.jacobian === :symbolic
         jac_type = jacobian_symbolic
@@ -56,7 +49,7 @@ function load_functions_symbolic(p::AbstractParam)
         file_version = get_saved_model_version(p)
         
         # have there been any breaking changes since creating the functions?
-        no_breaking_changes = (file_version[1] == PETLION_VERSION[1]) && (file_version[2] == PETLION_VERSION[2])
+        no_breaking_changes = (file_version[1] == VERSION[1]) && (file_version[2] == VERSION[2])
 
         if !no_breaking_changes
             @warn "Breaking updates encountered: re-evaluating model..."

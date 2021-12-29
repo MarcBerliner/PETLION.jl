@@ -1,3 +1,10 @@
+const VERSION = (Meta.parse.(split(String(Symbol(@PkgVersion.Version)),"."))...,)
+const options = Dict{Symbol,Any}(
+    :SAVE_SYMBOLIC_FUNCTIONS => true,
+    :FILE_DIRECTORY => nothing,
+    :FACTORIZATION_METHOD => :KLU, # :KLU or :LU
+)
+
 # https://en.wikipedia.org/wiki/2019_redefinition_of_the_SI_base_units
 const const_Faradays  = 96485.3321233
 const const_Ideal_Gas = 8.31446261815324
@@ -182,17 +189,16 @@ end
         +1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
 end
 
-mutable struct _funcs_numerical
-    rxn_p::Function
-    rxn_n::Function
-    OCV_p::Function
-    OCV_n::Function
-    D_s_eff::Function
-    D_eff::Function
-    K_eff::Function
-    thermodynamic_factor::Function
+Base.@kwdef mutable struct _funcs_numerical
+    rxn_p::Function = emptyfunc
+    rxn_n::Function = emptyfunc
+    OCV_p::Function = emptyfunc
+    OCV_n::Function = emptyfunc
+    D_s_eff::Function = emptyfunc
+    D_eff::Function = emptyfunc
+    K_eff::Function = emptyfunc
+    thermodynamic_factor::Function = emptyfunc
 end
-_funcs_numerical() = _funcs_numerical([emptyfunc for _ in fieldnames(_funcs_numerical)]...)
 
 struct options_numerical{temp,solid_diff,Fickian,age}
     temperature::Bool
@@ -227,6 +233,47 @@ const indices_states = model_states{
     Nothing,
 }
 
+function create_immutable_version(structure::DataType, replacements=(""=>"",))
+    """
+    Immutable versions of struct can be beneficial for performance. This function
+    creates an immutable version of mutable structures with "_immutable" appended to the end.
+    `replacements` uses the `replace` function to substitute string values in the evaluated
+    struct.
+    """
+
+    name = String(Symbol(structure))
+    fields = String.(fieldnames(structure))
+    types = String.(Symbol.(fieldtypes(structure)))
+
+    args = join([field * "::" * type for (field,type) in zip(fields,types)], "\n")
+
+    super = supertype(structure)
+
+    # string to create new struct
+    str_immutable = "struct $(name)_immutable <: $super
+    $(args)
+    end"
+
+    if replacements isa Pair{String, String}
+        replacements = (replacements,)
+    end
+
+    for replacement in replacements
+        str_immutable = replace(str_immutable, replacement)
+    end
+
+    # string to convert the mutable struct to the immutable struct  
+    conversion = "$(name)_immutable(x::$(name)) = $(name)_immutable($(join(map(field->"x.$field", fields), ",")))"
+
+    # The names cannot be prepended by "PETLION.", otherwise it creates errors
+    str_immutable = replace(str_immutable, "$(@__MODULE__)."=>"")
+    conversion = replace(conversion, "$(@__MODULE__)."=>"")
+
+    eval.(Meta.parse.((str_immutable,conversion)))
+
+    return nothing
+end
+
 abstract type AbstractOptionsModel end
 Base.@kwdef mutable struct options_model <: AbstractOptionsModel
     outputs::Tuple = (:t, :V)
@@ -248,28 +295,12 @@ Base.@kwdef mutable struct options_model <: AbstractOptionsModel
     stop_function::Function = (x...) -> nothing
     calc_integrator::Bool = false
 end
-struct options_model_immutable{T<:Function} <: AbstractOptionsModel
-    outputs::Tuple
-    SOC::Number
-    abstol::Float64
-    reltol::Float64
-    abstol_init::Float64
-    reltol_init::Float64
-    maxiters::Int64
-    check_bounds::Bool
-    reinit::Bool
-    verbose::Bool
-    interp_final::Bool
-    tstops::Vector{Float64}
-    tdiscon::Vector{Float64}
-    interp_bc::Symbol
-    save_start::Bool
-    var_keep::states_logic
-    stop_function::T
-    calc_integrator::Bool
-end
-# convert from the mutable to immutable struct
-options_model_immutable(opts::options_model) = options_model_immutable((getproperty(opts,field) for field in fieldnames(options_model))...)
+
+create_immutable_version(options_model, (
+    "_immutable" =>"_immutable{T<:Function}",
+    "stop_function::Function" => "stop_function::T",
+    ))
+
 
 struct save_start_info{T<:AbstractMethod}
     method::T
@@ -377,6 +408,22 @@ Base.firstindex(::T) where T<:model_output = 1
 Base.empty!(f::model_funcs) = ([empty!(getproperty(f,field)) for (_type,field) in zip(fieldtypes(model_funcs),fieldnames(model_funcs)) if _type <: Dict];nothing)
 Base.empty!(p::param) = empty!(p.funcs)
 
+const STATE_NAMES = Dict{Symbol,String}(
+    :c_e => "Electrolyte Conc. (mol/m³)",
+    :c_s_avg => "Solid Conc. (mol/m³)",
+    :T => "Temperature (K)",
+    :film => "Li Plating Thickness (m)",
+    :Q => "Q",
+    :j => "Molar Ionic Flux (mol/m²⋅s)",
+    :j_s => "Side Reaction Flux (mol/m²⋅s)",
+    :Φ_e => "Electrolyte Potential (V)",
+    :Φ_s => "Solid-phase Potential (V)",
+    :I => "Current (C-rate)",
+    :V => "Voltage (V)",
+    :P => "Power (W)",
+    :SOC => "State-of-Charge (-)",
+    :SOH => "State-of-Health (-)",
+)
 
 ## Modifying Base functions
 @recipe function plot(model::model_output, x_name::Symbol=:V;linewidth=2,legend=false)
@@ -385,32 +432,8 @@ Base.empty!(p::param) = empty!(p.funcs)
         x = x'
     end
     
-    if     x_name === :c_e
-        ylabel = "Electrolyte Conc. (mol/m³)"
-    elseif x_name === :c_s_avg
-        ylabel = "Solid Conc. (mol/m³)"
-    elseif x_name === :T
-        ylabel = "Temperature (K)"
-    elseif x_name === :film
-        ylabel = "Li Plating Thickness (m)"
-    elseif x_name === :Q
-        ylabel = "Q"
-    elseif x_name === :j
-        ylabel = "Molar Ionic Flux (mol/m²⋅s)"
-    elseif x_name === :j_s
-        ylabel = "Side Reaction Flux (mol/m²⋅s)"
-    elseif x_name === :Φ_e
-        ylabel = "Electrolyte Potential (V)"
-    elseif x_name === :Φ_s
-        ylabel = "Solid-phase Potential (V)"
-    elseif x_name === :I
-        ylabel = "Current (C-rate)"
-    elseif x_name === :V
-        ylabel = "Voltage (V)"
-    elseif x_name === :P
-        ylabel = "Power (W)"
-    elseif x_name === :SOC
-        ylabel = "State-of-Charge (-)"
+    if haskey(STATE_NAMES, x_name)
+        ylabel = STATE_NAMES[x_name]
     else
         ylabel = "$x_name"
     end
@@ -492,7 +515,7 @@ function Base.show(io::IO, p::AbstractParam)
     if p isa param_skeleton
         header = "param_skeleton"
     else
-        header = [x for x in replace(summary(p), "PETLION."=>"")]
+        header = [x for x in replace(summary(p), "$(@__MODULE__)."=>"")]
         deleteat!(header, findall('{' .== header)[2]:length(header)-1)
         header = join(header)
     end
@@ -604,7 +627,7 @@ function Base.show(io::IO, run::T) where {T<:AbstractRun}
     print(io, str)
 end
 (funcs::model_funcs)(model::model_output) = (@assert !isempty(model); (@inbounds funcs(model.results[end].run)))
-Base.show(io::IO, funcs::model_funcs) = println(io,"PETLION model functions")
+Base.show(io::IO, ::model_funcs) = println(io,"$(@__MODULE__) model functions")
 function Base.show(io::IO, model::model_output)
     results = model.results
     p = results[1].p
@@ -626,14 +649,20 @@ function Base.show(io::IO, model::model_output)
             end
         end
 
-        max_methods = 7
-        show_final = 2
-        @inbounds for i in 1:min(length(methods),max_methods)
-            methods[i] = (counts[i] === 1 ? methods[i] : "$(counts[i]) $(methods[i])")
-        end
-        if length(methods) > max_methods
-            deleteat!(methods,max_methods-(show_final-1):length(methods)-show_final)
-            insert!(methods, length(methods)-(show_final-1),"…")
+        max_methods = 6
+        show_final = 3
+        methods .= @inbounds [(counts[i] === 1 ? methods[i] : "$(counts[i]) $(methods[i])") for i in 1:length(methods)]
+        
+        if length(methods) > (max_methods+1)
+            first_range = 1:(max_methods-show_final)
+            final_range = (length(counts) - (show_final-1)):length(counts)
+            count_not_showed = sum(counts) - sum(counts[[first_range;final_range]])
+
+            methods = [
+                methods[first_range];
+                "…$(count_not_showed)…";
+                methods[final_range];
+            ]
         end
         str *= join(methods, " → ") * "\n"
 
@@ -642,7 +671,7 @@ function Base.show(io::IO, model::model_output)
 
     t, time_unit = time_units(model.t[end])
 
-    title = "PETLION model"
+    title = "$(@__MODULE__) model"
     if !isempty(model)
         str = @views @inbounds string(
                 "$title\n",
@@ -669,7 +698,6 @@ function Base.show(io::IO, model::model_output)
 end
 
 @inbounds @views function Base.show(io::IO, ind::states_logic)
-    
     str = "$(typeof(ind)) using:\n"
     @inbounds for field in fieldnames(typeof(ind))
         x = getproperty(ind,field)
@@ -680,41 +708,6 @@ end
     
     print(io, str[1:end-1])
 end
-
-#=
-function _MTK_MatVecProd(A, x; simple::Bool = true)
-    """
-    Change matrix-vector multiplication in Symbolics to ignore 0s in the matrix.
-    This can speed up computation time without resorting to using the `simplify` function.
-    """
-    n, m = size(A)
-
-    b = zeros(Num, n)
-    count = zeros(Int, n)
-
-    @inbounds for ind_i in 1:n, ind_j in 1:m
-
-        @inbounds @views A_val = A[ind_i,ind_j]
-        A_simple = simple ? simplify(A_val) : A_val
-
-        if !isequal(A_simple, 0)
-
-            if @inbounds @views count[ind_i] == 0
-                @inbounds @views b[ind_i] = A_val*x[ind_j]
-                @inbounds @views count[ind_i] += 1
-            else
-                @inbounds @views b[ind_i] += A_val*x[ind_j]
-            end
-
-        end
-    end
-
-    return b
-end
-# overloads of * to use _MTK_MatVecProd when appropriate
-Base.:*(A::AbstractMatrix, x::AbstractVector{Num}; simple::Bool = true) = _MTK_MatVecProd(A, x; simple=simple)
-Base.:*(A::Union{Array{T,2}, Array{T,2}, Array{T,2}, Array{T,2}}, x::StridedArray{Num, 1}; simple::Bool = true) where {T<:Union{Float32, Float64}} = _MTK_MatVecProd(A, x; simple=simple)
-=#
 
 Base.deleteat!(a::VectorOfArray, i::Integer) = (Base._deleteat!(a.u, i, 1); a.u)
 

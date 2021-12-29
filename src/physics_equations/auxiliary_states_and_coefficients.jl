@@ -462,8 +462,7 @@ function coeff_electrolyte_diffusion_effective(states::Dict, p::AbstractParam)
     return p.numerics.D_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 end
 
-function calc_j(Y::AbstractVector, p::AbstractParam)
-
+function calc_j_analytic(Y::AbstractVector, p::AbstractParam)
     T_p = repeat([p.θ[:T₀]],p.N.p)
     T_n = repeat([p.θ[:T₀]],p.N.n)
 
@@ -567,53 +566,6 @@ end
     temperature_weighting((@views @inbounds YP[p.ind.T]),p)
 end
 temperature_weighting(T::VectorOfArray,p::AbstractParam) = [temperature_weighting(_T,p) for _T in T]
-
-export calc_η_plating
-calc_η_plating(Y::Vector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
-calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
-
-export calc_OCV
-function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractParam)
-    """
-    Calculate the open circuit voltages for the positive & negative electrodes
-    """
-    p_indices = c_s_indices(p, :p; surf=true, offset=false)
-    n_indices = c_s_indices(p, :n; surf=true, offset=false)
-
-    c_s_star_p = @views @inbounds Y[p_indices]
-    c_s_star_n = @views @inbounds Y[n_indices]
-
-    T = calc_T(Y,p)
-    T_p = T[(1:p.N.p) .+ (p.N.a)]
-    T_n = T[(1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)]
-
-    # Put the surface concentration into a fraction
-    θ_p = c_s_star_p./p.θ[:c_max_p]
-    θ_n = c_s_star_n./p.θ[:c_max_n]
-    
-    # Compute the OCV for the positive & negative electrodes.
-    U_p = p.numerics.OCV_p(θ_p, T_p, p)[1]
-    U_n = p.numerics.OCV_n(θ_n, T_n, p)[1]
-
-    return return U_p, U_n
-end
-
-export calc_R_internal
-function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractParam)
-    I = calc_I(Y,p)*calc_I1C(p)
-    V = calc_V(Y,p)
-    
-    U_p, U_n = calc_OCV(Y,p)
-    OCV = @inbounds U_p[1] - U_n[end]
-
-    R_internal = abs((V - OCV)/I)
-
-    return R_internal
-end
-
-Base.broadcasted(f::typeof(calc_η_plating),  Y::T, p::AbstractParam) where T<:PETLION.VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = Float64[f(y,p) for y in Y]
-Base.broadcasted(f::typeof(calc_R_internal), Y::T, p::AbstractParam) where T<:PETLION.VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = Float64[f(y,p) for y in Y]
-
 
 d_x(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam) -> YP[index]
 d_x(index::Int64) = d_x(Val(index))

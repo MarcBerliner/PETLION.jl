@@ -257,6 +257,7 @@ end
     
     return key, key_exists
 end
+@inline initialize_states!(p::param, Y0::T, YP0::T, run::AbstractRun, opts::AbstractOptionsModel, funcs::Jac_and_res; kw...) where {T<:Vector{Float64}} = newtons_method!(p,Y0,YP0,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg;kw...)
 @inline function initialize_states!(p::param, Y0::T, YP0::T, run::AbstractRun, opts::AbstractOptionsModel, funcs::Jac_and_res, SOC::Float64;kw...) where {T<:Vector{Float64}}
     if opts.save_start
         key, key_exists = save_start_init!(Y0, run, p, SOC)
@@ -272,7 +273,6 @@ end
     
     return nothing
 end
-
 
 @inline factorization!(L::SuiteSparse.UMFPACK.UmfpackLU{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = LinearAlgebra.lu!(L,A)
 @inline factorization!(L::KLUFactorization{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = klu!(L,A)
@@ -314,22 +314,22 @@ Current
 """
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model, res_I_guess) where {method<:method_I,in<:Number}
     input = run.input
-    @inbounds run.value .= Y0[end] = input
+    @inbounds run.value .= Y0[p.ind.I[1]] = input
     return nothing
 end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_I,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
-        @inbounds run.value .= Y0[end] = calc_I((@views @inbounds model.Y[end]), p)
+        @inbounds run.value .= Y0[p.ind.I[1]] = calc_I((@views @inbounds model.Y[end]), p)
     elseif input === :rest
-        @inbounds run.value .= Y0[end] = 0.0
+        @inbounds run.value .= Y0[p.ind.I[1]] = 0.0
     else
         error("Unsupported input symbol.")
     end
     return nothing
 end
 @inline function initial_current!(Y0::Vector{Float64},YP0::Vector{Float64},p,run::run_function{method,func},model, res_I_guess) where {method<:method_I,func<:Function}
-    run.value .= Y0[end] = run.func(0.0,Y0,YP0,p)
+    run.value .= Y0[p.ind.I[1]] = run.func(0.0,Y0,YP0,p)
     return nothing
 end
 
@@ -338,22 +338,22 @@ Power
 """
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model, res_I_guess) where {method<:method_P,in<:Number}
     input = run.input
-    @inbounds run.value .= Y0[end] = input/(calc_V(Y0,p)*p.θ[:I1C])
+    @inbounds run.value .= Y0[p.ind.I[1]] = input/(calc_V(Y0,p)*p.θ[:I1C])
     return nothing
 end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},model::model_output, res_I_guess) where {method<:method_P,in<:Symbol}
     input = run.input
     if check_is_hold(input,model)
-        @inbounds run.value .= Y0[end] = calc_P((@views @inbounds model.Y[end]), p)
+        @inbounds run.value .= Y0[p.ind.I[1]] = calc_P((@views @inbounds model.Y[end]), p)
     elseif input === :rest
-        @inbounds run.value .= Y0[end] = 0.0
+        @inbounds run.value .= Y0[p.ind.I[1]] = 0.0
     else
         error("Unsupported input symbol.")
     end
     return nothing
 end
 @inline function initial_current!(Y0::Vector{Float64},YP0::Vector{Float64},p,run::run_function{method,func},model, res_I_guess) where {method<:method_P,func<:Function}
-    run.value .= Y0[end] = run.func(0.0,Y0,YP0,p)/(calc_V(Y0,p)*p.θ[:I1C])
+    run.value .= Y0[p.ind.I[1]] = run.func(0.0,Y0,YP0,p)/(calc_V(Y0,p)*p.θ[:I1C])
     return nothing
 end
 
@@ -364,10 +364,10 @@ Voltage and η_plating
     input = run.input
     @inbounds run.value .= input
     if !isempty(model)
-        @inbounds Y0[end] = calc_I((@views @inbounds model.Y[end]), p)
+        @inbounds Y0[p.ind.I[1]] = calc_I((@views @inbounds model.Y[end]), p)
     else
         OCV = calc_V(Y0,p)
-        @inbounds Y0[end] = input > OCV ? +1.0 : -1.0
+        @inbounds Y0[p.ind.I[1]] = input > OCV ? +1.0 : -1.0
     end
     return nothing
 end
@@ -376,7 +376,7 @@ end
     if check_is_hold(input,model)
         Y = @views @inbounds model.Y[end]
         @inbounds run.value .= calc_V(Y, p)
-        @inbounds Y0[end] = calc_V(Y, p)
+        @inbounds Y0[p.ind.I[1]] = calc_V(Y, p)
     else
         error("Unsupported input symbol.")
     end
@@ -385,11 +385,11 @@ end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_function{method,func},model::model_output, res_I_guess) where {method<:method_V,func<:Function}
     @inbounds run.value .= run.func(0.0,Y0,YP0,p)
     if !isempty(model)
-        @inbounds Y0[end] = calc_I((@views @inbounds model.Y[end]), p)
+        @inbounds Y0[p.ind.I[1]] = calc_I((@views @inbounds model.Y[end]), p)
     else
         # Arbitrary guess for the initial current. 
         OCV = calc_V(Y0,p)
-        @inbounds Y0[end] = value(run) > OCV ? +1.0 : -1.0
+        @inbounds Y0[p.ind.I[1]] = value(run) > OCV ? +1.0 : -1.0
     end
     return nothing
 end
