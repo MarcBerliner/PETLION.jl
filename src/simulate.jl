@@ -1,12 +1,12 @@
-@inline function run_model(
+@inline function simulate(
     p::T1, # initial parameters file
     tf::T2 = nothing; # a single number (length of the experiment) or a vector (interpolated points)
-    model::R1 = model_output(), # using a new model or continuing from previous simulation?
+    sol::R1 = sol_output(), # using a new sol or continuing from previous simulation?
     I   = nothing, # constant current C-rate. also accepts :rest
     V   = nothing, # constant voltage. also accepts :hold if continuing simulation
     P   = nothing, # constant power.   also accepts :hold if continuing simulation
     SOC::Number     = p.opts.SOC, # initial SOC of the simulation. only valid if not continuing simulation
-    outputs::R2     = p.opts.outputs, # model output states
+    outputs::R2     = p.opts.outputs, # sol output states
     abstol          = p.opts.abstol, # absolute tolerance in DAE solve
     reltol          = p.opts.reltol, # relative tolerance in DAE solve
     abstol_init     = abstol, # absolute tolerance in initialization
@@ -34,9 +34,9 @@
     c_e_min       = p.bounds.c_e_min,
     dfilm_max     = p.bounds.dfilm_max,
     ) where {
-        T1<:param,
+        T1<:model,
         T2<:Union{Number,AbstractVector,Nothing},
-        R1<:Union{model_output,Vector{Float64}},
+        R1<:Union{sol_output,Vector{Float64}},
         R2<:Union{Tuple,Symbol}
     }
     
@@ -55,36 +55,36 @@
     end
         
     # `nextfloat` ensures that there is always a unique point for interpolation
-    t0 = isempty(model) || model isa Array{Float64,1} ? 0.0 : (@inbounds nextfloat(model.t[end]))
+    t0 = isempty(sol) || sol isa Array{Float64,1} ? 0.0 : (@inbounds nextfloat(sol.t[end]))
     
     # identifying the run type
-    run = get_run(I,V,P,t0,tf,p,model)
+    run = get_run(I,V,P,t0,tf,p,sol)
     
     # putting opts and bounds into a structure. 
     opts = options_model_immutable(outputs, Float64(SOC), abstol, reltol, abstol_init, reltol_init, maxiters, check_bounds, reinit, verbose, interp_final, tstops, tdiscon, interp_bc, save_start, var_keep, stop_function, calc_integrator)
     bounds = boundary_stop_conditions(V_max, V_min, SOC_max, SOC_min, T_max, c_s_n_max, I_max, I_min, η_plating_min, c_e_min, dfilm_max)
     
     # getting the initial conditions and run setup
-    int, funcs, model = initialize_model!(model, p, run, bounds, opts)
+    int, funcs, sol = initialize_model!(sol, p, run, bounds, opts)
 
     if !within_bounds(run)
         if verbose @warn "Instantly hit simulation stop conditions: $(run.info.exit_reason)" end
-        exit_simulation!(p, model, run, bounds, int, opts; cancel_interp=true)
+        exit_simulation!(p, sol, run, bounds, int, opts; cancel_interp=true)
 
-        return model
+        return sol
     end
 
     if verbose println("\n$(run)") end
     
-    solve!(model, int, run, p, bounds, opts, funcs)
+    solve!(sol, int, run, p, bounds, opts, funcs)
     
-    exit_simulation!(p, model, run, bounds, int, opts)
+    exit_simulation!(p, sol, run, bounds, int, opts)
 
     # if you want to interpolate the results
-    if T2 <: AbstractVector model = model(tf, interp_bc=opts.interp_bc) end
+    if T2 <: AbstractVector sol = sol(tf, interp_bc=opts.interp_bc) end
 
-    if verbose println("\n$(model)\n") end
+    if verbose println("\n$(sol)\n") end
 
-    return model
+    return sol
 end
-@inline run_model!(_model,x...; overwrite_model::Bool=false, model::Nothing=nothing, kw...) = run_model(x...; model=overwrite_model ? deepcopy(_model) : _model, kw...)
+@inline simulate!(_model,x...; overwrite_model::Bool=false, sol::Nothing=nothing, kw...) = simulate(x...; sol=overwrite_model ? deepcopy(_model) : _model, kw...)

@@ -3,7 +3,7 @@ Much of the code in this file is adapted from LIONSIMBA, a li-ion simulation too
 See https://github.com/lionsimbatoolbox/LIONSIMBA for more information.
 """
 
-function build_auxiliary_states!(states, p::AbstractParam)
+function build_auxiliary_states!(states, p::AbstractModel)
     """
     Calculates necessary auxiliary states and adds them to the `state` dict
     """
@@ -33,7 +33,7 @@ function build_auxiliary_states!(states, p::AbstractParam)
     return nothing
 end
 
-function build_I_V_P!(states, p::AbstractParam)
+function build_I_V_P!(states, p::AbstractModel)
     """
     Define the current, voltage, and power.
     """
@@ -53,7 +53,7 @@ function build_I_V_P!(states, p::AbstractParam)
     return nothing
 end
 
-function build_j_total!(states, p::AbstractParam)
+function build_j_total!(states, p::AbstractModel)
     """
     Append `j` with possible additions from `j_s`
     """
@@ -74,8 +74,8 @@ function build_j_total!(states, p::AbstractParam)
     return nothing
 end
 
-build_T!(states, p::AbstractParamTemp{true}) = nothing
-function build_T!(states, p::AbstractParamTemp{false})
+build_T!(states, p::AbstractModelTemp{true}) = nothing
+function build_T!(states, p::AbstractModelTemp{false})
     """
     If temperature is not enabled, include a vector of temperatures using the specified initial temperature.
     """
@@ -87,7 +87,7 @@ function build_T!(states, p::AbstractParamTemp{false})
 end
 
 
-function build_c_s_star!(states, p::AbstractParamSolidDiff{:Fickian})
+function build_c_s_star!(states, p::AbstractModelSolidDiff{:Fickian})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -106,7 +106,7 @@ function build_c_s_star!(states, p::AbstractParamSolidDiff{:Fickian})
     
     return nothing
 end
-function build_c_s_star!(states, p::AbstractParamSolidDiff{:quadratic})
+function build_c_s_star!(states, p::AbstractModelSolidDiff{:quadratic})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -128,7 +128,7 @@ function build_c_s_star!(states, p::AbstractParamSolidDiff{:quadratic})
     
     return nothing
 end
-function build_c_s_star!(states, p::AbstractParamSolidDiff{:polynomial})
+function build_c_s_star!(states, p::AbstractModelSolidDiff{:polynomial})
     """
     Evaluates the concentration of Li-ions at the electrode surfaces.
     """
@@ -152,7 +152,7 @@ function build_c_s_star!(states, p::AbstractParamSolidDiff{:polynomial})
     return nothing
 end
 
-function build_OCV!(states, p::AbstractParam)
+function build_OCV!(states, p::AbstractModel)
     """
     Calculate the open circuit voltages for the positive & negative electrodes
     """
@@ -173,7 +173,7 @@ function build_OCV!(states, p::AbstractParam)
     return nothing
 end
 
-function build_η!(states, p::AbstractParam)
+function build_η!(states, p::AbstractModel)
     """
     Calculate the overpotentials for the positive & negative electrodes
     """
@@ -205,7 +205,7 @@ function build_η!(states, p::AbstractParam)
     return nothing
 end
 
-function build_K_eff!(states, p::AbstractParam)
+function build_K_eff!(states, p::AbstractModel)
     c_e = states[:c_e]
     T = states[:T]
 
@@ -216,9 +216,9 @@ function build_K_eff!(states, p::AbstractParam)
     return nothing
 end
 
-function build_heat_generation_rates!(states, p::AbstractParam)
+function build_heat_generation_rates!(states, p::AbstractModel)
     """
-    Evaluates the heat source terms used in the thermal model per section
+    Evaluates the heat source terms used in the thermal sol per section
     """
 
     Φ_s = states[:Φ_s]
@@ -387,7 +387,7 @@ function build_heat_generation_rates!(states, p::AbstractParam)
     return nothing
 end
 
-function build_residuals!(res_tot::AbstractVector, res::Dict, p::AbstractParam)
+function build_residuals!(res_tot::AbstractVector, res::Dict, p::AbstractModel)
     """
     Create the residuals vector using all the variables which are needed in the simulation.
     `p.cache.vars` contains the list of variables, and `getproperty(p.ind, var)` will
@@ -404,7 +404,7 @@ end
 """
 Constants and coefficients
 """
-function active_material(p::AbstractParam)
+function active_material(p::AbstractModel)
     """
     Electrode active material fraction [-]
     """
@@ -414,7 +414,7 @@ function active_material(p::AbstractParam)
     return ϵ_sp, ϵ_sn
 end
 
-function conductivity_effective(p::AbstractParam)
+function conductivity_effective(p::AbstractModel)
     """
     Effective conductivity [S/m]
     """
@@ -426,7 +426,7 @@ function conductivity_effective(p::AbstractParam)
     return σ_eff_p, σ_eff_n
 end
 
-function surface_area_to_volume_ratio(p::AbstractParam)
+function surface_area_to_volume_ratio(p::AbstractModel)
     """
     Surface area to volume ratio for a sphere (SA/V = 4πr^2/(4/3πr^3)) multipled by the active material fraction [m^2/m^3]
     """
@@ -438,7 +438,7 @@ function surface_area_to_volume_ratio(p::AbstractParam)
     return a_p, a_n
 end
 
-function coeff_reaction_rate(states, p::AbstractParam)
+function coeff_reaction_rate(states, p::AbstractModel)
     """
     Reaction rates (k) of cathode and anode [m^2.5/(m^0.5 s)]
     """
@@ -448,21 +448,21 @@ function coeff_reaction_rate(states, p::AbstractParam)
     return p.numerics.rxn_rate(T.p, T.n, c_s_avg.p, c_s_avg.n, p)
 end
 
-function coeff_solid_diffusion_effective(states::Dict, p::AbstractParam)
+function coeff_solid_diffusion_effective(states::Dict, p::AbstractModel)
     c_s_avg = states[:c_s_avg]
     T = states[:T]
     
     return p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
 end
 
-function coeff_electrolyte_diffusion_effective(states::Dict, p::AbstractParam)
+function coeff_electrolyte_diffusion_effective(states::Dict, p::AbstractModel)
     c_e = states[:c_e]
     T = states[:T]
     
     return p.numerics.D_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 end
 
-function calc_j_analytic(Y::AbstractVector, p::AbstractParam)
+function calc_j_analytic(Y::AbstractVector, p::AbstractModel)
     T_p = repeat([p.θ[:T₀]],p.N.p)
     T_n = repeat([p.θ[:T₀]],p.N.n)
 
@@ -484,7 +484,7 @@ end
 """
 Calculations which are primarily used in `set_vars!`, denoted by the prefix `calc_`.
 """
-function limiting_electrode(p::AbstractParam)
+function limiting_electrode(p::AbstractModel)
     θ = p.θ
     ϵ_sp, ϵ_sn = active_material(p)
 
@@ -498,7 +498,7 @@ function limiting_electrode(p::AbstractParam)
     end
 end
 
-@inline calc_I1C(p::AbstractParam) = calc_I1C(p.θ)
+@inline calc_I1C(p::AbstractModel) = calc_I1C(p.θ)
 @inline function calc_I1C(θ::Dict{Symbol,T}) where T<:Union{Float64,Any}
     """
     Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
@@ -516,7 +516,7 @@ end
     return I1C
 end
 
-@inline function calc_SOC(Y::AbstractVector{Float64}, p::param)
+@inline function calc_SOC(Y::AbstractVector{Float64}, p::model)
     """
     Calculate the SOC (dimensionless fraction)
     """
@@ -524,17 +524,17 @@ end
 
     return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
 end
-@inline function calc_SOC(SOC::E, Y::T, t::E, model::model_output, p::param) where {E<:Float64,T<:Vector{E}}
+@inline function calc_SOC(SOC::E, Y::T, t::E, sol::sol_output, p::model) where {E<:Float64,T<:Vector{E}}
     """
     Calculate the SOC (dimensionless fraction) using the trapezoidal rule
     """
-    Y_prev = @inbounds @views model.Y[end]
-    t_prev = @inbounds model.t[end]
+    Y_prev = @inbounds @views sol.Y[end]
+    t_prev = @inbounds sol.t[end]
     SOC_new = SOC + 0.5*(t - t_prev)*(calc_I(Y,p) + calc_I(Y_prev,p))/3600.0
     return SOC_new
 end
 
-@inline function temperature_weighting(T::AbstractVector{<:Number},p::AbstractParam)
+@inline function temperature_weighting(T::AbstractVector{<:Number},p::AbstractModel)
     l_a,l_p,l_s,l_n,l_z = (p.θ[:l_a], p.θ[:l_p], p.θ[:l_s], p.θ[:l_n], p.θ[:l_z])
 
     ratio_a = l_a/p.N.a
@@ -562,15 +562,15 @@ end
 
     return T_mean/(l_a+l_p+l_s+l_n+l_z)
 end
-@inline function constant_temperature(t,Y,YP::AbstractVector{<:Number},p::AbstractParam)
+@inline function constant_temperature(t,Y,YP::AbstractVector{<:Number},p::AbstractModel)
     temperature_weighting((@views @inbounds YP[p.ind.T]),p)
 end
-temperature_weighting(T::VectorOfArray,p::AbstractParam) = [temperature_weighting(_T,p) for _T in T]
+temperature_weighting(T::VectorOfArray,p::AbstractModel) = [temperature_weighting(_T,p) for _T in T]
 
-d_x(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractParam) -> YP[index]
+d_x(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractModel) -> YP[index]
 d_x(index::Int64) = d_x(Val(index))
 
-function c_s_indices(p::AbstractParamSolidDiff{:Fickian}, section::Symbol; surf::Bool=true,offset::Bool=true)
+function c_s_indices(p::AbstractModelSolidDiff{:Fickian}, section::Symbol; surf::Bool=true,offset::Bool=true)
     N = p.N
 
     ind_p = N.r_p:N.r_p:N.r_p*N.p
@@ -578,7 +578,7 @@ function c_s_indices(p::AbstractParamSolidDiff{:Fickian}, section::Symbol; surf:
     
     return _c_s_indices(p, ind_p, ind_n, section, surf, offset)
 end
-function c_s_indices(p::Union{AbstractParamSolidDiff{:quadratic},AbstractParamSolidDiff{:polynomial}}, section::Symbol; surf::Bool=true,offset::Bool=true)
+function c_s_indices(p::Union{AbstractModelSolidDiff{:quadratic},AbstractModelSolidDiff{:polynomial}}, section::Symbol; surf::Bool=true,offset::Bool=true)
     N = p.N
 
     ind_p = 1:N.p
@@ -586,7 +586,7 @@ function c_s_indices(p::Union{AbstractParamSolidDiff{:quadratic},AbstractParamSo
     
     return _c_s_indices(p, ind_p, ind_n, section, surf, offset)
 end
-function _c_s_indices(p::AbstractParam,ind_p::T,ind_n::T,section::Symbol,surf::Bool,offset::Bool) where T<:AbstractRange{Int64}
+function _c_s_indices(p::AbstractModel,ind_p::T,ind_n::T,section::Symbol,surf::Bool,offset::Bool) where T<:AbstractRange{Int64}
     ind = p.ind.c_s_avg
 
     if     section === :p

@@ -1,10 +1,10 @@
-@inline function set_vars!(model::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6, bounds::R7;
+@inline function set_vars!(sol::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6, bounds::R7;
     modify!::R8=set_var!,
     init_all::Bool=false,
-    SOC::Float64 = (@inbounds model.SOC[end])
+    SOC::Float64 = (@inbounds sol.SOC[end])
     ) where {
-        R1<:model_output,
-        R2<:param,
+        R1<:sol_output,
+        R2<:model,
         R3<:Vector{Float64},
         R4<:Float64,
         R5<:AbstractRun,
@@ -13,7 +13,7 @@
         R8<:Function,
         }
     """
-    Sets all the outputs for the model. There are three kinds of variable outputs:
+    Sets all the outputs for the sol. There are three kinds of variable outputs:
     
     1. `keep.x = true`: The variable is calculated and saved on every iteration
     
@@ -28,26 +28,26 @@
     keep = opts.var_keep
 
     # these variables must be calculated, but they may not necessarily be kept
-    modify!(model.SOC, isempty(model.SOC) ? SOC : calc_SOC(SOC, Y, t + run.t0, model, p), (keep.SOC || init_all))
-    modify!(model.t,   t + run.t0, (keep.t || init_all))
+    modify!(sol.SOC, isempty(sol.SOC) ? SOC : calc_SOC(SOC, Y, t + run.t0, sol, p), (keep.SOC || init_all))
+    modify!(sol.t,   t + run.t0, (keep.t || init_all))
     
     # these variables do not need to be calculated
-    if keep.YP      modify!(model.YP,      copy(YP)           ) end
-    if keep.I       modify!(model.I,       calc_I(Y, p)       ) end
-    if keep.V       modify!(model.V,       calc_V(Y, p)       ) end
-    if keep.P       modify!(model.P,       calc_P(Y, p)       ) end
-    if keep.c_e     modify!(model.c_e,     calc_c_e(Y, p)     ) end
-    if keep.c_s_avg modify!(model.c_s_avg, calc_c_s_avg(Y, p) ) end
-    if keep.j       modify!(model.j,       calc_j(Y, p)       ) end
-    if keep.Φ_e     modify!(model.Φ_e,     calc_Φ_e(Y, p)     ) end
-    if keep.Φ_s     modify!(model.Φ_s,     calc_Φ_s(Y, p)     ) end
+    if keep.YP      modify!(sol.YP,      copy(YP)           ) end
+    if keep.I       modify!(sol.I,       calc_I(Y, p)       ) end
+    if keep.V       modify!(sol.V,       calc_V(Y, p)       ) end
+    if keep.P       modify!(sol.P,       calc_P(Y, p)       ) end
+    if keep.c_e     modify!(sol.c_e,     calc_c_e(Y, p)     ) end
+    if keep.c_s_avg modify!(sol.c_s_avg, calc_c_s_avg(Y, p) ) end
+    if keep.j       modify!(sol.j,       calc_j(Y, p)       ) end
+    if keep.Φ_e     modify!(sol.Φ_e,     calc_Φ_e(Y, p)     ) end
+    if keep.Φ_s     modify!(sol.Φ_s,     calc_Φ_s(Y, p)     ) end
     
-    # exist as an optional output if the model uses them
-    if ( p.numerics.temperature === true           && keep.T    ) modify!(model.T,    calc_T(Y,p)    ) end
-    if ( p.numerics.aging === :SEI                 && keep.film ) modify!(model.film, calc_film(Y,p) ) end
-    if ( p.numerics.aging === :SEI                 && keep.SOH  ) modify!(model.SOH,  calc_SOH(Y, p) ) end
-    if ( !(p.numerics.aging === false)             && keep.j_s  ) modify!(model.j_s,  calc_j_s(Y,p)  ) end
-    if ( p.numerics.solid_diffusion === :quadratic && keep.Q    ) modify!(model.Q,    calc_Q(Y,p)    ) end
+    # exist as an optional output if the sol uses them
+    if ( p.numerics.temperature === true           && keep.T    ) modify!(sol.T,    calc_T(Y,p)    ) end
+    if ( p.numerics.aging === :SEI                 && keep.film ) modify!(sol.film, calc_film(Y,p) ) end
+    if ( p.numerics.aging === :SEI                 && keep.SOH  ) modify!(sol.SOH,  calc_SOH(Y, p) ) end
+    if ( !(p.numerics.aging === false)             && keep.j_s  ) modify!(sol.j_s,  calc_j_s(Y,p)  ) end
+    if ( p.numerics.solid_diffusion === :quadratic && keep.Q    ) modify!(sol.Q,    calc_Q(Y,p)    ) end
 
     return nothing
 end
@@ -67,7 +67,7 @@ end
     @inbounds x[end] .= x_val
 end
 
-@inline function (model::model_output)(tspan::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate, k::Int64=1,kw...)
+@inline function (sol::sol_output)(tspan::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate, k::Int64=1,kw...)
     if tspan isa UnitRange
         t = collect(tspan)
     elseif tspan isa Number
@@ -76,27 +76,27 @@ end
         t = tspan
     end
 
-    var_keep = @inbounds @views model.results[end].opts.var_keep
+    var_keep = @inbounds @views sol.results[end].opts.var_keep
     function f(field)
-        x = getproperty(model, field)
+        x = getproperty(sol, field)
         if field === :t
             return t
         elseif x isa AbstractArray{Float64} && getproperty(var_keep, field) && length(x) > 1
-            return interpolate_variable(x, model, t, interp_bc; k=k, kw...)
+            return interpolate_variable(x, sol, t, interp_bc; k=k, kw...)
         else
             return x
         end
     end
     
-    states_tot = @inbounds (f(field) for field in fieldnames(model_output))
+    states_tot = @inbounds (f(field) for field in fieldnames(sol_output))
 
-    model = model_output(states_tot...)
+    sol = sol_output(states_tot...)
 
-    return model
+    return sol
 end
 @inline interpolate_variable(x::Any,y...;kw...) = x
-@inline function interpolate_variable(x::R1, model::R2, tspan::T1, interp_bc::Symbol;kw...) where {R1<:AbstractVector{Float64},R2<:model_output,T1<:Union{Real,AbstractArray}}
-    spl = Spline1D(model.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))),kw...)
+@inline function interpolate_variable(x::R1, sol::R2, tspan::T1, interp_bc::Symbol;kw...) where {R1<:AbstractVector{Float64},R2<:sol_output,T1<:Union{Real,AbstractArray}}
+    spl = Spline1D(sol.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))),kw...)
     out = spl(tspan)
     
     return out

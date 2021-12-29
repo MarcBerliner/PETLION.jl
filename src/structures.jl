@@ -10,7 +10,7 @@ const const_Faradays  = 96485.3321233
 const const_Ideal_Gas = 8.31446261815324
 
 abstract type AbstractJacobian <: Function end
-abstract type AbstractParam{T<:AbstractJacobian,temp,solid_diff,Fickian,age} end
+abstract type AbstractModel{T<:AbstractJacobian,temp,solid_diff,Fickian,age} end
 abstract type AbstractMethod end
 abstract type AbstractRun{T<:AbstractMethod,input<:Any} end
 
@@ -99,7 +99,7 @@ struct jacobian_AD{T<:Function} <: AbstractJacobian
     sp::SparseMatrixCSC{Float64,Int64}
     jac_cache::ForwardColorJacCache
 end
-@inline function (jac::jacobian_AD{T})(t,Y,YP,γ::Float64,p::P,run) where {T<:Function,P<:AbstractParam}
+@inline function (jac::jacobian_AD{T})(t,Y,YP,γ::Float64,p::P,run) where {T<:Function,P<:AbstractModel}
     J = jac.sp
     forwarddiff_color_jacobian!(J, jac.f!, Y, jac.jac_cache)
     if size(J) === (p.N.tot-1,p.N.tot)
@@ -340,7 +340,7 @@ model_funcs(x...) = model_funcs(x...,
     Dict{DataType,Jac_and_res}()
     )
 
-struct param{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractParam{T,temp,solid_diff,Fickian,age}
+struct model{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractModel{T,temp,solid_diff,Fickian,age}
     θ::Dict{Symbol,Float64}
     numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
@@ -351,19 +351,19 @@ struct param{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractParam{T
     funcs::model_funcs{<:Function,<:Function,<:Function,T,<:AbstractJacobian}
 end
 
-const param_jac{jac}               = param{jac,<:Any,<:Any,<:Any,<:Any}
-const param_temp{temp}             = param{<:AbstractJacobian,temp,<:Any,<:Any,<:Any}
-const param_solid_diff{solid_diff} = param{<:AbstractJacobian,<:Any,solid_diff,<:Any,<:Any}
-const param_Fickian{Fickian}       = param{<:AbstractJacobian,<:Any,<:Any,Fickian,<:Any}
-const param_age{age}               = param{<:AbstractJacobian,<:Any,<:Any,<:Any,age}
+const model_jac{jac}               = model{jac,<:Any,<:Any,<:Any,<:Any}
+const model_temp{temp}             = model{<:AbstractJacobian,temp,<:Any,<:Any,<:Any}
+const model_solid_diff{solid_diff} = model{<:AbstractJacobian,<:Any,solid_diff,<:Any,<:Any}
+const model_Fickian{Fickian}       = model{<:AbstractJacobian,<:Any,<:Any,Fickian,<:Any}
+const model_age{age}               = model{<:AbstractJacobian,<:Any,<:Any,<:Any,age}
 
-const AbstractParamJac{jac}              = AbstractParam{jac,<:Any,<:Any,<:Any,<:Any}
-const AbstractParamTemp{temp}            = AbstractParam{<:AbstractJacobian,temp,<:Any,<:Any,<:Any}
-const AbstractParamSolidDiff{solid_diff} = AbstractParam{<:AbstractJacobian,<:Any,solid_diff,<:Any,<:Any}
-const AbstractParamFickian{Fickian}      = AbstractParam{<:AbstractJacobian,<:Any,<:Any,Fickian,<:Any}
-const AbstractParamAge{age}              = AbstractParam{<:AbstractJacobian,<:Any,<:Any,<:Any,age}
+const AbstractModelJac{jac}              = AbstractModel{jac,<:Any,<:Any,<:Any,<:Any}
+const AbstractModelTemp{temp}            = AbstractModel{<:AbstractJacobian,temp,<:Any,<:Any,<:Any}
+const AbstractModelSolidDiff{solid_diff} = AbstractModel{<:AbstractJacobian,<:Any,solid_diff,<:Any,<:Any}
+const AbstractModelFickian{Fickian}      = AbstractModel{<:AbstractJacobian,<:Any,<:Any,Fickian,<:Any}
+const AbstractModelAge{age}              = AbstractModel{<:AbstractJacobian,<:Any,<:Any,<:Any,age}
 
-struct param_skeleton{temp,solid_diff,Fickian,age} <: AbstractParam{AbstractJacobian,temp,solid_diff,Fickian,age}
+struct model_skeleton{temp,solid_diff,Fickian,age} <: AbstractModel{AbstractJacobian,temp,solid_diff,Fickian,age}
     θ::Dict{Symbol,Any}
     numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
@@ -383,30 +383,30 @@ struct run_results{T<:AbstractRun}
     bounds::boundary_stop_conditions
     N::discretizations_per_section
     numerics::options_numerical
-    p::param
+    p::model
 end
 
-const model_output = model_states{
+const sol_output = model_states{
     Array{Float64,1},
     VectorOfArray{Float64,2,Array{Array{Float64,1},1}},
     Array{run_results,1},
 }
 
-Base.length(model::model_output) = length(model.results)
-Base.isempty(model::model_output) = isempty(model.results)
-function Base.getindex(model::T, i1::Int) where T<:model_output
-    ind = (model.results[i1].run_index) .+ (1-model.results[1].run_index[1])
-    T([fields === :results ? [model.results[i1]] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
+Base.length(sol::sol_output) = length(sol.results)
+Base.isempty(sol::sol_output) = isempty(sol.results)
+function Base.getindex(sol::T, i1::Int) where T<:sol_output
+    ind = (sol.results[i1].run_index) .+ (1-sol.results[1].run_index[1])
+    T([fields === :results ? [sol.results[i1]] : (x = getproperty(sol, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
 end
-function Base.getindex(model::T, i::UnitRange{Int64}) where T<:model_output
-    ind = ((model.results[i[1]].run_index[1]):(model.results[i[end]].run_index[end])) .+ (1-model.results[1].run_index[1])
-    T([fields === :results ? model.results[i] : (x = getproperty(model, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
+function Base.getindex(sol::T, i::UnitRange{Int64}) where T<:sol_output
+    ind = ((sol.results[i[1]].run_index[1]):(sol.results[i[end]].run_index[end])) .+ (1-sol.results[1].run_index[1])
+    T([fields === :results ? sol.results[i] : (x = getproperty(sol, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
 end
-Base.lastindex(model::T) where T<:model_output = length(model)
-Base.firstindex(::T) where T<:model_output = 1
+Base.lastindex(sol::T) where T<:sol_output = length(sol)
+Base.firstindex(::T) where T<:sol_output = 1
 
 Base.empty!(f::model_funcs) = ([empty!(getproperty(f,field)) for (_type,field) in zip(fieldtypes(model_funcs),fieldnames(model_funcs)) if _type <: Dict];nothing)
-Base.empty!(p::param) = empty!(p.funcs)
+Base.empty!(p::model) = empty!(p.funcs)
 
 const STATE_NAMES = Dict{Symbol,String}(
     :c_e => "Electrolyte Conc. (mol/m³)",
@@ -426,8 +426,8 @@ const STATE_NAMES = Dict{Symbol,String}(
 )
 
 ## Modifying Base functions
-@recipe function plot(model::model_output, x_name::Symbol=:V;linewidth=2,legend=false)
-    x = getproperty(model, x_name)
+@recipe function plot(sol::sol_output, x_name::Symbol=:V;linewidth=2,legend=false)
+    x = getproperty(sol, x_name)
     if x isa AbstractMatrix
         x = x'
     end
@@ -438,15 +438,15 @@ const STATE_NAMES = Dict{Symbol,String}(
         ylabel = "$x_name"
     end
     
-    if length(model.t) ≠ length(x) error("$x_name is not in `outputs`") end
+    if length(sol.t) ≠ length(x) error("$x_name is not in `outputs`") end
     
-    time_unit, time_scale = time_units(model.t[end])[2:3]
+    time_unit, time_scale = time_units(sol.t[end])[2:3]
 
     legend --> legend
     yguide --> ylabel
     xguide --> "Time ($(time_unit))"
     linewidth --> linewidth
-    model.t./time_scale, x
+    sol.t./time_scale, x
 end
 
 function time_units(t::Number)
@@ -488,7 +488,7 @@ function C_rate_string(I::Number;digits::Int64=4)
     return str
 end
 
-function Base.show(io::IO, p::AbstractParam)
+function Base.show(io::IO, p::AbstractModel)
     function show_bounds(title, min, max, units="")
         if isnan(min) && isnan(max)
             return ""
@@ -511,14 +511,15 @@ function Base.show(io::IO, p::AbstractParam)
     # spacing
     sp = p.numerics.solid_diffusion === :Fickian ? "  " : ""
 
-    # create the header for param
-    if p isa param_skeleton
-        header = "param_skeleton"
+    # create the header for model
+    if p isa model_skeleton
+        header = "model_skeleton"
     else
         header = [x for x in replace(summary(p), "$(@__MODULE__)."=>"")]
         deleteat!(header, findall('{' .== header)[2]:length(header)-1)
         header = join(header)
     end
+    header = "$(@__MODULE__) $header"
     
     str = string(
     "$header:\n",
@@ -626,12 +627,12 @@ function Base.show(io::IO, run::T) where {T<:AbstractRun}
     
     print(io, str)
 end
-(funcs::model_funcs)(model::model_output) = (@assert !isempty(model); (@inbounds funcs(model.results[end].run)))
-Base.show(io::IO, ::model_funcs) = println(io,"$(@__MODULE__) model functions")
-function Base.show(io::IO, model::model_output)
-    results = model.results
+(funcs::model_funcs)(sol::sol_output) = (@assert !isempty(sol); (@inbounds funcs(sol.results[end].run)))
+Base.show(io::IO, ::model_funcs) = println(io,"$(@__MODULE__) sol functions")
+function Base.show(io::IO, sol::sol_output)
+    results = sol.results
     p = results[1].p
-    Y = @views @inbounds model.Y[end]
+    Y = @views @inbounds sol.Y[end]
     function str_runs()
     
         str = length(results) === 1 ? "  Run: " : "  Runs:"
@@ -669,10 +670,10 @@ function Base.show(io::IO, model::model_output)
         return str
     end
 
-    t, time_unit = time_units(model.t[end])
+    t, time_unit = time_units(sol.t[end])
 
-    title = "$(@__MODULE__) model"
-    if !isempty(model)
+    title = "$(@__MODULE__) output"
+    if !isempty(sol)
         str = @views @inbounds string(
                 "$title\n",
                 "  --------\n",
@@ -681,14 +682,14 @@ function Base.show(io::IO, model::model_output)
                 "  Current: $(C_rate_string(calc_I(Y,p);digits = 4))\n",
                 "  Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
                 "  Power:   $(round(calc_P(Y,p);        digits = 4)) W\n",
-                "  SOC:     $(round(model.SOC[end];     digits = 4))\n",
+                "  SOC:     $(round(sol.SOC[end];     digits = 4))\n",
                 !(p.numerics.aging === false) ? 
-                "  SOH:     $(round(model.SOH[end];     digits = 4))\n"
+                "  SOH:     $(round(sol.SOH[end];     digits = 4))\n"
                 : "",
                 !(p.numerics.temperature === false) ? 
                 "  Temp.:   $(round(temperature_weighting(calc_T(Y,p),p)-273.15; digits = 4)) °C\n"
                 : "",
-                "  Exit:    $(model.results[end].info.exit_reason)",
+                "  Exit:    $(sol.results[end].info.exit_reason)",
             )
     else
         str = "$title: empty"

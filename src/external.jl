@@ -1,5 +1,5 @@
-## Functions to complete the param structure
-function Params(cathode::Function;kwargs...)
+## Functions to complete the model structure
+function petlion(cathode::Function;kwargs...)
     θ = Dict{Symbol,Float64}()
     funcs = _funcs_numerical()
 
@@ -13,7 +13,7 @@ function Params(cathode::Function;kwargs...)
         error("Cathode function must return both anode and system functions.")
     end
 end
-function Params(;cathode=cathode,anode=anode,system=system, # Input chemistry - can be modified
+function petlion(;cathode=cathode,anode=anode,system=system, # Input chemistry - can be modified
     kwargs... # keyword arguments for system
     )
     θ = Dict{Symbol,Float64}()
@@ -45,12 +45,12 @@ function initialize_param(θ, bounds, opts, _N, numerics)
     θ[:I1C] = calc_I1C(θ)
     
     ## temporary params with no functions
-    _p = param_skeleton(θ_any, numerics, N, ind, opts, bounds, cache)
+    _p = model_skeleton(θ_any, numerics, N, ind, opts, bounds, cache)
     
     funcs = load_functions(_p)
     
     ## Real params with functions
-    p = param(
+    p = model(
         θ,
         numerics,
         N,
@@ -65,7 +65,7 @@ end
 
 function build_cache(θ, ind, N, numerics, opts)
     """
-    Creates the cache struct for _Params
+    Creates the cache struct for _petlion
     """
     outputs_tot = Symbol[]
     @inbounds for (name,_type) in zip(fieldnames(typeof(ind)), fieldtypes(typeof(ind)))
@@ -75,7 +75,7 @@ function build_cache(θ, ind, N, numerics, opts)
     
     function variables_in_indices()
         """
-        Defines all the possible outputs from run_model
+        Defines all the possible outputs from simulate
         """
         
         var = Symbol[]
@@ -179,7 +179,7 @@ Base.IndexStyle(::Type{<:state_sections}) = IndexLinear()
 Base.getindex(state::state_sections, i::Int64)= state.tot[i]
 Base.setindex!(state::state_sections, v, i::Int64)= (state.tot[i] = v)
 
-function retrieve_states(Y::AbstractArray, p::AbstractParam)
+function retrieve_states(Y::AbstractArray, p::AbstractModel)
     """
     Creates a dictionary of variables based on an input array and the indices in p.ind
     """
@@ -341,7 +341,7 @@ function state_indices(N, numerics)
     return ind, N_diff, N_alg, N_tot
 end
 
-@inline function guess_init(p::AbstractParam, X_applied=0.0)
+@inline function guess_init(p::AbstractModel, X_applied=0.0)
     """
     Get the initial guess in the DAE initialization.
     This function is made symbolic by Symbolics and saved as 
@@ -389,7 +389,7 @@ end
     return Y0, YP0
 end
 
-model_info(p::AbstractParam) = model_info(p.N, p.numerics)
+model_info(p::AbstractModel) = model_info(p.N, p.numerics)
 function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T2<:options_numerical}
     version = "PETLION version: v"*join(Symbol.(VERSION),".")
 
@@ -452,11 +452,11 @@ function strings_directory_func(N::discretizations_per_section, numerics::T; cre
     return dir
 end
 
-function strings_directory_func(p::AbstractParam; create_dir=false)
+function strings_directory_func(p::AbstractModel; create_dir=false)
     strings_directory_func(p.N, p.numerics; create_dir=create_dir)
 end
 
-function strings_directory_func(p::AbstractParam, x; kw...)
+function strings_directory_func(p::AbstractModel, x; kw...)
     strings_directory = string("$(strings_directory_func(p; kw...))/$x.jl")
 
     return strings_directory
@@ -478,7 +478,7 @@ end
 function extrap_x_0(x::AbstractVector,y::AbstractVector)
     @inbounds y[1] - ((y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))*((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[1]^2)) - ((y[2] - y[1] - (((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[2]^2 - (x[1]^2))*(y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))))*((x[2] - x[1])^-1)*x[1])
 end
-function extrapolate_section(y::AbstractVector,p::AbstractParam,section::Symbol)
+function extrapolate_section(y::AbstractVector,p::AbstractModel,section::Symbol)
     """
     Extrapolate to the edges of the FVM sections with a second-order polynomial
     """

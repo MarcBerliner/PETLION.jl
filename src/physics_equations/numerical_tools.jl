@@ -105,7 +105,7 @@ function block_matrix_maker(p, X, Y, Z)
     return A_tot
 end
 
-function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p::AbstractParam)
+function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p::AbstractModel)
     """
     interpolate_electrolyte_conductivities interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
     """
@@ -157,7 +157,7 @@ end
 
 harmonic_mean(β, x₁, x₂) = @. x₁*x₂/(β*x₂ + (1.0 - β)*x₁)
 
-function interpolate_electrolyte_concentration(c_e, p::AbstractParam)
+function interpolate_electrolyte_concentration(c_e, p::AbstractModel)
     """
     interpolate_electrolyte_concentration interpolates the value of electrolyte concentration at the edges of control volumes using harmonic mean
     """
@@ -190,9 +190,9 @@ function interpolate_electrolyte_concentration(c_e, p::AbstractParam)
 
 end
 
-interpolate_temperature(T, p::AbstractParam) = interpolate_electrolyte_concentration((@views @inbounds T[p.N.a+1:end-p.N.z]),p)
+interpolate_temperature(T, p::AbstractModel) = interpolate_electrolyte_concentration((@views @inbounds T[p.N.a+1:end-p.N.z]),p)
 
-function interpolate_electrolyte_concetration_fluxes(c_e, p::AbstractParam)
+function interpolate_electrolyte_concetration_fluxes(c_e, p::AbstractModel)
     """
     interpolate_electrolyte_concetration_fluxes interpolates the electrolyte concentration flux at the edges of control volumes using harmonic mean
     """

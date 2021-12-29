@@ -1,4 +1,4 @@
-@inline function check_simulation_stop!(model, t::Float64, Y, YP, run::AbstractRun, p, bounds, opts::options_model_immutable{T};
+@inline function check_simulation_stop!(sol, t::Float64, Y, YP, run::AbstractRun, p, bounds, opts::options_model_immutable{T};
     ϵ::Float64 = t < 1.0 ? opts.reltol : 0.0,
     ) where T<:Function
     
@@ -13,23 +13,23 @@
 
     I = calc_I(Y,p)
     
-    check_stop_I(         p, run, model, Y, YP, bounds, ϵ, I)
-    check_stop_V(         p, run, model, Y, YP, bounds, ϵ, I)
-    check_stop_SOC(       p, run, model, Y, YP, bounds, ϵ, I)
-    check_stop_T(         p, run, model, Y, YP, bounds, ϵ, I)
-    check_stop_c_s_surf(  p, run, model, Y, YP, bounds, ϵ, I)
-    check_stop_c_e(       p, run, model, Y, YP, bounds, ϵ, I)
-    check_stop_η_plating( p, run, model, Y, YP, bounds, ϵ, I)
-    check_stop_dfilm(     p, run, model, Y, YP, bounds, ϵ, I)
-    opts.stop_function(   p, run, model, Y, YP, bounds, ϵ, I)
+    check_stop_I(         p, run, sol, Y, YP, bounds, ϵ, I)
+    check_stop_V(         p, run, sol, Y, YP, bounds, ϵ, I)
+    check_stop_SOC(       p, run, sol, Y, YP, bounds, ϵ, I)
+    check_stop_T(         p, run, sol, Y, YP, bounds, ϵ, I)
+    check_stop_c_s_surf(  p, run, sol, Y, YP, bounds, ϵ, I)
+    check_stop_c_e(       p, run, sol, Y, YP, bounds, ϵ, I)
+    check_stop_η_plating( p, run, sol, Y, YP, bounds, ϵ, I)
+    check_stop_dfilm(     p, run, sol, Y, YP, bounds, ϵ, I)
+    opts.stop_function(   p, run, sol, Y, YP, bounds, ϵ, I)
 
     return nothing
 end
 
-@inline check_stop_I(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun{method_I},R4<:param,R5<:boundary_stop_conditions} = nothing
-@inline function check_stop_I(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions}
+@inline check_stop_I(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun{method_I},R4<:model,R5<:boundary_stop_conditions} = nothing
+@inline function check_stop_I(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions}
     
     if (I - bounds.I_max > ϵ)
         t_frac = (bounds.I_prev - bounds.I_max)/(bounds.I_prev - I)
@@ -51,10 +51,10 @@ end
     return nothing
 end
 
-@inline check_stop_V(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-) where {R2<:Vector{Float64}, R3<:AbstractRun{method_V},R4<:param,R5<:boundary_stop_conditions} = nothing
-@inline function check_stop_V(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:param,R5<:boundary_stop_conditions}
+@inline check_stop_V(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+) where {R2<:Vector{Float64}, R3<:AbstractRun{method_V},R4<:model,R5<:boundary_stop_conditions} = nothing
+@inline function check_stop_V(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions}
     
     V = calc_V(Y,p)
     if (bounds.V_min - V > ϵ) && I < 0
@@ -77,10 +77,10 @@ end
     return nothing
 end
 
-@inline function check_stop_SOC(p::R4, run::R3, model::model_output, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions}
+@inline function check_stop_SOC(p::R4, run::R3, sol::sol_output, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions}
     
-    SOC = @inbounds model.SOC[end]
+    SOC = @inbounds sol.SOC[end]
     if (bounds.SOC_min - SOC > ϵ) && I < 0
         t_frac = (bounds.SOC_prev - bounds.SOC_min)/(bounds.SOC_prev - SOC)
         if t_frac < bounds.t_final_interp_frac
@@ -101,9 +101,9 @@ end
     return SOC
 end
 
-@inline check_stop_T(p::param_temp{false}, run, model, Y, YP, bounds, ϵ, I) = nothing
-@inline function check_stop_T(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:param_temp{true},R5<:boundary_stop_conditions}
+@inline check_stop_T(p::model_temp{false}, run, sol, Y, YP, bounds, ϵ, I) = nothing
+@inline function check_stop_T(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:model_temp{true},R5<:boundary_stop_conditions}
 
     if !isnan(bounds.T_max)
         T = temperature_weighting(calc_T(Y,p),p)
@@ -121,14 +121,14 @@ end
     return nothing
 end
 
-@inline function c_s_n_maximum(Y::Vector{Float64},p::param_solid_diff{:Fickian})
+@inline function c_s_n_maximum(Y::Vector{Float64},p::model_solid_diff{:Fickian})
     c_s_n_max = -Inf
     @inbounds for i in 1:p.N.n
         @inbounds c_s_n_max = max(c_s_n_max, Y[p.ind.c_s_avg.n[p.N.r_n*i]])
     end
     return c_s_n_max
 end
-@inline function c_s_n_maximum(Y::Vector{Float64},p::Union{param_solid_diff{:polynomial},param_solid_diff{:quadratic}})
+@inline function c_s_n_maximum(Y::Vector{Float64},p::Union{model_solid_diff{:polynomial},model_solid_diff{:quadratic}})
     c_s_n_max = -Inf
     @inbounds for ind in p.ind.c_s_avg.n
         @inbounds c_s_n_max = max(c_s_n_max, Y[ind])
@@ -136,8 +136,8 @@ end
     return c_s_n_max
 end
 
-@inline function check_stop_c_s_surf(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions}
+@inline function check_stop_c_s_surf(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions}
     
     if !isnan(bounds.c_s_n_max)
         c_s_n_max = c_s_n_maximum(Y,p)
@@ -158,8 +158,8 @@ end
     return nothing
 end
 
-@inline function check_stop_c_e(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:param, R5<:boundary_stop_conditions}
+@inline function check_stop_c_e(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model, R5<:boundary_stop_conditions}
     
     if !isnan(bounds.c_e_min)
         c_e_min = +Inf
@@ -180,8 +180,8 @@ end
     return nothing
 end
 
-@inline function check_stop_η_plating(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:param, R5<:boundary_stop_conditions}
+@inline function check_stop_η_plating(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model, R5<:boundary_stop_conditions}
     
     η_plating = calc_η_plating(Y,p)
     if !isnan(bounds.η_plating_min) && bounds.η_plating_min - η_plating > ϵ
@@ -197,9 +197,9 @@ end
     return nothing
 end
 
-@inline check_stop_dfilm(::param_age{false}, run, model, Y, YP, bounds, ϵ, I) = nothing
-@inline function check_stop_dfilm(p::R4, run::R3, model, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:param_age{:SEI}, R5<:boundary_stop_conditions}
+@inline check_stop_dfilm(::model_age{false}, run, sol, Y, YP, bounds, ϵ, I) = nothing
+@inline function check_stop_dfilm(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
+    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model_age{:SEI}, R5<:boundary_stop_conditions}
     
     dfilm_max = -Inf
     @inbounds for i in 1:p.N.n
@@ -221,7 +221,7 @@ end
 
 
 
-@inline function check_solve(run::run_constant, model::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
+@inline function check_solve(run::run_constant, sol::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:sol_output,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if t === int.tprev
         # Sometimes the initial step at t = 0 can be too large. This reduces the step size
         if t === 0.0
@@ -237,8 +237,8 @@ end
         error("Reached max iterations of $(opts.maxiters) at t = $(t)")
     elseif within_bounds(run)
         # update Y only after checking the stop conditions. this is done to store a copy of the
-        # previous model run in case any back-interpolation is needed
-        set_var!(model.Y, keep_Y ? copy(Y) : Y, keep_Y)
+        # previous sol run in case any back-interpolation is needed
+        set_var!(sol.Y, keep_Y ? copy(Y) : Y, keep_Y)
     else # no errors and run.info.flag ≠ -1
         return false
     end
@@ -246,17 +246,17 @@ end
     return true
 end
 
-@inline function check_solve(run::run_function, model::R1, int::R2, p::param, bounds::boundary_stop_conditions, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:model_output,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
+@inline function check_solve(run::run_function, sol::R1, int::R2, p::model, bounds::boundary_stop_conditions, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:sol_output,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if iter === opts.maxiters
         error("Reached max iterations of $(opts.maxiters) at t = $(int.t)")
     elseif within_bounds(run)
         # update Y only after checking the stop conditions. this is done to store a copy of the
-        # previous model run in case any back-interpolation is needed
-        set_var!(model.Y, keep_Y ? copy(Y) : Y, keep_Y)
+        # previous sol run in case any back-interpolation is needed
+        set_var!(sol.Y, keep_Y ? copy(Y) : Y, keep_Y)
         
         # check to see if the run needs to be reinitialized
         if t - int.tprev < 1e-3opts.reltol
-            check_reinitialization!(model, int, run, p, bounds, opts, funcs)
+            check_reinitialization!(sol, int, run, p, bounds, opts, funcs)
         end
 
         return true
@@ -265,7 +265,7 @@ end
     end
 end
 
-@inline function check_reinitialization!(model::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, funcs) where {R1<:model_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:param,R5<:boundary_stop_conditions,R6<:AbstractOptionsModel}
+@inline function check_reinitialization!(sol::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, funcs) where {R1<:sol_output, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions,R6<:AbstractOptionsModel}
     """
     Checking the current function for discontinuities.
     If there is a significant change in current after a step size of dt = reltol,
@@ -283,14 +283,14 @@ end
     # if the function values at t vs. t + Δt are very different (i.e., there is a discontinuity)
     # then reinitialize the DAE at t + Δt
     if !≈(value_old, value_new, atol=opts.abstol, rtol=opts.reltol)
-        initialize_states!(p,Y,YP,run,opts,funcs,(@inbounds model.SOC[end]); t=t_new)
+        initialize_states!(p,Y,YP,run,opts,funcs,(@inbounds sol.SOC[end]); t=t_new)
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
     end
     return nothing
 end
 
-@inline function check_errors_parameters_runtime(p::R1,opts::R2) where {R1<:param,R2<:AbstractOptionsModel}
+@inline function check_errors_parameters_runtime(p::R1,opts::R2) where {R1<:model,R2<:AbstractOptionsModel}
     ϵ_sp, ϵ_sn = active_material(p)
 
     if ( ϵ_sp > 1 ) error("ϵ_p + ϵ_fp must be ∈ [0, 1)") end
@@ -309,5 +309,5 @@ function check_errors_initial(θ, numerics, N)
     return nothing
 end
 
-check_is_hold(x::Symbol,model::model_output) = (x===:hold) && (!isempty(model) ? true : error("Cannot use `:hold` without a previous model."))
-check_is_hold(::Any,::model_output) = false
+check_is_hold(x::Symbol,sol::sol_output) = (x===:hold) && (!isempty(sol) ? true : error("Cannot use `:hold` without a previous sol."))
+check_is_hold(::Any,::sol_output) = false

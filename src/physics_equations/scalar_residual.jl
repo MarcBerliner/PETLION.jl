@@ -1,25 +1,25 @@
-@inline calc_V(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
-@inline calc_I(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds Y[p.ind.I[1]]
-@inline calc_P(Y::Vector{<:Number}, p::AbstractParam)       = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
-@inline calc_c_e(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.c_e]
-@inline calc_c_s_avg(Y::Vector{<:Number}, p::AbstractParam) = @inbounds @views Y[p.ind.c_s_avg]
-@inline calc_SOH(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.SOH[1]]
-@inline calc_j(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.j]
-@inline calc_Φ_e(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.Φ_e]
-@inline calc_Φ_s(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.Φ_s]
-@inline calc_film(Y::Vector{<:Number}, p::AbstractParam)    = @inbounds @views Y[p.ind.film]
-@inline calc_j_s(Y::Vector{<:Number}, p::AbstractParam)     = @inbounds @views Y[p.ind.j_s]
-@inline calc_Q(Y::Vector{<:Number}, p::AbstractParam)       = @inbounds @views Y[p.ind.Q]
+@inline calc_V(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
+@inline calc_I(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds Y[p.ind.I[1]]
+@inline calc_P(Y::Vector{<:Number}, p::AbstractModel)       = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
+@inline calc_c_e(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.c_e]
+@inline calc_c_s_avg(Y::Vector{<:Number}, p::AbstractModel) = @inbounds @views Y[p.ind.c_s_avg]
+@inline calc_SOH(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.SOH[1]]
+@inline calc_j(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.j]
+@inline calc_Φ_e(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.Φ_e]
+@inline calc_Φ_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.Φ_s]
+@inline calc_film(Y::Vector{<:Number}, p::AbstractModel)    = @inbounds @views Y[p.ind.film]
+@inline calc_j_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.j_s]
+@inline calc_Q(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.Q]
 
-@inline calc_T(Y::Vector{<:Number}, p::AbstractParamTemp{true}) = @inbounds @views Y[p.ind.T]
-@inline calc_T(::Vector{<:Number}, p::AbstractParamTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
-@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractParamTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
-@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractParamTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
+@inline calc_T(Y::Vector{<:Number}, p::AbstractModelTemp{true}) = @inbounds @views Y[p.ind.T]
+@inline calc_T(::Vector{<:Number}, p::AbstractModelTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
+@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
+@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
 
-calc_η_plating(Y::Vector{<:Number},p::AbstractParam) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+calc_η_plating(Y::Vector{<:Number},p::AbstractModel) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
 calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
 
-function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractParam)
+function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractModel)
     """
     Calculate the open circuit voltages for the positive & negative electrodes
     """
@@ -44,7 +44,7 @@ function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractParam)
     return return U_p, U_n
 end
 
-function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractParam)
+function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractModel)
     I = calc_I(Y,p)*calc_I1C(p)
     V = calc_V(Y,p)
     
@@ -59,7 +59,7 @@ end
 # Metaprogramming to broadcast calc_x
 for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:K_eff,:η_plating,:OCV,:R_internal)
     name = "calc_$x"
-    str = "Base.broadcasted(f::typeof($name),  Y::T, p::AbstractParam) where T<:VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = [f(y,p) for y in Y]"
+    str = "Base.broadcasted(f::typeof($name),  Y::T, p::AbstractModel) where T<:VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = [f(y,p) for y in Y]"
 
     str = replace(str, "$(@__MODULE__)."=>"")
     eval(Meta.parse(str))
@@ -74,22 +74,22 @@ end
 @inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_function{method,func}) where {method<:AbstractMethod,T<:Num,func<:Function}     = @inbounds (res[end] = method(Y,p) - run.func(t,Y,YP,p))
 @inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_function{method,func}) where {method<:AbstractMethod,T<:Float64,func<:Function} = @inbounds (val = run.func(t,Y,YP,p); run.value .= val; res[end] = method(Y,p) - val)
 
-@inline function scalar_jacobian(t,Y,YP,γ,p::AbstractParam,run::T) where T<:Union{run_constant,run_function}
+@inline function scalar_jacobian(t,Y,YP,γ,p::AbstractModel,run::T) where T<:Union{run_constant,run_function}
     J = get_jacobian_sparsity(p,run;jac_type=typeof(t))
     J_nzval = @views @inbounds J.nzval[collect(1:length(J.nzval))]
     scalar_jacobian!(J_nzval,t,Y,YP,γ,p,run)
     return J
 end
-@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractParam,::AbstractRun{method_I,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
+@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractModel,::AbstractRun{method_I,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
     J[1] = 1.0
     return nothing
 end
-@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractParam,::AbstractRun{method_V,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
+@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractModel,::AbstractRun{method_V,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
     J[1] = 1.0
     J[2] = -1.0
     return nothing
 end
-@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractParam,::AbstractRun{method_P,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
+@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractModel,::AbstractRun{method_P,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
     I1C = p.θ[:I1C]
     I = calc_I(Y,p)*I1C
     V = calc_V(Y,p)
@@ -99,19 +99,19 @@ end
     return nothing
 end
 
-@inbounds function get_jacobian_sparsity(p::AbstractParam, ::AbstractRun{method_I,<:Any};jac_type::DataType=Float64)
+@inbounds function get_jacobian_sparsity(p::AbstractModel, ::AbstractRun{method_I,<:Any};jac_type::DataType=Float64)
     J = spzeros(jac_type,p.N.tot)
     J[p.ind.I] .= 1
 
     return J
 end
-@inbounds function get_jacobian_sparsity(p::AbstractParam, ::AbstractRun{method_V,<:Any};jac_type::DataType=Float64)
+@inbounds function get_jacobian_sparsity(p::AbstractModel, ::AbstractRun{method_V,<:Any};jac_type::DataType=Float64)
     J = spzeros(jac_type,p.N.tot)
     J[p.ind.Φ_s[[1,end]]] .= 1
 
     return J
 end
-@inbounds function get_jacobian_sparsity(p::AbstractParam, ::AbstractRun{method_P,<:Any};jac_type::DataType=Float64)
+@inbounds function get_jacobian_sparsity(p::AbstractModel, ::AbstractRun{method_P,<:Any};jac_type::DataType=Float64)
     J = spzeros(jac_type,p.N.tot)
     J[p.ind.I] .= 1
     J[p.ind.Φ_s[[1,end]]] .= 1
@@ -162,7 +162,7 @@ end
     return f_new#, inputs
 end
 
-function _get_method_funcs(p::param, run::run_function)
+function _get_method_funcs(p::model, run::run_function)
     θ_sym, Y, YP, t, SOC, I, γ, p_sym, θ_keys = get_symbolic_vars(p; original_keys=p.cache.θ_keys)
     res = similar(Y) .= 0.0
 
@@ -186,7 +186,7 @@ function _get_method_funcs(p::param, run::run_function)
     end
 end
 
-function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys) where T<:run_function
+function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys) where T<:run_function
     scalar_contains_Y_diff = @inbounds !isempty(J_Y[1:p.N.diff].nzval)
     scalar_contains_YP     = !isempty(J_YP.nzval)
 
@@ -196,7 +196,7 @@ function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     """
     Updating the theta vector to ensure any new parameters will be accounted for
     """
-    θ_keys_scalar = @inbounds get_only_θ_used_in_model(θ_sym, θ_keys, res[end])[2]
+    θ_keys_scalar = @inbounds get_only_θ_used_in_sol(θ_sym, θ_keys, res[end])[2]
 
     θ_keys = deepcopy(p.cache.θ_keys)
     @inbounds for key in θ_keys_scalar
@@ -259,7 +259,7 @@ function differentiate_residual_func(p::param,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     return combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,θ_tot,θ_keys,scalar_residual!,scalar_residal_alg!,J_scalar_alg_func,J_sp_alg_scalar)
 end
 
-function truncated_res_diff(p::AbstractParam,ind_differential)
+function truncated_res_diff(p::AbstractModel,ind_differential)
     path = strings_directory_func(p; create_dir=false) * "/f_diff.jl"
     str_old = join(readlines(path), "\n");
 
@@ -292,7 +292,7 @@ function truncated_res_diff(p::AbstractParam,ind_differential)
     return f_new
 end
 
-function _get_method_funcs_no_differentiation(p::param, run::AbstractRun)
+function _get_method_funcs_no_differentiation(p::model, run::AbstractRun)
     J_sp_scalar = get_jacobian_sparsity(p,run)
     θ_tot = p.cache.θ_tot
     θ_keys = p.cache.θ_keys
@@ -398,10 +398,10 @@ function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,
     return J
 end
 
-function get_method_funcs!(p::param,run::run_constant{method,<:Any}) where method<:AbstractMethod
+function get_method_funcs!(p::model,run::run_constant{method,<:Any}) where method<:AbstractMethod
     p.funcs.Dict_constant[method] = _get_method_funcs_no_differentiation(p,run)
 end
-function get_method_funcs!(p::param,run::run_function{method,func}) where {method<:AbstractMethod,func<:Function}
+function get_method_funcs!(p::model,run::run_function{method,func}) where {method<:AbstractMethod,func<:Function}
     if !haskey(p.funcs.Dict_function,method)
         p.funcs.Dict_function[method] = Dict{DataType,jacobian_combined}()
     end
@@ -474,7 +474,7 @@ end
     scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::param{<:jacobian_AD},run) where {T1<:Function,T2,T3<:Function}
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:Function}
     J.scalar_func(J.J_scalar,t,Y,YP,γ,J.θ_tot)
     res_FD = J.base_func.f!
     if size(J.sp) === (p.N.alg,p.N.alg)
@@ -489,7 +489,7 @@ end
     J.J_base .= J.base_func.sp.nzval
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::param{<:jacobian_AD},run) where {T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
     scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
     res_FD = J.base_func.f!
     if size(J.sp) === (p.N.alg,p.N.alg)

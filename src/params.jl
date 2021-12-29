@@ -4,7 +4,7 @@ export LCO, NMC
 
 function LCO(θ, funcs)
     ## parameters section
-    # everything here can be modified without regenerating the model/jacobian.
+    # everything here can be modified without regenerating the sol/jacobian.
     
     # Solid diffusion coefficient [m/s²]
     θ[:D_sp] = 1e-14
@@ -255,7 +255,7 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
     opts = options_model()
     # Initial state of charge for a new simulation between 0 and 1
     opts.SOC = SOC # defined above
-    # Saving model states is expensive. What states do you want to keep? See the output of model below for more info. Must be a tuple
+    # Saving sol states is expensive. What states do you want to keep? See the output of sol below for more info. Must be a tuple
     opts.outputs = (:t, :V)
     # Absolute tolerance of DAE solver
     opts.abstol = 1e-6
@@ -275,7 +275,7 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
     opts.tstops = Float64[]
     # For input functions, times when there is a known discontinuity. Unknown discontinuities are handled automatically but less efficiently
     opts.tdiscon = Float64[]
-    # :interpolate or :extrapolate when interpolating the model
+    # :interpolate or :extrapolate when interpolating the sol
     opts.interp_bc = :interpolate
 
 
@@ -293,7 +293,7 @@ end
 
 function NMC(θ, funcs)
     ## parameters section
-    # everything here can be modified without regenerating the model/jacobian.
+    # everything here can be modified without regenerating the sol/jacobian.
     
     # Solid diffusion coefficient [m/s²]
     θ[:D_sp] = 2e-14
@@ -472,7 +472,7 @@ function system_NMC_LiC6(θ, funcs, cathode, anode;
     opts = options_model()
     # Initial state of charge for a new simulation between 0 and 1
     opts.SOC = SOC # defined above
-    # Saving model states is expensive. What states do you want to keep? See the output of model below for more info. Must be a tuple
+    # Saving sol states is expensive. What states do you want to keep? See the output of sol below for more info. Must be a tuple
     opts.outputs = (:t, :V)
     # Absolute tolerance of DAE solver
     opts.abstol = 1e-6
@@ -492,7 +492,7 @@ function system_NMC_LiC6(θ, funcs, cathode, anode;
     opts.tstops = Float64[]
     # For input functions, times when there is a known discontinuity. Unknown discontinuities are handled automatically but less efficiently
     opts.tdiscon = Float64[]
-    # :interpolate or :extrapolate when interpolating the model
+    # :interpolate or :extrapolate when interpolating the sol
     opts.interp_bc = :interpolate
 
 
