@@ -28,11 +28,11 @@ simulate!(sol, p, 1800, V=:hold, I_min=1/20)
 PETLION output
   --------
   Runs:    I → V
-  Time:    2445.64 s
+  Time:    2440.2 s
+  Current: 0.1957C
   Voltage: 4.1 V
-  Current: 0.1921C
-  Power:   23.023 W
-  SOC:     1.0
+  Power:   23.4559 W
+  SOC:     1.0001
   Exit:    Above maximum SOC limit
 ```
 
