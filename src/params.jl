@@ -252,7 +252,7 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
     bounds.c_e_min = NaN
 
 
-    opts = options_model()
+    opts = options_simulation()
     # Initial state of charge for a new simulation between 0 and 1
     opts.SOC = SOC # defined above
     # Saving sol states is expensive. What states do you want to keep? See the output of sol below for more info. Must be a tuple
@@ -469,7 +469,7 @@ function system_NMC_LiC6(θ, funcs, cathode, anode;
     bounds.c_e_min = NaN
 
 
-    opts = options_model()
+    opts = options_simulation()
     # Initial state of charge for a new simulation between 0 and 1
     opts.SOC = SOC # defined above
     # Saving sol states is expensive. What states do you want to keep? See the output of sol below for more info. Must be a tuple

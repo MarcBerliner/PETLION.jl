@@ -84,7 +84,7 @@ struct res_FD{T<:Function} <: Function
     N::discretizations_per_section
 end
 function (res_FD::res_FD{T})(res::AbstractVector{<:Number}, Y::AbstractVector{<:Number}) where T<:Function
-    if length(Y) === res_FD.N.tot
+    if length(Y) == res_FD.N.tot
         Y_new = Y
     else
         Y_new = zeros(eltype(Y), length(res_FD.Y_cache))
@@ -102,7 +102,7 @@ end
 @inline function (jac::jacobian_AD{T})(t,Y,YP,γ::Float64,p::P,run) where {T<:Function,P<:AbstractModel}
     J = jac.sp
     forwarddiff_color_jacobian!(J, jac.f!, Y, jac.jac_cache)
-    if size(J) === (p.N.tot-1,p.N.tot)
+    if size(J) == (p.N.tot-1,p.N.tot)
         @inbounds for i in 1:p.N.diff
             J[i,i] += -γ
         end
@@ -123,7 +123,7 @@ struct jacobian_combined{
     J_scalar::SubArray{Float64, 1, Vector{Float64}, Tuple{Vector{Int64}}, false}
     θ_tot::Vector{Float64}
     θ_keys::Vector{Symbol}
-    L::T4
+    factor::T4
 end
 Base.getindex(J::jacobian_combined,i...) = getindex(J.sp,i...)
 Base.axes(J::jacobian_combined,i...) = axes(J.sp,i...)
@@ -150,7 +150,68 @@ struct Jac_and_res{T<:Sundials.IDAIntegrator}
     int::Vector{T}
 end
 
-Base.@kwdef mutable struct boundary_stop_conditions
+Base.@kwdef mutable struct boundary_stop_prev_values
+    t_final_interp_frac::Float64 = +1.0
+    V::Float64 = -1.0
+    SOC::Float64 = -1.0
+    T::Float64 = -1.0
+    c_s_n::Float64 = -1.0
+    I::Float64 = -1.0
+    η_plating::Float64 = -1.0
+    c_e_min::Float64 = -1.0
+    dfilm::Float64 = -1.0
+end
+
+function create_immutable_version(structure::DataType; str_replacements=(""=>"",), conv_replacements=(""=>"",))
+    """
+    Immutable versions of struct can be beneficial for performance. This function
+    creates an immutable version of mutable structures with "_immutable" appended to the end.
+    `str_replacements` uses the `replace` function to substitute string values in the evaluated
+    struct.
+    """
+
+    name = String(Symbol(structure))
+    fields = String.(fieldnames(structure))
+    types = String.(Symbol.(fieldtypes(structure)))
+    
+    args = join([field * "::" * type for (field,type) in zip(fields,types)], "\n")
+
+    super = supertype(structure)
+
+    # string to create new struct
+    str_immutable = "struct $(name)_immutable <: $super
+    $(args)
+    end"
+
+    if str_replacements isa Pair{String, String}
+        str_replacements = (str_replacements,)
+    end
+    if conv_replacements isa Pair{String, String}
+        conv_replacements = (conv_replacements,)
+    end
+
+    
+    # string to convert the mutable struct to the immutable struct  
+    conversion = "$(name)_immutable(x::$(name)) = $(name)_immutable($(join(map(field->"x.$field", fields), ",")))"
+    
+    for replacement in str_replacements
+        str_immutable = replace(str_immutable, replacement)
+    end
+    for replacement in conv_replacements
+        conversion = replace(conversion, replacement)
+    end
+
+    # The names cannot be prepended by "PETLION.", otherwise it creates errors
+    str_immutable = replace(str_immutable, "$(@__MODULE__)."=>"")
+    conversion = replace(conversion, "$(@__MODULE__)."=>"")
+
+    eval.(Meta.parse.((str_immutable,conversion)))
+
+    return nothing
+end
+
+abstract type AbstractStopConditions end
+Base.@kwdef mutable struct boundary_stop_conditions <: AbstractStopConditions
     V_max::Float64 = -1.0
     V_min::Float64 = -1.0
     SOC_max::Float64 = -1.0
@@ -162,32 +223,9 @@ Base.@kwdef mutable struct boundary_stop_conditions
     η_plating_min::Float64 = NaN
     c_e_min::Float64 = NaN
     dfilm_max::Float64 = NaN
-    t_final_interp_frac::Float64 = +1.0
-    V_prev::Float64 = -1.0
-    SOC_prev::Float64 = -1.0
-    T_prev::Float64 = -1.0
-    c_s_n_prev::Float64 = -1.0
-    I_prev::Float64 = -1.0
-    η_plating_prev::Float64 = -1.0
-    c_e_min_prev::Float64 = -1.0
-    dfilm_prev::Float64 = -1.0
+    prev::boundary_stop_prev_values = boundary_stop_prev_values()
 end
-
-@inline function boundary_stop_conditions(V_max::Number, V_min::Number, SOC_max::Number, SOC_min::Number, T_max::Number, c_s_n_max::Number, I_max::Number, I_min::Number, η_plating_min::Number, c_e_min::Number, dfilm_max::Number)
-    boundary_stop_conditions(
-        Float64(V_max),
-        Float64(V_min),
-        Float64(SOC_max),
-        Float64(SOC_min),
-        Float64(T_max),
-        Float64(c_s_n_max),
-        Float64(I_max),
-        Float64(I_min),
-        Float64(η_plating_min),
-        Float64(c_e_min),
-        Float64(dfilm_max),
-        +1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0)
-end
+create_immutable_version(boundary_stop_conditions; conv_replacements=", x.prev" => ", x.$(fieldtypes(boundary_stop_conditions)[end])()")
 
 Base.@kwdef mutable struct _funcs_numerical
     rxn_p::Function = emptyfunc
@@ -224,7 +262,7 @@ options_numerical(temp,solid_diff,Fickian,age,x...) =
 const states_logic = model_states{
     Bool,
     Bool,
-    Tuple
+    <:Tuple
 }
 
 const indices_states = model_states{
@@ -233,49 +271,8 @@ const indices_states = model_states{
     Nothing,
 }
 
-function create_immutable_version(structure::DataType, replacements=(""=>"",))
-    """
-    Immutable versions of struct can be beneficial for performance. This function
-    creates an immutable version of mutable structures with "_immutable" appended to the end.
-    `replacements` uses the `replace` function to substitute string values in the evaluated
-    struct.
-    """
-
-    name = String(Symbol(structure))
-    fields = String.(fieldnames(structure))
-    types = String.(Symbol.(fieldtypes(structure)))
-
-    args = join([field * "::" * type for (field,type) in zip(fields,types)], "\n")
-
-    super = supertype(structure)
-
-    # string to create new struct
-    str_immutable = "struct $(name)_immutable <: $super
-    $(args)
-    end"
-
-    if replacements isa Pair{String, String}
-        replacements = (replacements,)
-    end
-
-    for replacement in replacements
-        str_immutable = replace(str_immutable, replacement)
-    end
-
-    # string to convert the mutable struct to the immutable struct  
-    conversion = "$(name)_immutable(x::$(name)) = $(name)_immutable($(join(map(field->"x.$field", fields), ",")))"
-
-    # The names cannot be prepended by "PETLION.", otherwise it creates errors
-    str_immutable = replace(str_immutable, "$(@__MODULE__)."=>"")
-    conversion = replace(conversion, "$(@__MODULE__)."=>"")
-
-    eval.(Meta.parse.((str_immutable,conversion)))
-
-    return nothing
-end
-
 abstract type AbstractOptionsModel end
-Base.@kwdef mutable struct options_model <: AbstractOptionsModel
+Base.@kwdef mutable struct options_simulation <: AbstractOptionsModel
     outputs::Tuple = (:t, :V)
     SOC::Number = 1.0
     abstol::Float64 = 1e-6
@@ -291,12 +288,12 @@ Base.@kwdef mutable struct options_model <: AbstractOptionsModel
     tdiscon::Vector{Float64} = Float64[]
     interp_bc::Symbol = :interpolate
     save_start::Bool = false
-    var_keep::states_logic = model_states_logic()
+    var_keep::states_logic = model_states_logic(outputs)[1]
     stop_function::Function = (x...) -> nothing
     calc_integrator::Bool = false
 end
 
-create_immutable_version(options_model, (
+create_immutable_version(options_simulation; str_replacements=(
     "_immutable" =>"_immutable{T<:Function}",
     "stop_function::Function" => "stop_function::T",
     ))
@@ -311,17 +308,14 @@ end
 struct cache_run
     θ_tot::Vector{Float64}
     θ_keys::Vector{Symbol}
-    cache_name::String
     state_labels::Vector{Symbol}
     vars::Tuple
-    outputs_tot::Tuple
     save_start_dict::Dict{save_start_info,Vector{Float64}}
     Y0::Vector{Float64}
     YP0::Vector{Float64}
     res::Vector{Float64}
     Y_alg::Vector{Float64}
     id::Vector{Int64}
-    constraints::Vector{Int64}
 end
 
 struct model_funcs{T1<:Function,T2<:Function,T3<:Function,T4<:AbstractJacobian,T5<:AbstractJacobian}
@@ -345,7 +339,7 @@ struct model{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractModel{T
     numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
     ind::indices_states
-    opts::options_model
+    opts::options_simulation
     bounds::boundary_stop_conditions
     cache::cache_run
     funcs::model_funcs{<:Function,<:Function,<:Function,T,<:AbstractJacobian}
@@ -368,7 +362,7 @@ struct model_skeleton{temp,solid_diff,Fickian,age} <: AbstractModel{AbstractJaco
     numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
     ind::indices_states
-    opts::options_model
+    opts::options_simulation
     bounds::boundary_stop_conditions
     cache::cache_run
 end
@@ -379,31 +373,31 @@ struct run_results{T<:AbstractRun}
     info::run_info
     run_index::UnitRange{Int64}
     int::Sundials.IDAIntegrator
-    opts::options_model_immutable
-    bounds::boundary_stop_conditions
+    opts::options_simulation_immutable
+    bounds::boundary_stop_conditions_immutable
     N::discretizations_per_section
     numerics::options_numerical
     p::model
 end
 
-const sol_output = model_states{
+const solution = model_states{
     Array{Float64,1},
     VectorOfArray{Float64,2,Array{Array{Float64,1},1}},
     Array{run_results,1},
 }
 
-Base.length(sol::sol_output) = length(sol.results)
-Base.isempty(sol::sol_output) = isempty(sol.results)
-function Base.getindex(sol::T, i1::Int) where T<:sol_output
+Base.length(sol::solution) = length(sol.results)
+Base.isempty(sol::solution) = isempty(sol.results)
+function Base.getindex(sol::T, i1::Int) where T<:solution
     ind = (sol.results[i1].run_index) .+ (1-sol.results[1].run_index[1])
-    T([fields === :results ? [sol.results[i1]] : (x = getproperty(sol, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
+    T([fields == :results ? [sol.results[i1]] : (x = getproperty(sol, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
 end
-function Base.getindex(sol::T, i::UnitRange{Int64}) where T<:sol_output
+function Base.getindex(sol::T, i::UnitRange{Int64}) where T<:solution
     ind = ((sol.results[i[1]].run_index[1]):(sol.results[i[end]].run_index[end])) .+ (1-sol.results[1].run_index[1])
-    T([fields === :results ? sol.results[i] : (x = getproperty(sol, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
+    T([fields == :results ? sol.results[i] : (x = getproperty(sol, fields); length(x) > 1 ? x[ind] : x) for fields in fieldnames(T)]...)
 end
-Base.lastindex(sol::T) where T<:sol_output = length(sol)
-Base.firstindex(::T) where T<:sol_output = 1
+Base.lastindex(sol::T) where T<:solution = length(sol)
+Base.firstindex(::T) where T<:solution = 1
 
 Base.empty!(f::model_funcs) = ([empty!(getproperty(f,field)) for (_type,field) in zip(fieldtypes(model_funcs),fieldnames(model_funcs)) if _type <: Dict];nothing)
 Base.empty!(p::model) = empty!(p.funcs)
@@ -426,7 +420,7 @@ const STATE_NAMES = Dict{Symbol,String}(
 )
 
 ## Modifying Base functions
-@recipe function plot(sol::sol_output, x_name::Symbol=:V;linewidth=2,legend=false)
+@recipe function plot(sol::solution, x_name::Symbol=:V;linewidth=2,legend=false)
     x = getproperty(sol, x_name)
     if x isa AbstractMatrix
         x = x'
@@ -509,7 +503,7 @@ function Base.show(io::IO, p::AbstractModel)
     end
     
     # spacing
-    sp = p.numerics.solid_diffusion === :Fickian ? "  " : ""
+    sp = p.numerics.solid_diffusion == :Fickian ? "  " : ""
 
     # create the header for model
     if p isa model_skeleton
@@ -531,7 +525,7 @@ function Base.show(io::IO, p::AbstractModel)
     "  --------\n",
     "  Temperature:     $(p.numerics.temperature)\n",
     "  Solid diffusion: $(p.numerics.solid_diffusion)",
-    p.numerics.solid_diffusion === :Fickian ? 
+    p.numerics.solid_diffusion == :Fickian ? 
     ", $(p.numerics.Fickian_method)\n" : "\n",
     "  Aging:           $(p.numerics.aging)\n",
     show_bounds("Voltage", p.bounds.V_min, p.bounds.V_max, " V"),
@@ -544,11 +538,11 @@ function Base.show(io::IO, p::AbstractModel)
     p.numerics.temperature ?
     "  N.a: $sp$(p.N.a)\n" : "",
     "  N.p: $sp$(p.N.p)\n",
-    p.numerics.solid_diffusion === :Fickian ?
+    p.numerics.solid_diffusion == :Fickian ?
     "  N.r_p: $(p.N.r_p)\n" : "",
     "  N.s: $sp$(p.N.s)\n",
     "  N.n: $sp$(p.N.n)\n",
-    p.numerics.solid_diffusion === :Fickian ?
+    p.numerics.solid_diffusion == :Fickian ?
     "  N.r_n: $(p.N.r_n)\n" : "",
     p.numerics.temperature ?
     "  N.z: $sp$(p.N.z)\n" : "",
@@ -561,7 +555,7 @@ function Base.show(io::IO, ind::indices_states)
     
     outputs_tot = Symbol[]
     @inbounds for (name,_type) in zip(fieldnames(typeof(ind)), fieldtypes(typeof(ind)))
-        if _type === index_state
+        if _type == index_state
             push!(outputs_tot, name)
         end
     end
@@ -627,15 +621,18 @@ function Base.show(io::IO, run::T) where {T<:AbstractRun}
     
     print(io, str)
 end
-(funcs::model_funcs)(sol::sol_output) = (@assert !isempty(sol); (@inbounds funcs(sol.results[end].run)))
+(funcs::model_funcs)(sol::solution) = (@assert !isempty(sol); (@inbounds funcs(sol.results[end].run)))
 Base.show(io::IO, ::model_funcs) = println(io,"$(@__MODULE__) sol functions")
-function Base.show(io::IO, sol::sol_output)
+function Base.show(io::IO, sol::solution)
     results = sol.results
-    p = results[1].p
-    Y = @views @inbounds sol.Y[end]
+    if !isempty(sol)
+        p = results[1].p
+        Y = @views @inbounds sol.Y[end]
+        t, time_unit = time_units(sol.t[end])
+    end
     function str_runs()
     
-        str = length(results) === 1 ? "  Run: " : "  Runs:"
+        str = length(results) == 1 ? "  Run: " : "  Runs:"
         str *= " "^4
 
         methods = method_name.([result.run for result in results];shorthand=true)
@@ -643,7 +640,7 @@ function Base.show(io::IO, sol::sol_output)
         counts = ones(Int64, length(methods))
 
         @inbounds for i in length(counts)-1:-1:1
-            if methods[i] === methods[i+1]
+            if methods[i] == methods[i+1]
                 counts[i] += counts[i+1]
                 deleteat!(methods, i+1)
                 deleteat!(counts, i+1)
@@ -652,7 +649,7 @@ function Base.show(io::IO, sol::sol_output)
 
         max_methods = 6
         show_final = 3
-        methods .= @inbounds [(counts[i] === 1 ? methods[i] : "$(counts[i]) $(methods[i])") for i in 1:length(methods)]
+        methods .= @inbounds [(counts[i] == 1 ? methods[i] : "$(counts[i]) $(methods[i])") for i in 1:length(methods)]
         
         if length(methods) > (max_methods+1)
             first_range = 1:(max_methods-show_final)
@@ -670,9 +667,7 @@ function Base.show(io::IO, sol::sol_output)
         return str
     end
 
-    t, time_unit = time_units(sol.t[end])
-
-    title = "$(@__MODULE__) output"
+    title = "$(@__MODULE__) simulation"
     if !isempty(sol)
         str = @views @inbounds string(
                 "$title\n",
@@ -683,10 +678,10 @@ function Base.show(io::IO, sol::sol_output)
                 "  Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
                 "  Power:   $(round(calc_P(Y,p);        digits = 4)) W\n",
                 "  SOC:     $(round(sol.SOC[end];     digits = 4))\n",
-                !(p.numerics.aging === false) ? 
+                !(p.numerics.aging == false) ? 
                 "  SOH:     $(round(sol.SOH[end];     digits = 4))\n"
                 : "",
-                !(p.numerics.temperature === false) ? 
+                !(p.numerics.temperature == false) ? 
                 "  Temp.:   $(round(temperature_weighting(calc_T(Y,p),p)-273.15; digits = 4)) °C\n"
                 : "",
                 "  Exit:    $(sol.results[end].info.exit_reason)",

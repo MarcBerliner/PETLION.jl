@@ -23,10 +23,10 @@ import LinearAlgebra
 using BSON: @load, @save
 
 export simulate, simulate!
-export sol_output
+export solution
 
 export petlion
-export boundary_stop_conditions, options_model, discretizations_per_section, options_numerical
+export boundary_stop_conditions, options_simulation, discretizations_per_section, options_numerical
 
 export D_s_eff_isothermal, D_s_eff
 export rxn_rate_isothermal, rxn_rate
@@ -60,5 +60,9 @@ include("physics_equations/numerical_tools.jl")
 const Params = petlion
 const run_model = simulate
 const run_model! = simulate!
+const options_model = options_simulation
+const model_output = solution
+
+export Params, run_model, run_model!, options_model
 
 end # module

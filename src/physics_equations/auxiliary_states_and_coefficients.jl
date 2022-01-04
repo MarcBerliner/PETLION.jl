@@ -193,10 +193,10 @@ function build_η!(states, p::AbstractModel)
         η_n .+= -j.n.*F.*p.θ[:R_film_n]
     end
     
-    if     p.numerics.aging === :SEI
+    if     p.numerics.aging == :SEI
         R_film = p.θ[:R_SEI] .+ film./p.θ[:k_n_aging]
         η_n .+= @. - F*j.n*R_film
-    elseif p.numerics.aging === :R_aging
+    elseif p.numerics.aging == :R_aging
         #η_n .+= @. - F*j.n*p.θ[:R_aging]
     end
 
@@ -520,11 +520,11 @@ end
     """
     Calculate the SOC (dimensionless fraction)
     """
-    c_s_avg_sum = @views @inbounds mean(Y[p.ind.c_s_avg[(p.numerics.solid_diffusion === :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end]])
+    c_s_avg_sum = @views @inbounds mean(Y[p.ind.c_s_avg[(p.numerics.solid_diffusion == :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end]])
 
     return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
 end
-@inline function calc_SOC(SOC::E, Y::T, t::E, sol::sol_output, p::model) where {E<:Float64,T<:Vector{E}}
+@inline function calc_SOC(SOC::E, Y::T, t::E, sol::solution, p::model) where {E<:Float64,T<:Vector{E}}
     """
     Calculate the SOC (dimensionless fraction) using the trapezoidal rule
     """
@@ -589,9 +589,9 @@ end
 function _c_s_indices(p::AbstractModel,ind_p::T,ind_n::T,section::Symbol,surf::Bool,offset::Bool) where T<:AbstractRange{Int64}
     ind = p.ind.c_s_avg
 
-    if     section === :p
+    if     section == :p
         ind_final = surf ? ind.p[ind_p] : ind.p
-    elseif section === :n
+    elseif section == :n
         ind_final = surf ? ind.n[ind_n] : ind.n
     else
         error("Section must be either `:p` or `:n`.")

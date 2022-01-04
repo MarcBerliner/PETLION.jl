@@ -2,22 +2,22 @@
     I::current,
     V::voltage,
     P::power,
-    t0, tf::Q, p::model, sol::sol_output) where {
+    t0, tf::Q, p::model, sol::solution) where {
     current  <: Union{Number,Symbol,Function,Nothing},
     voltage  <: Union{Number,Symbol,Function,Nothing},
     power    <: Union{Number,Symbol,Function,Nothing},
     Q,
     }
 
-    if !( sum(!(method === Nothing) for method in (current,voltage,power)) === 1 )
+    if !( sum(!(method == Nothing) for method in (current,voltage,power)) == 1 )
         error("Cannot select more than one input")
     end
 
-    if     !(current === Nothing)
+    if     current ≠ Nothing
         method, input, name = method_I(), I, "I"
-    elseif !(voltage === Nothing)
+    elseif voltage ≠ Nothing
         method, input, name = method_V(), V, "V"
-    elseif !(power === Nothing)
+    elseif power ≠ Nothing
         method, input, name = method_P(), P, "P"
     else
         error("Method not supported")
@@ -28,7 +28,7 @@
     end
 
     value = [0.0]
-    tf = (Q === Nothing ? 1e6 : (@inbounds Float64(tf[end])))
+    tf = (Q == Nothing ? 1e6 : (@inbounds Float64(tf[end])))
     
     run_type = run_determination(method, input)
     run      = run_type(input,value,method,t0,tf,name,run_info())
@@ -39,33 +39,32 @@ end
 @inline run_determination(::AbstractMethod,::Any)      = run_constant
 @inline run_determination(::AbstractMethod,::Function) = run_function
 
-function custom_res!(p::model,x::T,func_RHS::Q,sol::sol_output;kw...) where {T<:Function,Q<:Function}
+function custom_res!(p::model,x::T,func_RHS::Q,sol::solution;kw...) where {T<:Function,Q<:Function}
     func = redefine_func(x)
     p.θ[:_residual_val] = 0.0
     return (t,Y,YP,p) -> func_RHS(t,Y,YP,p) - func(t,Y,YP,p)
 end
-function custom_res!(p::model,x::T,func_RHS::Q,sol::sol_output;kw...) where {T<:Number,Q<:Function}
+function custom_res!(p::model,x::T,func_RHS::Q,sol::solution;kw...) where {T<:Number,Q<:Function}
     p.θ[:_residual_val] = Float64(x)
     return func_RHS
 end
-function custom_res!(p::model,x::T,func_RHS::Q,sol::sol_output;hold_val::Number=0.0,kw...) where {T<:Symbol,Q<:Function}
+function custom_res!(p::model,x::T,func_RHS::Q,sol::solution;hold_val::Number=0.0,kw...) where {T<:Symbol,Q<:Function}
     if check_is_hold(x,sol)
         p.θ[:_residual_val] = hold_val
     end
     return func_RHS
 end
 
-@inline within_bounds(run::AbstractRun) = run.info.flag === -1
+@inline within_bounds(run::AbstractRun) = run.info.flag == -1
 
-@inline function initialize_model!(sol::model_struct, p::model{jac}, run::T, bounds::boundary_stop_conditions, opts::AbstractOptionsModel, res_I_guess=nothing) where {jac<:AbstractJacobian,method<:AbstractMethod,T<:AbstractRun{method,<:Any},model_struct<:Union{sol_output,Vector{Float64}}}
+@inline function initialize_simulation!(sol::model_struct, p::model{jac}, run::T, bounds::boundary_stop_conditions_immutable, opts::AbstractOptionsModel, res_I_guess=nothing) where {jac<:AbstractJacobian,method<:AbstractMethod,T<:AbstractRun{method,<:Any},model_struct<:Union{solution,Vector{Float64}}}
     if !haskey(p.funcs,run)
         get_method_funcs!(p,run)
         funcs = p.funcs(run)
     end
     funcs = p.funcs(run)
     θ_tot = funcs.J_full.θ_tot
-    update_θ!(θ_tot, funcs.J_full.θ_keys, p.θ)
-    if jac === jacobian_AD; (@views @inbounds (p.cache.θ_tot .= θ_tot[1:length(p.cache.θ_tot)])) end
+    update_θ!(θ_tot, funcs.J_full.θ_keys, p)
     
     cache = p.cache
     
@@ -76,14 +75,14 @@ end
     check_errors_parameters_runtime(p, opts)
     
     # if this is a new sol?
-    new_run = model_struct === Array{Float64,1} || isempty(sol)
+    new_run = model_struct == Array{Float64,1} || isempty(sol)
 
     ## initializing the states vector Y and time t
     Y0 = keep_Y ? zeros(Float64,length(cache.Y0)) : cache.Y0
     YP0 = cache.YP0
-    if model_struct === Array{Float64,1}
-        Y0 = deepcopy(sol)
-        sol = sol_output()
+    if model_struct == Array{Float64,1}
+        Y0 = copy(sol)
+        sol = solution()
         SOC = calc_SOC(Y0, p)
     elseif new_run
         SOC = opts.SOC
@@ -192,10 +191,10 @@ end
     return nothing
 end
 
-@inline function exit_simulation!(p::R1, sol::R2, run::R3, bounds::R4, int::R5, opts::R6; cancel_interp::Bool=false) where {R1<:model,R2<:sol_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
+@inline function exit_simulation!(p::R1, sol::R2, run::R3, bounds::R4, int::R5, opts::R6; cancel_interp::Bool=false) where {R1<:model,R2<:solution,R3<:AbstractRun,R4<:boundary_stop_conditions_immutable,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
     # if a stop condition (besides t = tf) was reached
     if !cancel_interp
-        if opts.interp_final && !(run.info.flag === 0) && int.t > 1
+        if opts.interp_final && !(run.info.flag == 0) && int.t > 1
             interp_final_points!(p, sol, run, bounds, int, opts)
         else
             set_var!(sol.Y, opts.var_keep.Y ? copy(int.u.v) : int.u.v, opts.var_keep.Y)
@@ -226,16 +225,16 @@ end
     return nothing
 end
 
-@views @inbounds @inline function interp_final_points!(p::R1, sol::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:model,R2<:sol_output,R3<:AbstractRun,R4<:boundary_stop_conditions,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
+@views @inbounds @inline function interp_final_points!(p::R1, sol::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:model,R2<:solution,R3<:AbstractRun,R4<:boundary_stop_conditions_immutable,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
     if opts.var_keep.YP
-        YP = length(sol.YP) > 1 ? bounds.t_final_interp_frac.*(sol.YP[end] .- sol.YP[end-1]) .+ sol.YP[end-1] : sol.YP[end]
+        YP = length(sol.YP) > 1 ? bounds.prev.t_final_interp_frac.*(sol.YP[end] .- sol.YP[end-1]) .+ sol.YP[end-1] : sol.YP[end]
     else
         YP = Float64[]
     end
     
-    t = bounds.t_final_interp_frac*(int.t - int.tprev) + int.tprev
+    t = bounds.prev.t_final_interp_frac*(int.t - int.tprev) + int.tprev
     
-    set_var!(sol.Y,  bounds.t_final_interp_frac.*(int.u.v .- sol.Y[end]) .+ sol.Y[end], opts.var_keep.Y)
+    set_var!(sol.Y,  bounds.prev.t_final_interp_frac.*(int.u.v .- sol.Y[end]) .+ sol.Y[end], opts.var_keep.Y)
     set_vars!(sol, p, sol.Y[end], YP, t, run, opts, bounds; modify! = set_var_last!)
     
     return nothing
@@ -258,7 +257,7 @@ end
     return key, key_exists
 end
 @inline initialize_states!(p::model, Y0::T, YP0::T, run::AbstractRun, opts::AbstractOptionsModel, funcs::Jac_and_res; kw...) where {T<:Vector{Float64}} = newtons_method!(p,Y0,YP0,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg;kw...)
-@inline function initialize_states!(p::model, Y0::T, YP0::T, run::AbstractRun, opts::AbstractOptionsModel, funcs::Jac_and_res, SOC::Float64;kw...) where {T<:Vector{Float64}}
+@inline function initialize_states!(p::model, Y0::T, YP0::T, run::AbstractRun, opts::AbstractOptionsModel, funcs::Jac_and_res, SOC::Number;kw...) where {T<:Vector{Float64}}
     if opts.save_start
         key, key_exists = save_start_init!(Y0, run, p, SOC)
         
@@ -274,32 +273,32 @@ end
     return nothing
 end
 
-@inline factorization!(L::SuiteSparse.UMFPACK.UmfpackLU{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = LinearAlgebra.lu!(L,A)
-@inline factorization!(L::KLUFactorization{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = klu!(L,A)
+@inline factorize!(factor::SuiteSparse.UMFPACK.UmfpackLU{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = LinearAlgebra.lu!(factor,A)
+@inline factorize!(factor::KLUFactorization{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = klu!(factor,A)
 @inline function newtons_method!(p::model,Y::R1,YP::R1,run,opts::AbstractOptionsModel,R_alg::T1,R_diff::T2,J_alg::T3;
     itermax::Int64=100, t::Float64=0.0
     ) where {R1<:Vector{Float64},T1<:residual_combined,T2<:residual_combined,T3<:jacobian_combined}
 
-    res   = p.cache.res
-    Y_old = p.cache.Y_alg
-    Y_new = @views @inbounds Y[p.N.diff+1:end]
-    YP   .= 0.0
-    J     = J_alg.sp
-    γ     = 0.0
-    L     = J_alg.L # factorization
+    res    = p.cache.res
+    Y_old  = p.cache.Y_alg
+    Y_new  = @views @inbounds Y[p.N.diff+1:end]
+    YP    .= 0.0
+    J      = J_alg.sp
+    γ      = 0.0
+    factor = J_alg.factor
     
     # starting loop for Newton's method
     @inbounds for iter in 1:itermax
         # updating res, Y, and J
         R_alg(res,t,Y,YP,p,run)
         J_alg(t,Y,YP,γ,p,run)
-        factorization!(L, J)
+        factorize!(factor, J)
         
         Y_old .= Y_new
-        Y_new .-= L\res
+        Y_new .-= factor\res
         if norm(Y_old .- Y_new) < opts.reltol_init # || maximum(abs, res) < opts.abstol_init
             break
-        elseif iter === itermax
+        elseif iter == itermax
             error("Could not initialize DAE in $itermax iterations.")
         end
     end
@@ -317,11 +316,11 @@ Current
     @inbounds run.value .= Y0[p.ind.I[1]] = input
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::sol_output, res_I_guess) where {method<:method_I,in<:Symbol}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::solution, res_I_guess) where {method<:method_I,in<:Symbol}
     input = run.input
     if check_is_hold(input,sol)
         @inbounds run.value .= Y0[p.ind.I[1]] = calc_I((@views @inbounds sol.Y[end]), p)
-    elseif input === :rest
+    elseif input == :rest
         @inbounds run.value .= Y0[p.ind.I[1]] = 0.0
     else
         error("Unsupported input symbol.")
@@ -341,11 +340,11 @@ Power
     @inbounds run.value .= Y0[p.ind.I[1]] = input/(calc_V(Y0,p)*p.θ[:I1C])
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::sol_output, res_I_guess) where {method<:method_P,in<:Symbol}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::solution, res_I_guess) where {method<:method_P,in<:Symbol}
     input = run.input
     if check_is_hold(input,sol)
         @inbounds run.value .= Y0[p.ind.I[1]] = calc_P((@views @inbounds sol.Y[end]), p)
-    elseif input === :rest
+    elseif input == :rest
         @inbounds run.value .= Y0[p.ind.I[1]] = 0.0
     else
         error("Unsupported input symbol.")
@@ -360,7 +359,7 @@ end
 """
 Voltage and η_plating
 """
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::sol_output, res_I_guess) where {method<:method_V,in<:Number}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::solution, res_I_guess) where {method<:method_V,in<:Number}
     input = run.input
     @inbounds run.value .= input
     if !isempty(sol)
@@ -371,7 +370,7 @@ Voltage and η_plating
     end
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::sol_output, res_I_guess) where {method<:method_V,in<:Symbol}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::solution, res_I_guess) where {method<:method_V,in<:Symbol}
     input = run.input
     if check_is_hold(input,sol)
         Y = @views @inbounds sol.Y[end]
@@ -382,7 +381,7 @@ end
     end
     return nothing
 end
-@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_function{method,func},sol::sol_output, res_I_guess) where {method<:method_V,func<:Function}
+@inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_function{method,func},sol::solution, res_I_guess) where {method<:method_V,func<:Function}
     @inbounds run.value .= run.func(0.0,Y0,YP0,p)
     if !isempty(sol)
         @inbounds Y0[p.ind.I[1]] = calc_I((@views @inbounds sol.Y[end]), p)

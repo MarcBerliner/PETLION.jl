@@ -69,7 +69,7 @@ function build_cache(θ, ind, N, numerics, opts)
     """
     outputs_tot = Symbol[]
     @inbounds for (name,_type) in zip(fieldnames(typeof(ind)), fieldtypes(typeof(ind)))
-        if (_type === index_state) push!(outputs_tot, name) end
+        if (_type == index_state) push!(outputs_tot, name) end
     end
     outputs_tot = (outputs_tot...,)
     
@@ -116,7 +116,7 @@ function build_cache(θ, ind, N, numerics, opts)
             x.var_type ∈ (:differential,:algebraic) ? add_label!(var) : nothing
         end
         
-        @assert length(labels) === N.tot
+        @assert length(labels) == N.tot
         
         return labels
     end
@@ -126,7 +126,7 @@ function build_cache(θ, ind, N, numerics, opts)
 
     vars = variables_in_indices()
     
-    opts.var_keep = model_states_logic(opts.outputs, outputs_tot)
+    opts.var_keep = model_states_logic(opts.outputs)[1]
 
     Y0 = zeros(Float64, N.tot)
     YP0 = zeros(Float64, N.tot)
@@ -138,26 +138,19 @@ function build_cache(θ, ind, N, numerics, opts)
         zeros(Int64,N.alg)
         ]
     
-    # not currently used because constraints aren't working with Sundials
-    constraints = zeros(Int64, N.tot)
-    constraints[ind.Φ_s] .= 1 # enforce positivity on solid phase potential in all nodes
-    
     save_start_dict = Dict{save_start_info,Vector{Float64}}()
 
     cache = cache_run(
         θ_tot,
         θ_keys,
-        strings_directory_func(N, numerics),
         variable_labels(),
         vars,
-        outputs_tot,
         save_start_dict,
         Y0,
         YP0,
         res,
         Y_alg,
         id,
-        constraints,
         )
     
     return cache
@@ -189,7 +182,7 @@ function retrieve_states(Y::AbstractArray, p::AbstractModel)
     ind = p.ind
     vars_in_use = p.cache.vars
     
-    vars = p.cache.outputs_tot
+    vars = fieldnames(solution)[findall(fieldtypes(solution) .<: AbstractArray{<:Number})]
 
     sections = Symbol[]
     @inbounds for (field,_type) in zip(fieldnames(index_state), fieldtypes(index_state))
@@ -279,9 +272,9 @@ function state_indices(N, numerics)
         
         if var_type ∈ (:differential, :algebraic)
             tot = tot .+ (N_diff+N_alg)
-            if     var_type === :differential
+            if     var_type == :differential
                 N_diff += length(tot)
-            elseif var_type === :algebraic
+            elseif var_type == :algebraic
                 N_alg  += length(tot)
             end
         end
@@ -307,10 +300,10 @@ function state_indices(N, numerics)
     end
 
     c_e_tot     = 1:(N.p+N.s+N.n)
-    c_s_avg_tot = numerics.solid_diffusion === :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
+    c_s_avg_tot = numerics.solid_diffusion == :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
     T_tot       = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
-    film_tot    = numerics.aging === :SEI ? (1:N.n) : nothing
-    Q_tot       = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
+    film_tot    = numerics.aging == :SEI ? (1:N.n) : nothing
+    Q_tot       = numerics.solid_diffusion == :polynomial ? (1:(N.p+N.n)) : nothing
     j_tot       = 1:(N.p+N.n)
     j_s_tot     = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
     SOH_tot     = numerics.aging ∈ (:SEI, :R_aging) ? 1 : nothing
@@ -319,7 +312,7 @@ function state_indices(N, numerics)
     I_tot       = 1
     
     c_e     = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
-    c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion === :Fickian)
+    c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion == :Fickian)
     T       = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
     film    = add(:film,    film_tot,    (:n,),                :differential)
     Q       = add(:Q,       Q_tot,       (:p, :n),             :differential)
@@ -400,7 +393,7 @@ function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T
         "N.s: $(N.s)";
         "N.n: $(N.n)";
         numerics.temperature                  ? "N.a: $(N.a)\nN.z: $(N.z)" : "";
-        numerics.solid_diffusion === :Fickian ? "N.r_p: $(N.r_p)\nN.r_n: $(N.r_n)" : "";
+        numerics.solid_diffusion == :Fickian ? "N.r_p: $(N.r_p)\nN.r_n: $(N.r_n)" : "";
         ]
     filter!(!isempty,discretization)
     
@@ -432,7 +425,7 @@ function strings_directory_func(N::discretizations_per_section, numerics::T; cre
             "Ns$(N.s)";
             "Nn$(N.n)";
             numerics.temperature                  ? "Na$(N.a)_Nz$(N.z)" : "";
-            numerics.solid_diffusion === :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : "";
+            numerics.solid_diffusion == :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : "";
         ],
         "_"
     )
@@ -463,15 +456,30 @@ function strings_directory_func(p::AbstractModel, x; kw...)
 end
 
 
-@inline function trapz(x::T1,y::T2) where {T1<:AbstractVector,T2<:AbstractVector}
+@inline function trapz(x::T1,y::T2) where {T1<:AbstractVector{<:Number},T2<:AbstractVector{<:Number}}
     """
     Trapezoidal rule with SIMD vectorization
     """
-    @assert length(x) === length(y)
+    @assert length(x) == length(y)
     out = 0.0
     @inbounds @simd for i in 2:length(x)
         out += 0.5*(x[i] - x[i-1])*(y[i] + y[i-1])
     end
+    return out
+end
+@inline function cumtrapz(x::T1,y::T2) where {T1<:AbstractVector{<:Number},T2<:AbstractVector{<:Number}}
+    # Check matching vector length
+    @assert length(x) == length(y)
+    
+    # Initialize Output
+    out = similar(x)
+    out[1] = 0
+
+    # Iterate over arrays
+    @inbounds for i in 2:length(x)
+        out[i] = out[i-1] + 0.5*(x[i] - x[i-1])*(y[i] + y[i-1])
+    end
+    # Return output
     return out
 end
 

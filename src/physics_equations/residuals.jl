@@ -30,18 +30,18 @@ function residuals_PET!(residuals, t, x, ẋ, p::AbstractModel)
     residuals_c_s_avg!(res, states, ∂states, p)
     
     # If the polynomial fit for the surface concentration is used, Q
-    if p.numerics.solid_diffusion === :polynomial
+    if p.numerics.solid_diffusion == :polynomial
         residuals_Q!(res, states, ∂states, p)
     end
 
     # Lithium plating film thickness, film
-    if p.numerics.aging === :SEI
+    if p.numerics.aging == :SEI
         residuals_film!(res, states, ∂states, p)
         residuals_SOH!(res, states, ∂states, p)
     end
 
     # Check if the thermal dynamics are enabled.
-    if p.numerics.temperature === true
+    if p.numerics.temperature == true
         build_heat_generation_rates!(states, p)
         residuals_T!(res, states, ∂states, p)
     end

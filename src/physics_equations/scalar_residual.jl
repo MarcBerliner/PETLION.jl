@@ -124,7 +124,7 @@ end
     maxargs += 1
     @inbounds for m in methods(f)
         val = num_types_in_tuple(m.sig)
-        if val === maxargs
+        if val == maxargs
             maxval = val
             break
         elseif val ≤ maxargs && val > maxval
@@ -143,16 +143,16 @@ end
     Redefine the input function if its arguments aren't (t,Y,YP,p)
     """
     
-    if     args === 4
+    if     args == 4
         f_new = f
         # inputs = (:t,:Y,:YP,:p)
-    elseif args === 3
+    elseif args == 3
         f_new = (t,Y,YP,p) -> f(t,Y,p)
         # inputs = (:t,:Y,:p)
-    elseif args === 2
+    elseif args == 2
         f_new = (t,Y,YP,p) -> f(t,p)
         # inputs = (:t,:p)
-    elseif args === 1
+    elseif args == 1
         f_new = (t,Y,YP,p) -> f(t)
         # inputs = (:t)
     else
@@ -179,7 +179,7 @@ function _get_method_funcs(p::model, run::run_function)
         is_differentiable = false
     end
 
-    if is_differentiable && !(Jac_constant === J_vec)
+    if is_differentiable && !(Jac_constant == J_vec)
         return differentiate_residual_func(p,run,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys)
     else
         return _get_method_funcs_no_differentiation(p,run)
@@ -207,7 +207,7 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
 
     θ_tot      = [p.θ[key] for key in θ_keys]
     θ_sym_slim = [p_sym.θ[key] for key in θ_keys]
-    update_θ!(θ_tot,θ_keys,p.θ)
+    update_θ!(θ_tot,θ_keys,p)
 
     J_scalar_func = eval(build_function(J_vec.nzval,t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
 
@@ -296,7 +296,7 @@ function _get_method_funcs_no_differentiation(p::model, run::AbstractRun)
     J_sp_scalar = get_jacobian_sparsity(p,run)
     θ_tot = p.cache.θ_tot
     θ_keys = p.cache.θ_keys
-    update_θ!(θ_tot,θ_keys,p.θ)
+    update_θ!(θ_tot,θ_keys,p)
     
     J_scalar_func = scalar_jacobian!
     J_sp_base = p.funcs.J_y!.sp
@@ -363,25 +363,25 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
     return Jac_and_res(J_full,R_full,J_alg,R_diff,R_alg,Sundials.IDAIntegrator[])
 end
 
-function factorization(x...;kw...)
+function factorize(x...;kw...)
     method =  Symbol(lowercase(String(options[:FACTORIZATION_METHOD])))
-    if method === :lu
-        L = LinearAlgebra.lu(x...;kw...)
-    elseif method === :klu
-        L = klu(x...;kw...)
+    if method == :lu
+        factor = LinearAlgebra.lu(x...;kw...)
+    elseif method == :klu
+        factor = klu(x...;kw...)
     else
         error("FACTORIZATION_METHOD $(options[:FACTORIZATION_METHOD]) is not supported.")
     end
-    return L
+    return factor
 end
 function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,θ_tot,θ_keys;lu_decomposition=false)
     J_sp = [J_sp_base; J_sp_scalar']
 
     if lu_decomposition
         J_sp.nzval .= rand(length(J_sp.nzval))
-        L = factorization(J_sp)
+        factor = factorize(J_sp)
     else
-        L = factorization(sparse([1],[1],[1.0]))
+        factor = factorize(sparse([1],[1],[1.0]))
     end
 
     ind_base   = findall(J_sp.rowval .< size(J_sp,1))
@@ -393,7 +393,7 @@ function _get_jacobian_combined(J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,
     J_base   = @views @inbounds J_sp.nzval[ind_base]
     J_scalar = @views @inbounds J_sp.nzval[ind_scalar]
 
-    J = jacobian_combined(J_sp,J_base_func,J_base,J_scalar_func,J_scalar,θ_tot,θ_keys,L)
+    J = jacobian_combined(J_sp,J_base_func,J_base,J_scalar_func,J_scalar,θ_tot,θ_keys,factor)
 
     return J
 end
@@ -474,10 +474,10 @@ end
     scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:Function}
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:Function}
     J.scalar_func(J.J_scalar,t,Y,YP,γ,J.θ_tot)
     res_FD = J.base_func.f!
-    if size(J.sp) === (p.N.alg,p.N.alg)
+    if size(J.sp) == (p.N.alg,p.N.alg)
         @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
         Y_new = @views @inbounds Y[p.N.diff+1:end]
         @inbounds res_FD.YP_cache .= 0.0
@@ -489,10 +489,10 @@ end
     J.J_base .= J.base_func.sp.nzval
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::AbstractVector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
     scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
     res_FD = J.base_func.f!
-    if size(J.sp) === (p.N.alg,p.N.alg)
+    if size(J.sp) == (p.N.alg,p.N.alg)
         @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
         Y_new = @views @inbounds Y[p.N.diff+1:end]
         @inbounds res_FD.YP_cache .= 0.0

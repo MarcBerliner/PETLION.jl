@@ -1,8 +1,8 @@
 function load_functions(p::AbstractModel)
-    if     p.numerics.jacobian === :symbolic
+    if     p.numerics.jacobian == :symbolic
         jac_type = jacobian_symbolic
         load_func = load_functions_symbolic
-    elseif p.numerics.jacobian === :AD
+    elseif p.numerics.jacobian == :AD
         jac_type = jacobian_AD
         load_func = load_functions_forward_diff
     end
@@ -209,8 +209,8 @@ function load_functions_forward_diff(p::AbstractModel)
     J_y!     = build_color_jacobian_struct(J_y_sp, f!, p.N.tot-1)
     J_y_alg! = build_color_jacobian_struct(J_y_sp_alg, f_alg!, p.N.alg-1)
 
-    @assert size(J_y!.sp) === (p.N.tot-1,p.N.tot)
-    @assert size(J_y_alg!.sp) === (p.N.alg-1,p.N.alg)
+    @assert size(J_y!.sp) == (p.N.tot-1,p.N.tot)
+    @assert size(J_y_alg!.sp) == (p.N.alg-1,p.N.alg)
 
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys_slim
 end
@@ -314,7 +314,7 @@ function get_only_θ_used_in_model(θ_sym, θ_keys, X...)
     dummy = BitArray{1}(undef, length(θ_sym))
     @inbounds for x in unique(used_params_tot)
         dummy .= isequal.(x, θ_sym)
-        if sum(dummy) === 1
+        if sum(dummy) == 1
             index_param = findfirst(dummy)
             push!(index_params, index_param)
         end
@@ -337,12 +337,23 @@ function get_only_θ_used_in_model(θ_sym, θ_keys, X...)
     
     return θ_sym_slim, θ_keys_slim
 end
-update_θ!(p::model) = update_θ!(p.cache.θ_tot,p.cache.θ_keys,p.θ)
-function update_θ!(θ::Vector{Float64},keys::Vector{Symbol},θ_Dict::Dict{Symbol,Float64})
+@inline update_θ!(p::model) = update_θ!(p.cache.θ_tot,p.cache.θ_keys,p)
+@inline function update_θ!(θ::Vector{Float64},keys::Vector{Symbol},p::model{jac}) where jac<:jacobian_symbolic
+    θ_Dict = p.θ
     @inbounds for i in 1:length(θ)
         θ[i] = θ_Dict[keys[i]]
     end
     θ_Dict[:I1C] = calc_I1C(θ_Dict)
+    return nothing
+end
+@inline function update_θ!(θ::Vector{Float64},keys::Vector{Symbol},p::model{jac}) where jac<:jacobian_AD
+    θ_Dict = p.θ
+    @inbounds for i in 1:length(θ)
+        θ[i] = θ_Dict[keys[i]]
+    end
+    θ_Dict[:I1C] = calc_I1C(θ_Dict)
+
+    @inbounds p.cache.θ_tot .= @views θ[1:length(p.cache.θ_tot)]
     return nothing
 end
 
@@ -412,7 +423,7 @@ function remove_comments(str::Vector{Char},first::String="#=",last::String="=#")
     ind_first = find_in_string(str, first, 1)
     ind_last = find_in_string(str, last, length(last))
 
-    @assert length(ind_first) === length(ind_last)
+    @assert length(ind_first) == length(ind_last)
 
     ind_first = reverse(ind_first)
     ind_last  = reverse(ind_last)
@@ -469,7 +480,7 @@ function find_next(str,first,x;itermax=900000)
     while (@inbounds str[ind]) != x
         ind = ind .+ 1
         iter += 1
-        if iter === itermax error(str[ind]) end
+        if iter == itermax error(str[ind]) end
     end
     return ind
 end
