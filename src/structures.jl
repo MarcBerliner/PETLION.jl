@@ -274,7 +274,7 @@ const indices_states = model_states{
 
 abstract type AbstractOptionsModel end
 Base.@kwdef mutable struct options_simulation <: AbstractOptionsModel
-    outputs::Tuple = (:t, :V)
+    outputs = (:t, :V)
     SOC::Number = 1.0
     abstol::Float64 = 1e-6
     reltol::Float64 = 1e-6
@@ -285,8 +285,8 @@ Base.@kwdef mutable struct options_simulation <: AbstractOptionsModel
     reinit::Bool = true
     verbose::Bool = false
     interp_final::Bool = true
-    tstops::Vector{Float64} = Float64[]
-    tdiscon::Vector{Float64} = Float64[]
+    tstops::Vector{<:Number} = Float64[]
+    tdiscon::Vector{<:Number} = Float64[]
     interp_bc::Symbol = :interpolate
     save_start::Bool = false
     var_keep::states_logic = model_states_logic(outputs)[1]
@@ -297,6 +297,7 @@ end
 create_immutable_version(options_simulation; str_replacements=(
     "_immutable" =>"_immutable{T<:Function}",
     "stop_function::Function" => "stop_function::T",
+    "outputs::Any" => "outputs::Tuple",
     ))
 
 
