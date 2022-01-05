@@ -69,7 +69,7 @@ function build_cache(θ, ind, N, numerics, opts)
     """
     outputs_tot = Symbol[]
     @inbounds for (name,_type) in zip(fieldnames(typeof(ind)), fieldtypes(typeof(ind)))
-        if (_type == index_state) push!(outputs_tot, name) end
+        if !(_type <: Tuple) push!(outputs_tot, name) end
     end
     outputs_tot = (outputs_tot...,)
     
@@ -115,7 +115,7 @@ function build_cache(θ, ind, N, numerics, opts)
             x = getproperty(ind, var)
             x.var_type ∈ (:differential,:algebraic) ? add_label!(var) : nothing
         end
-        
+
         @assert length(labels) == N.tot
         
         return labels
@@ -259,6 +259,7 @@ function state_indices(N, numerics)
     N_diff = 0
     N_alg = 0
 
+    state_vars = Symbol[]
     function add(var::Symbol, tot, vars::Tuple, var_type::Symbol=:NA;
         radial::Bool = false, replace = 0:0)
         """
@@ -296,6 +297,8 @@ function state_indices(N, numerics)
         start = tot[1]
         stop = tot[end]
 
+        push!(state_vars, var)
+
         return index_state(start, stop, a, p, s, n, z, (sections...,), var_type)
     end
 
@@ -327,9 +330,9 @@ function state_indices(N, numerics)
     
     # These are the rest of the fields in the model_states struct that, while must be input, are unused
     Y = YP = t = V = P = SOC = index_state()
-    runs = nothing
-    
-    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, SOH, runs)
+    state_vars = (state_vars...,)
+
+    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, SOH, state_vars)
 
     return ind, N_diff, N_alg, N_tot
 end
@@ -384,7 +387,7 @@ end
 
 model_info(p::AbstractModel) = model_info(p.N, p.numerics)
 function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T2<:options_numerical}
-    version = "PETLION version: v"*join(Symbol.(VERSION),".")
+    version = "PETLION version: v"*join(Symbol.(PETLION_VERSION),".")
 
     numerical = ["$field: $(getproperty(numerics,field))" for field in fieldnames(T2)]
     

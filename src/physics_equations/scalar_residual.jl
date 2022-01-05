@@ -3,7 +3,7 @@
 @inline calc_P(Y::Vector{<:Number}, p::AbstractModel)       = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
 @inline calc_c_e(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.c_e]
 @inline calc_c_s_avg(Y::Vector{<:Number}, p::AbstractModel) = @inbounds @views Y[p.ind.c_s_avg]
-@inline calc_SOH(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.SOH[1]]
+@inline calc_SOH(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds Y[p.ind.SOH[1]]
 @inline calc_j(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.j]
 @inline calc_Φ_e(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.Φ_e]
 @inline calc_Φ_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.Φ_s]
@@ -61,7 +61,7 @@ for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:K_eff,:η
     name = "calc_$x"
     str = "Base.broadcasted(f::typeof($name),  Y::T, p::AbstractModel) where T<:VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = [f(y,p) for y in Y]"
 
-    str = replace(str, "$(@__MODULE__)."=>"")
+    str = remove_module_name(str)
     eval(Meta.parse(str))
 end
 
@@ -101,7 +101,7 @@ end
 
 @inbounds function get_jacobian_sparsity(p::AbstractModel, ::AbstractRun{method_I,<:Any};jac_type::DataType=Float64)
     J = spzeros(jac_type,p.N.tot)
-    J[p.ind.I] .= 1
+    J[p.ind.I[1]] = 1
 
     return J
 end
@@ -113,7 +113,7 @@ end
 end
 @inbounds function get_jacobian_sparsity(p::AbstractModel, ::AbstractRun{method_P,<:Any};jac_type::DataType=Float64)
     J = spzeros(jac_type,p.N.tot)
-    J[p.ind.I] .= 1
+    J[p.ind.I[1]] = 1
     J[p.ind.Φ_s[[1,end]]] .= 1
 
     return J
@@ -317,7 +317,7 @@ function combine_Jac_and_res(p,J_sp_base,J_base_func,J_sp_scalar,J_scalar_func,�
         J_scalar_func,
         θ_tot,
         θ_keys;
-        lu_decomposition=false,
+        lu_decomposition=true,
         )
     
     R_full = residual_combined(

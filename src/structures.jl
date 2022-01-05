@@ -1,4 +1,4 @@
-const VERSION = (Meta.parse.(split(String(Symbol(@PkgVersion.Version)),"."))...,)
+const PETLION_VERSION = (Meta.parse.(split(String(Symbol(@PkgVersion.Version)),"."))...,)
 const options = Dict{Symbol,Any}(
     :SAVE_SYMBOLIC_FUNCTIONS => true,
     :FILE_DIRECTORY => nothing,
@@ -162,6 +162,7 @@ Base.@kwdef mutable struct boundary_stop_prev_values
     dfilm::Float64 = -1.0
 end
 
+remove_module_name(x::String) = replace(x, "$(@__MODULE__)."=>"")
 function create_immutable_version(structure::DataType; str_replacements=(""=>"",), conv_replacements=(""=>"",))
     """
     Immutable versions of struct can be beneficial for performance. This function
@@ -202,8 +203,8 @@ function create_immutable_version(structure::DataType; str_replacements=(""=>"",
     end
 
     # The names cannot be prepended by "PETLION.", otherwise it creates errors
-    str_immutable = replace(str_immutable, "$(@__MODULE__)."=>"")
-    conversion = replace(conversion, "$(@__MODULE__)."=>"")
+    str_immutable = remove_module_name(str_immutable)
+    conversion = remove_module_name(conversion)
 
     eval.(Meta.parse.((str_immutable,conversion)))
 
@@ -268,7 +269,7 @@ const states_logic = model_states{
 const indices_states = model_states{
     index_state,
     index_state,
-    Nothing,
+    Tuple,
 }
 
 abstract type AbstractOptionsModel end
@@ -509,7 +510,7 @@ function Base.show(io::IO, p::AbstractModel)
     if p isa model_skeleton
         header = "model_skeleton"
     else
-        header = [x for x in replace(summary(p), "$(@__MODULE__)."=>"")]
+        header = [x for x in remove_module_name(summary(p))]
         deleteat!(header, findall('{' .== header)[2]:length(header)-1)
         header = join(header)
     end
@@ -555,7 +556,7 @@ function Base.show(io::IO, ind::indices_states)
     
     outputs_tot = Symbol[]
     @inbounds for (name,_type) in zip(fieldnames(typeof(ind)), fieldtypes(typeof(ind)))
-        if _type == index_state
+        if !(_type <: Tuple)
             push!(outputs_tot, name)
         end
     end
@@ -583,6 +584,48 @@ function Base.show(io::IO, ind::indices_states)
     str = [
         "indices_states:";
         ["  " * rpad("$(var): ", pad) * "$(length(index) > 1 ? index : index[1]), $(_type)" for (index,var,_type) in zip(indices,vars,types)]
+    ]
+    
+    print(io, join(str, "\n"))
+end
+function Base.show(io::IO, bounds::T) where T<:AbstractStopConditions
+    fields = fieldnames(T)[findall(fieldtypes(T) .<: Number)]
+    vals = [getproperty(bounds,field) for field in fields]
+    ind_remove = findall(.!isnan.(vals))
+    fields = fields[ind_remove]
+    vals = vals[ind_remove]
+
+    pad = maximum(length.(String.(fields)))+2
+
+    str = [
+        "$T:";
+        ["  " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
+    ]
+    
+    print(io, join(str, "\n"))
+end
+function Base.show(io::IO, opts::T) where T<:options_numerical
+    fields = fieldnames(T)
+    vals = [getproperty(opts,field) for field in fields]
+
+    pad = maximum(length.(String.(fields)))+2
+
+    str = [
+        "$T:";
+        ["  " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
+    ]
+    
+    print(io, join(str, "\n"))
+end
+function Base.show(io::IO, opts::T) where T<:AbstractOptionsModel
+    fields = fieldnames(T)
+    vals = [getproperty(opts,field) for field in fields]
+
+    pad = maximum(length.(String.(fields)))+2
+
+    str = [
+        "$T:";
+        ["  " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
     ]
     
     print(io, join(str, "\n"))
@@ -622,7 +665,7 @@ function Base.show(io::IO, run::T) where {T<:AbstractRun}
     print(io, str)
 end
 (funcs::model_funcs)(sol::solution) = (@assert !isempty(sol); (@inbounds funcs(sol.results[end].run)))
-Base.show(io::IO, ::model_funcs) = println(io,"$(@__MODULE__) sol functions")
+Base.show(io::IO, ::model_funcs) = println(io,"$(@__MODULE__) model functions")
 function Base.show(io::IO, sol::solution)
     results = sol.results
     if !isempty(sol)
@@ -693,17 +736,7 @@ function Base.show(io::IO, sol::solution)
     print(io, str)
 end
 
-@inbounds @views function Base.show(io::IO, ind::states_logic)
-    str = "$(typeof(ind)) using:\n"
-    @inbounds for field in fieldnames(typeof(ind))
-        x = getproperty(ind,field)
-        if x isa Bool && x
-            str *= "  $field\n"
-        end
-    end
-    
-    print(io, str[1:end-1])
-end
+Base.show(io::IO, ind::states_logic) = print(io, remove_module_name("states_logic using $(ind.results)"))
 
 Base.deleteat!(a::VectorOfArray, i::Integer) = (Base._deleteat!(a.u, i, 1); a.u)
 

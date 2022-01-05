@@ -86,4 +86,3 @@ eval(quote
     return sol
 end
 end)
-@inline simulate!(_sol,x...; outputs=(@views @inbounds _sol.results[end].opts.outputs), overwrite_sol::Bool=false, sol::Nothing=nothing, kw...) = simulate(x...; sol=overwrite_sol ? deepcopy(_sol) : _sol, outputs=outputs, kw...)

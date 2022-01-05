@@ -1,4 +1,4 @@
-temperature_switch(a,b,c,p::T) where T = p.numerics.temperature == false ? IfElse.ifelse.(a,b,c) : c
+temperature_switch(a,b,c,p::T) where {T} = p.numerics.temperature == false ? IfElse.ifelse.(a,b,c) : c
 
 ## Electrolyte functions
 function D_s_eff_isothermal(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractModel)

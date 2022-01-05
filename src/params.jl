@@ -143,7 +143,8 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
     Fickian_method = :finite_difference,
     # (false) off, (:SEI) SEI resistance
     aging =  false,
-    # (true) symbolic Jacobian, (false) automatic differenation Jacobian
+    # (:symbolic) symbolic Jacobian, (:AD) automatic differenation Jacobian
+    # use symbolic when speed is crucial
     jacobian = :symbolic,
     ### User-defined functions in `numerics` ###
     # Effective solid diffusion coefficient function
@@ -255,7 +256,7 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
     opts = options_simulation()
     # Initial state of charge for a new simulation between 0 and 1
     opts.SOC = SOC # defined above
-    # Saving sol states is expensive. What states do you want to keep? See the output of sol below for more info. Must be a tuple
+    # Saving sol states is expensive. What states do you want to keep? See the output of solution below for more info. Must be a tuple
     opts.outputs = (:t, :V)
     # Absolute tolerance of DAE solver
     opts.abstol = 1e-6
@@ -275,7 +276,7 @@ function system_LCO_LiC6(θ, funcs, cathode, anode;
     opts.tstops = Float64[]
     # For input functions, times when there is a known discontinuity. Unknown discontinuities are handled automatically but less efficiently
     opts.tdiscon = Float64[]
-    # :interpolate or :extrapolate when interpolating the sol
+    # :interpolate or :extrapolate when interpolating the solution
     opts.interp_bc = :interpolate
 
 
@@ -392,7 +393,8 @@ function system_NMC_LiC6(θ, funcs, cathode, anode;
     Fickian_method = :finite_difference,
     # (false) off, (:SEI) SEI resistance
     aging =  false,
-    # (true) symbolic Jacobian, (false) automatic differenation Jacobian
+    # (:symbolic) symbolic Jacobian, (:AD) automatic differenation Jacobian
+    # use symbolic when speed is crucial
     jacobian = :symbolic,
     ### User-defined functions in `numerics` ###
     # Effective solid diffusion coefficient function

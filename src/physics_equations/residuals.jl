@@ -387,8 +387,7 @@ function residuals_SOH!(res, states, ∂states, p::AbstractModel)
     """
 
     j_s = states[:j_s]
-    I = states[:I][1]/calc_I1C(p)
-
+    
     ∂SOH = ∂states[:SOH][1]
 
     res_SOH = res[:SOH]

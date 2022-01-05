@@ -49,7 +49,7 @@ function load_functions_symbolic(p::AbstractModel)
         file_version = get_saved_model_version(p)
         
         # have there been any breaking changes since creating the functions?
-        no_breaking_changes = (file_version[1] == VERSION[1]) && (file_version[2] == VERSION[2])
+        no_breaking_changes = (file_version[1] == PETLION_VERSION[1]) && (file_version[2] == PETLION_VERSION[2])
 
         if !no_breaking_changes
             @warn "Breaking updates encountered: re-evaluating sol..."

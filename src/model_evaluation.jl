@@ -1,3 +1,15 @@
+@inline function simulate!(_sol,p::model, x...;
+    outputs=isempty(_sol) ? p.opts.outputs : (@views @inbounds _sol.results[end].opts.outputs),
+    overwrite_sol::Bool=false,
+    sol::Nothing=nothing,
+    kw...)
+
+    simulate(p, x...;
+        sol = overwrite_sol ? deepcopy(_sol) : _sol,
+        outputs = outputs,
+        kw...)
+end
+
 @inline function get_run(
     I::current,
     V::voltage,
@@ -131,6 +143,47 @@ end
     postfix_integrator!(int, run, opts, new_run)
 
     return int
+end
+
+@inline function estimate_steady_state(p::model, sol::solution, opts::AbstractOptionsModel = p.opts, run::AbstractRun = (@views @inbounds sol.results[end].run);
+    itermax::Int64=100)
+    funcs = p.funcs(sol)
+    t = @inbounds sol.t[end]
+    γ = Float64(1.0)
+    Y  = @inbounds copy(sol.Y[end])
+    @inbounds Y[p.ind.I[1]] = 0
+    YP = p.cache.YP0 .= 0
+    
+    R_full = funcs.R_full
+    J_full = funcs.J_full
+    factor = J_full.factor
+
+    res = p.cache.Y0
+    update = similar(res) .= +Inf
+    J = J_full.sp
+
+    @inbounds for iter in 1:itermax
+        R_full(res,t,Y,YP,p,run)
+        J_full(t,Y,YP,γ,p,run)
+        factorize!(factor, J)
+
+        res[p.ind.I[1]] = 0
+        update .= factor\res
+        
+        Y .-= update
+        if norm(update) < opts.reltol
+            return Y
+        elseif iter == itermax
+            error("Could not converge to a steady state in $itermax iterations.")
+        end
+    end
+end
+
+@inline function estimate_SOC(p::model, x...;kw...)
+    Y = estimate_steady_state(p, x...; kw...)
+    SOC = calc_SOC(Y,p)
+
+    return SOC
 end
 
 @inline function create_integrator(run::T, p::model, funcs::Q, Y0, YP0, opts::AbstractOptionsModel) where {T<:AbstractRun,Q<:Jac_and_res}
