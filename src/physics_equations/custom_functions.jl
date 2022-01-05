@@ -1,7 +1,7 @@
-temperature_switch(a,b,c,p::T) where T = p.numerics.temperature === false ? IfElse.ifelse.(a,b,c) : c
+temperature_switch(a,b,c,p::T) where {T} = p.numerics.temperature == false ? IfElse.ifelse.(a,b,c) : c
 
 ## Electrolyte functions
-function D_s_eff_isothermal(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractParam)
+function D_s_eff_isothermal(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractModel)
     """
     D_s_eff_isothermal evaluates diffusion coefficients of the solid phase [m²/s].
     The user may modify the script to meet specific requirements
@@ -13,7 +13,7 @@ function D_s_eff_isothermal(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractParam)
     return D_sp_eff, D_sn_eff
 end
 
-function D_s_eff(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractParam)
+function D_s_eff(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractModel)
     """
     D_s_eff evaluates diffusion coefficients of the solid phase [m²/s].
     The user may modify the script to meet specific requirements
@@ -30,7 +30,7 @@ function D_s_eff(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractParam)
     return D_sp_eff, D_sn_eff
 end
 
-function rxn_rate_isothermal(T_p, T_n, c_s_avg_p, c_s_avg_n, p::AbstractParam)
+function rxn_rate_isothermal(T_p, T_n, c_s_avg_p, c_s_avg_n, p::AbstractModel)
     """
     Reaction rates (k) of cathode and anode [m^2.5/(m^0.5 s)]
     """
@@ -41,7 +41,7 @@ function rxn_rate_isothermal(T_p, T_n, c_s_avg_p, c_s_avg_n, p::AbstractParam)
     return k_p, k_n
 end
 
-function rxn_rate(T_p, T_n, c_s_avg_p, c_s_avg_n, p::AbstractParam)
+function rxn_rate(T_p, T_n, c_s_avg_p, c_s_avg_n, p::AbstractModel)
     """
     Reaction rates (k) of cathode and anode [m^2.5/(m^0.5 s)]
     """
@@ -56,7 +56,7 @@ function rxn_rate(T_p, T_n, c_s_avg_p, c_s_avg_n, p::AbstractParam)
     return k_p, k_n
 end
 
-function D_eff_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+function D_eff_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     D_eff_linear evaluates the diffusion coefficients for the electrolyte phase [m^2/s]
     """
@@ -68,7 +68,7 @@ function D_eff_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
     return D_eff_p, D_eff_s, D_eff_n
 end
 
-function D_eff_linear_one_term(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+function D_eff_linear_one_term(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     D_eff_linear evaluates the diffusion coefficients for the electrolyte phase [m^2/s]
     """
@@ -80,7 +80,7 @@ function D_eff_linear_one_term(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractPa
     return D_eff_p, D_eff_s, D_eff_n
 end
 
-function D_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+function D_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     D_eff evaluates the diffusion coefficients for the electrolyte phase [m^2/s]
     """
@@ -94,7 +94,7 @@ function D_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
     return D_eff_p, D_eff_s, D_eff_n
 end
 
-function K_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+function K_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     K_eff evaluates the conductivity coefficients for the electrolyte phase [S/m]
     """
@@ -108,7 +108,7 @@ function K_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
     return K_eff_p, K_eff_s, K_eff_n
 end
 
-function K_eff_isothermal(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+function K_eff_isothermal(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     K_eff_isothermal evaluates the conductivity coefficients for the electrolyte phase [S/m]
     """
@@ -184,7 +184,7 @@ end
 
 
 ## Thermodynamic factors
-function thermodynamic_factor_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+function thermodynamic_factor_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     Thermodynamic factor for the activity coefficient. The term `(1-t₊)` is included elsewhere,
     do not include the multiple in this function
@@ -198,7 +198,7 @@ function thermodynamic_factor_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::Abst
     return ν_p, ν_s, ν_n
 end
 
-function thermodynamic_factor(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractParam)
+function thermodynamic_factor(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     Thermodynamic factor for the activity coefficient. The term `(1-t₊)` is included elsewhere,
     do not include the multiple in this function

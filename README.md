@@ -18,21 +18,21 @@ import Pkg; Pkg.add("PETLION")
 To [get started](examples/getting_started.ipynb), we recommend checking out the [list of examples](examples). To simulate a simple [constant current-constant voltage (CC-CV) charge](examples/CC-CV.ipynb), run the following:
 ```julia
 using PETLION
-p = Params(LCO)
+p = petlion(LCO)
 
-model = run_model(p, I=2, SOC=0, V_max=4.1)
-run_model!(model, p, 1800, V=:hold, I_min=1/20)
+sol = simulate(p, I=2, SOC=0, V_max=4.1)
+simulate!(sol, p, 1800, V=:hold, I_min=1/20)
 ```
 <img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CCCV_I.png" width="50%"><img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CCCV_V.png" width="50%">
 ```julia
-PETLION model
+PETLION simulation
   --------
   Runs:    I → V
-  Time:    2445.64 s
+  Time:    2440.2 s
+  Current: 0.1957C
   Voltage: 4.1 V
-  Current: 0.1921C
-  Power:   23.023 W
-  SOC:     1.0
+  Power:   23.4559 W
+  SOC:     1.0001
   Exit:    Above maximum SOC limit
 ```
 

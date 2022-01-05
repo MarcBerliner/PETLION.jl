@@ -1,5 +1,5 @@
-## Functions to complete the param structure
-function Params(cathode::Function;kwargs...)
+## Functions to complete the model structure
+function petlion(cathode::Function;kwargs...)
     θ = Dict{Symbol,Float64}()
     funcs = _funcs_numerical()
 
@@ -13,7 +13,7 @@ function Params(cathode::Function;kwargs...)
         error("Cathode function must return both anode and system functions.")
     end
 end
-function Params(;cathode=cathode,anode=anode,system=system, # Input chemistry - can be modified
+function petlion(;cathode=cathode,anode=anode,system=system, # Input chemistry - can be modified
     kwargs... # keyword arguments for system
     )
     θ = Dict{Symbol,Float64}()
@@ -45,12 +45,12 @@ function initialize_param(θ, bounds, opts, _N, numerics)
     θ[:I1C] = calc_I1C(θ)
     
     ## temporary params with no functions
-    _p = param_skeleton(θ_any, numerics, N, ind, opts, bounds, cache)
+    _p = model_skeleton(θ_any, numerics, N, ind, opts, bounds, cache)
     
     funcs = load_functions(_p)
     
     ## Real params with functions
-    p = param(
+    p = model(
         θ,
         numerics,
         N,
@@ -65,17 +65,17 @@ end
 
 function build_cache(θ, ind, N, numerics, opts)
     """
-    Creates the cache struct for _Params
+    Creates the cache struct for _petlion
     """
     outputs_tot = Symbol[]
     @inbounds for (name,_type) in zip(fieldnames(typeof(ind)), fieldtypes(typeof(ind)))
-        if (_type === index_state) push!(outputs_tot, name) end
+        if !(_type <: Tuple) push!(outputs_tot, name) end
     end
     outputs_tot = (outputs_tot...,)
     
     function variables_in_indices()
         """
-        Defines all the possible outputs from run_model
+        Defines all the possible outputs from simulate
         """
         
         var = Symbol[]
@@ -115,8 +115,8 @@ function build_cache(θ, ind, N, numerics, opts)
             x = getproperty(ind, var)
             x.var_type ∈ (:differential,:algebraic) ? add_label!(var) : nothing
         end
-        
-        @assert length(labels) === N.tot
+
+        @assert length(labels) == N.tot
         
         return labels
     end
@@ -126,7 +126,7 @@ function build_cache(θ, ind, N, numerics, opts)
 
     vars = variables_in_indices()
     
-    opts.var_keep = model_states_logic(opts.outputs, outputs_tot)
+    opts.var_keep = model_states_logic(opts.outputs)[1]
 
     Y0 = zeros(Float64, N.tot)
     YP0 = zeros(Float64, N.tot)
@@ -138,26 +138,19 @@ function build_cache(θ, ind, N, numerics, opts)
         zeros(Int64,N.alg)
         ]
     
-    # not currently used because constraints aren't working with Sundials
-    constraints = zeros(Int64, N.tot)
-    constraints[ind.Φ_s] .= 1 # enforce positivity on solid phase potential in all nodes
-    
     save_start_dict = Dict{save_start_info,Vector{Float64}}()
 
     cache = cache_run(
         θ_tot,
         θ_keys,
-        strings_directory_func(N, numerics),
         variable_labels(),
         vars,
-        outputs_tot,
         save_start_dict,
         Y0,
         YP0,
         res,
         Y_alg,
         id,
-        constraints,
         )
     
     return cache
@@ -179,7 +172,7 @@ Base.IndexStyle(::Type{<:state_sections}) = IndexLinear()
 Base.getindex(state::state_sections, i::Int64)= state.tot[i]
 Base.setindex!(state::state_sections, v, i::Int64)= (state.tot[i] = v)
 
-function retrieve_states(Y::AbstractArray, p::AbstractParam)
+function retrieve_states(Y::AbstractArray, p::AbstractModel)
     """
     Creates a dictionary of variables based on an input array and the indices in p.ind
     """
@@ -189,7 +182,7 @@ function retrieve_states(Y::AbstractArray, p::AbstractParam)
     ind = p.ind
     vars_in_use = p.cache.vars
     
-    vars = p.cache.outputs_tot
+    vars = fieldnames(solution)[findall(fieldtypes(solution) .<: AbstractArray{<:Number})]
 
     sections = Symbol[]
     @inbounds for (field,_type) in zip(fieldnames(index_state), fieldtypes(index_state))
@@ -266,6 +259,7 @@ function state_indices(N, numerics)
     N_diff = 0
     N_alg = 0
 
+    state_vars = Symbol[]
     function add(var::Symbol, tot, vars::Tuple, var_type::Symbol=:NA;
         radial::Bool = false, replace = 0:0)
         """
@@ -279,9 +273,9 @@ function state_indices(N, numerics)
         
         if var_type ∈ (:differential, :algebraic)
             tot = tot .+ (N_diff+N_alg)
-            if     var_type === :differential
+            if     var_type == :differential
                 N_diff += length(tot)
-            elseif var_type === :algebraic
+            elseif var_type == :algebraic
                 N_alg  += length(tot)
             end
         end
@@ -303,14 +297,16 @@ function state_indices(N, numerics)
         start = tot[1]
         stop = tot[end]
 
+        push!(state_vars, var)
+
         return index_state(start, stop, a, p, s, n, z, (sections...,), var_type)
     end
 
     c_e_tot     = 1:(N.p+N.s+N.n)
-    c_s_avg_tot = numerics.solid_diffusion === :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
+    c_s_avg_tot = numerics.solid_diffusion == :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
     T_tot       = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
-    film_tot    = numerics.aging === :SEI ? (1:N.n) : nothing
-    Q_tot       = numerics.solid_diffusion === :polynomial ? (1:(N.p+N.n)) : nothing
+    film_tot    = numerics.aging == :SEI ? (1:N.n) : nothing
+    Q_tot       = numerics.solid_diffusion == :polynomial ? (1:(N.p+N.n)) : nothing
     j_tot       = 1:(N.p+N.n)
     j_s_tot     = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
     SOH_tot     = numerics.aging ∈ (:SEI, :R_aging) ? 1 : nothing
@@ -319,7 +315,7 @@ function state_indices(N, numerics)
     I_tot       = 1
     
     c_e     = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
-    c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion === :Fickian)
+    c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion == :Fickian)
     T       = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
     film    = add(:film,    film_tot,    (:n,),                :differential)
     Q       = add(:Q,       Q_tot,       (:p, :n),             :differential)
@@ -334,14 +330,14 @@ function state_indices(N, numerics)
     
     # These are the rest of the fields in the model_states struct that, while must be input, are unused
     Y = YP = t = V = P = SOC = index_state()
-    runs = nothing
-    
-    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, SOH, runs)
+    state_vars = (state_vars...,)
+
+    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, SOH, state_vars)
 
     return ind, N_diff, N_alg, N_tot
 end
 
-@inline function guess_init(p::AbstractParam, X_applied=0.0)
+@inline function guess_init(p::AbstractModel, X_applied=0.0)
     """
     Get the initial guess in the DAE initialization.
     This function is made symbolic by Symbolics and saved as 
@@ -389,9 +385,9 @@ end
     return Y0, YP0
 end
 
-model_info(p::AbstractParam) = model_info(p.N, p.numerics)
+model_info(p::AbstractModel) = model_info(p.N, p.numerics)
 function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T2<:options_numerical}
-    version = "PETLION version: v"*join(Symbol.(VERSION),".")
+    version = "PETLION version: v"*join(Symbol.(PETLION_VERSION),".")
 
     numerical = ["$field: $(getproperty(numerics,field))" for field in fieldnames(T2)]
     
@@ -400,7 +396,7 @@ function model_info(N::T1,numerics::T2) where {T1<:discretizations_per_section,T
         "N.s: $(N.s)";
         "N.n: $(N.n)";
         numerics.temperature                  ? "N.a: $(N.a)\nN.z: $(N.z)" : "";
-        numerics.solid_diffusion === :Fickian ? "N.r_p: $(N.r_p)\nN.r_n: $(N.r_n)" : "";
+        numerics.solid_diffusion == :Fickian ? "N.r_p: $(N.r_p)\nN.r_n: $(N.r_n)" : "";
         ]
     filter!(!isempty,discretization)
     
@@ -432,7 +428,7 @@ function strings_directory_func(N::discretizations_per_section, numerics::T; cre
             "Ns$(N.s)";
             "Nn$(N.n)";
             numerics.temperature                  ? "Na$(N.a)_Nz$(N.z)" : "";
-            numerics.solid_diffusion === :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : "";
+            numerics.solid_diffusion == :Fickian ? "Nr_p$(N.r_p)_Nr_n$(N.r_n)" : "";
         ],
         "_"
     )
@@ -452,33 +448,48 @@ function strings_directory_func(N::discretizations_per_section, numerics::T; cre
     return dir
 end
 
-function strings_directory_func(p::AbstractParam; create_dir=false)
+function strings_directory_func(p::AbstractModel; create_dir=false)
     strings_directory_func(p.N, p.numerics; create_dir=create_dir)
 end
 
-function strings_directory_func(p::AbstractParam, x; kw...)
+function strings_directory_func(p::AbstractModel, x; kw...)
     strings_directory = string("$(strings_directory_func(p; kw...))/$x.jl")
 
     return strings_directory
 end
 
 
-@inline function trapz(x::T1,y::T2) where {T1<:AbstractVector,T2<:AbstractVector}
+@inline function trapz(x::T1,y::T2) where {T1<:AbstractVector{<:Number},T2<:AbstractVector{<:Number}}
     """
     Trapezoidal rule with SIMD vectorization
     """
-    @assert length(x) === length(y)
+    @assert length(x) == length(y)
     out = 0.0
     @inbounds @simd for i in 2:length(x)
         out += 0.5*(x[i] - x[i-1])*(y[i] + y[i-1])
     end
     return out
 end
+@inline function cumtrapz(x::T1,y::T2) where {T1<:AbstractVector{<:Number},T2<:AbstractVector{<:Number}}
+    # Check matching vector length
+    @assert length(x) == length(y)
+    
+    # Initialize Output
+    out = similar(x)
+    out[1] = 0
+
+    # Iterate over arrays
+    @inbounds for i in 2:length(x)
+        out[i] = out[i-1] + 0.5*(x[i] - x[i-1])*(y[i] + y[i-1])
+    end
+    # Return output
+    return out
+end
 
 function extrap_x_0(x::AbstractVector,y::AbstractVector)
     @inbounds y[1] - ((y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))*((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[1]^2)) - ((y[2] - y[1] - (((x[3]^2 - (x[1]^2) - (((x[2] - x[1])^-1)*(x[2]^2 - (x[1]^2))*(x[3] - x[1])))^-1)*(x[2]^2 - (x[1]^2))*(y[3] - y[1] - (((x[2] - x[1])^-1)*(x[3] - x[1])*(y[2] - y[1])))))*((x[2] - x[1])^-1)*x[1])
 end
-function extrapolate_section(y::AbstractVector,p::AbstractParam,section::Symbol)
+function extrapolate_section(y::AbstractVector,p::AbstractModel,section::Symbol)
     """
     Extrapolate to the edges of the FVM sections with a second-order polynomial
     """

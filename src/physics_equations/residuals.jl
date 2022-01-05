@@ -3,7 +3,7 @@ Much of the code in this file is adapted from LIONSIMBA, a li-ion simulation too
 See https://github.com/lionsimbatoolbox/LIONSIMBA for more information.
 """
 
-function residuals_PET!(residuals, t, x, ẋ, p::AbstractParam)
+function residuals_PET!(residuals, t, x, ẋ, p::AbstractModel)
     """
     First put the vector of x, ẋ, and residuals into dictionaries
     """
@@ -30,18 +30,18 @@ function residuals_PET!(residuals, t, x, ẋ, p::AbstractParam)
     residuals_c_s_avg!(res, states, ∂states, p)
     
     # If the polynomial fit for the surface concentration is used, Q
-    if p.numerics.solid_diffusion === :polynomial
+    if p.numerics.solid_diffusion == :polynomial
         residuals_Q!(res, states, ∂states, p)
     end
 
     # Lithium plating film thickness, film
-    if p.numerics.aging === :SEI
+    if p.numerics.aging == :SEI
         residuals_film!(res, states, ∂states, p)
         residuals_SOH!(res, states, ∂states, p)
     end
 
     # Check if the thermal dynamics are enabled.
-    if p.numerics.temperature === true
+    if p.numerics.temperature == true
         build_heat_generation_rates!(states, p)
         residuals_T!(res, states, ∂states, p)
     end
@@ -73,13 +73,13 @@ function residuals_PET!(residuals, t, x, ẋ, p::AbstractParam)
 
     return nothing
 end
-function residuals_PET!(p::AbstractParam)
+function residuals_PET!(p::AbstractModel)
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
     res = similar(Y_sym)
     residuals_PET!(res, t_sym, Y_sym, YP_sym, p_sym)
 end
 
-function residuals_c_e!(res, states, ∂states, p::AbstractParam)
+function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     """
     Calculate the electrolyte concentration residuals [mol/m³]
     """
@@ -205,7 +205,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractParam)
     return nothing
 end
 
-function residuals_c_s_avg!(res, states, ∂states, p::T) where {T<:Union{AbstractParamSolidDiff{:polynomial},AbstractParamSolidDiff{:quadratic}}}
+function residuals_c_s_avg!(res, states, ∂states, p::T) where {T<:Union{AbstractModelSolidDiff{:polynomial},AbstractModelSolidDiff{:quadratic}}}
     """
     Calculate the solid particle concentrations residuals with quadratic or polynomial approximations [mol/m³]
     """
@@ -225,7 +225,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {T<:Union{Abstra
 
     return nothing
 end
-function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:AbstractParam{jac,temp,:Fickian,:finite_difference}}
+function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:AbstractModel{jac,temp,:Fickian,:finite_difference}}
     """
     Calculate the volume-averaged solid particle concentration residuals using a 9th order accurate finite difference method (FDM) [mol/m³]
     """
@@ -280,7 +280,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
 
     return nothing
 end
-function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:AbstractParam{jac,temp,:Fickian,:spectral}}
+function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:AbstractModel{jac,temp,:Fickian,:spectral}}
     """
     BETA: Calculate the volume-averaged solid particle concentration residuals using a spectral method [mol/m³]
     """
@@ -338,10 +338,10 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
     return nothing
 end
 
-function residuals_Q!(res, states, ∂states, p::AbstractParamSolidDiff{:polynomial})
+function residuals_Q!(res, states, ∂states, p::AbstractModelSolidDiff{:polynomial})
     """
-    residuals_Q! is used to implement the three parameters reduced model for solid phase diffusion [mol/m⁴]
-    This model has been taken from the paper "Efficient Macro-Micro Scale Coupled
+    residuals_Q! is used to implement the three parameters reduced sol for solid phase diffusion [mol/m⁴]
+    This sol has been taken from the paper "Efficient Macro-Micro Scale Coupled
     Modeling of Batteries" by Subramanian et al.
     """
 
@@ -363,7 +363,7 @@ function residuals_Q!(res, states, ∂states, p::AbstractParamSolidDiff{:polynom
     return nothing
 end
 
-function residuals_film!(res, states, ∂states, p::AbstractParam)
+function residuals_film!(res, states, ∂states, p::AbstractModel)
     """
     residuals_film! describes the dynamics of the solid-electrolyte layer at the anode side [m]
     """
@@ -381,14 +381,13 @@ function residuals_film!(res, states, ∂states, p::AbstractParam)
     return nothing
 end
 
-function residuals_SOH!(res, states, ∂states, p::AbstractParam)
+function residuals_SOH!(res, states, ∂states, p::AbstractModel)
     """
     residuals_SOH! integrates the SOH when aging is enabled and there are losses
     """
 
     j_s = states[:j_s]
-    I = states[:I][1]/calc_I1C(p)
-
+    
     ∂SOH = ∂states[:SOH][1]
 
     res_SOH = res[:SOH]
@@ -602,7 +601,7 @@ function residuals_T!(res, states, ∂states, p)
     return nothing
 end
 
-function residuals_j!(res, states, p::AbstractParam)
+function residuals_j!(res, states, p::AbstractModel)
     """
     Calculate the molar flux density of Li-ions residuals at the electrode-electrolyte interface [mol/(m²•s)]
     """
@@ -630,7 +629,7 @@ function residuals_j!(res, states, p::AbstractParam)
     return nothing
 end
 
-function residuals_j_s!(res, states, p::AbstractParam)
+function residuals_j_s!(res, states, p::AbstractModel)
     """
     Calculate the molar flux density side reaction residuals due to SEI resistance [mol/(m²•s)]
     """
@@ -664,7 +663,7 @@ function residuals_j_s!(res, states, p::AbstractParam)
     return nothing
 end
 
-function residuals_Φ_e!(res, states, p::AbstractParam)
+function residuals_Φ_e!(res, states, p::AbstractModel)
     """
     residuals_Φ_e! evaluates residuals for the electrolyte potential equation discretized using method of lines, [V]
     """
@@ -767,7 +766,7 @@ function residuals_Φ_e!(res, states, p::AbstractParam)
     return nothing
 end
 
-function residuals_Φ_s!(res, states, p::AbstractParam)
+function residuals_Φ_s!(res, states, p::AbstractModel)
     """
     residuals_Φ_s! evaluates the residuals of the solid potential equation [V]
     """
@@ -815,7 +814,7 @@ function residuals_Φ_s!(res, states, p::AbstractParam)
     return nothing
 end
 
-function residuals_scalar!(res, states, p::AbstractParam)
+function residuals_scalar!(res, states, p::AbstractModel)
     """
     *** THE RESIDUALS ARE HANDLED IN `scalar_residual.jl` ***
     

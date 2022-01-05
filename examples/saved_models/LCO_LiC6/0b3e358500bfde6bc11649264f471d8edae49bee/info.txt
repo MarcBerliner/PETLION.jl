@@ -1,0 +1,26 @@
+PETLION version: v0.2.1
+
+options_numerical
+temperature: false
+solid_diffusion: Fickian
+Fickian_method: finite_difference
+aging: false
+cathode: LCO
+anode: LiC6
+rxn_p: rxn_BV
+rxn_n: rxn_BV
+OCV_p: OCV_LCO
+OCV_n: OCV_LiC6
+D_s_eff: D_s_eff
+rxn_rate: rxn_rate
+D_eff: D_eff_linear
+K_eff: K_eff
+thermodynamic_factor: thermodynamic_factor_linear
+jacobian: symbolic
+
+discretizations_per_section
+N.p: 10
+N.s: 10
+N.n: 10
+N.r_p: 10
+N.r_n: 10

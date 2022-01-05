@@ -22,11 +22,11 @@ import LinearAlgebra
 # Must be loaded last
 using BSON: @load, @save
 
-export run_model, run_model!
-export model_output
+export simulate, simulate!
+export solution
 
-export Params
-export boundary_stop_conditions, options_model, discretizations_per_section, options_numerical
+export petlion
+export boundary_stop_conditions, options_simulation, discretizations_per_section, options_numerical
 
 export D_s_eff_isothermal, D_s_eff
 export rxn_rate_isothermal, rxn_rate
@@ -46,7 +46,7 @@ include("structures.jl")
 include("params.jl")
 include("external.jl")
 include("set_variables.jl")
-include("run_model.jl")
+include("simulate.jl")
 include("model_evaluation.jl")
 include("checks.jl")
 include("generate_functions.jl")
@@ -55,5 +55,14 @@ include("physics_equations/scalar_residual.jl")
 include("physics_equations/auxiliary_states_and_coefficients.jl")
 include("physics_equations/custom_functions.jl")
 include("physics_equations/numerical_tools.jl")
+
+## Backwards compatability
+const Params = petlion
+const run_model = simulate
+const run_model! = simulate!
+const options_model = options_simulation
+const model_output = solution
+
+export Params, run_model, run_model!, options_model
 
 end # module

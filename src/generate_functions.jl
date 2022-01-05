@@ -1,8 +1,8 @@
-function load_functions(p::AbstractParam)
-    if     p.numerics.jacobian === :symbolic
+function load_functions(p::AbstractModel)
+    if     p.numerics.jacobian == :symbolic
         jac_type = jacobian_symbolic
         load_func = load_functions_symbolic
-    elseif p.numerics.jacobian === :AD
+    elseif p.numerics.jacobian == :AD
         jac_type = jacobian_AD
         load_func = load_functions_forward_diff
     end
@@ -18,9 +18,9 @@ function load_functions(p::AbstractParam)
     return funcs
 end
 
-function get_saved_model_version(p::AbstractParam)
+function get_saved_model_version(p::AbstractModel)
     """
-    Gets the version of PETLION used to generate the saved model
+    Gets the version of PETLION used to generate the saved sol
     """
     str = strings_directory_func(p)
     str *= "/info.txt"
@@ -31,9 +31,9 @@ function get_saved_model_version(p::AbstractParam)
     out = (Meta.parse.(split(out,"."))...,)
 end
 
-function remove_model_files(p::AbstractParam)
+function remove_model_files(p::AbstractModel)
     """
-    Removes symbolic files for the model
+    Removes symbolic files for the sol
     """
     str = strings_directory_func(p) * "/"
     for x in readdir(str)
@@ -41,7 +41,7 @@ function remove_model_files(p::AbstractParam)
     end
 end
 
-function load_functions_symbolic(p::AbstractParam)
+function load_functions_symbolic(p::AbstractModel)
     dir = strings_directory_func(p) * "/"
     files_exist = isdir(dir)
 
@@ -49,10 +49,10 @@ function load_functions_symbolic(p::AbstractParam)
         file_version = get_saved_model_version(p)
         
         # have there been any breaking changes since creating the functions?
-        no_breaking_changes = (file_version[1] == VERSION[1]) && (file_version[2] == VERSION[2])
+        no_breaking_changes = (file_version[1] == PETLION_VERSION[1]) && (file_version[2] == PETLION_VERSION[2])
 
         if !no_breaking_changes
-            @warn "Breaking updates encountered: re-evaluating model..."
+            @warn "Breaking updates encountered: re-evaluating sol..."
             remove_model_files(p)
         end
 
@@ -89,7 +89,7 @@ function load_functions_symbolic(p::AbstractParam)
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys
 end
 
-function generate_functions_symbolic(p::AbstractParam; verbose=options[:SAVE_SYMBOLIC_FUNCTIONS])
+function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYMBOLIC_FUNCTIONS])
     
     if verbose println("Creating the functions for $p\n\nMay take a few minutes...") end
 
@@ -100,7 +100,7 @@ function generate_functions_symbolic(p::AbstractParam; verbose=options[:SAVE_SYM
     Y0_sym = _symbolic_initial_guess(p_sym, SOC_sym, θ_sym, X_applied)
 
     ## batteryModel function
-    if verbose println("2/4: Making symbolic model") end
+    if verbose println("2/4: Making symbolic sol") end
     res = _symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym)
 
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
@@ -146,7 +146,7 @@ function generate_functions_symbolic(p::AbstractParam; verbose=options[:SAVE_SYM
     return Y0Func, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys
 end
 
-function load_functions_forward_diff(p::AbstractParam)
+function load_functions_forward_diff(p::AbstractModel)
 
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
 
@@ -209,13 +209,13 @@ function load_functions_forward_diff(p::AbstractParam)
     J_y!     = build_color_jacobian_struct(J_y_sp, f!, p.N.tot-1)
     J_y_alg! = build_color_jacobian_struct(J_y_sp_alg, f_alg!, p.N.alg-1)
 
-    @assert size(J_y!.sp) === (p.N.tot-1,p.N.tot)
-    @assert size(J_y_alg!.sp) === (p.N.alg-1,p.N.alg)
+    @assert size(J_y!.sp) == (p.N.tot-1,p.N.tot)
+    @assert size(J_y_alg!.sp) == (p.N.alg-1,p.N.alg)
 
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys_slim
 end
 
-function _symbolic_initial_guess(p::AbstractParam, SOC_sym, θ_sym, X_applied)
+function _symbolic_initial_guess(p::AbstractModel, SOC_sym, θ_sym, X_applied)
     
     Y0_sym = guess_init(p, X_applied)[1]
 
@@ -224,8 +224,8 @@ function _symbolic_initial_guess(p::AbstractParam, SOC_sym, θ_sym, X_applied)
     return Y0_sym
 end
 
-function _symbolic_residuals(p::AbstractParam, t_sym, Y_sym, YP_sym)
-    ## symbolic battery model
+function _symbolic_residuals(p::AbstractModel, t_sym, Y_sym, YP_sym)
+    ## symbolic battery sol
     res = similar(Y_sym)
     residuals_PET!(res, t_sym, Y_sym, YP_sym, p)
 
@@ -245,7 +245,7 @@ function _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
     return J_sp, sp_x, sp_xp
 end
 
-function _symbolic_jacobian(p::AbstractParam=Params(LCO);inds::T=1:p.N.tot) where T<:UnitRange{Int64}
+function _symbolic_jacobian(p::AbstractModel=petlion(LCO);inds::T=1:p.N.tot) where T<:UnitRange{Int64}
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
     res = [_symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym);Y_sym[end]]
 
@@ -264,7 +264,7 @@ function _symbolic_jacobian(p::AbstractParam=Params(LCO);inds::T=1:p.N.tot) wher
 
     return Jac
 end
-function _symbolic_jacobian(p::AbstractParam, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim; verbose=false)
+function _symbolic_jacobian(p::AbstractModel, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim; verbose=false)
     J_sp, sp_x, sp_xp = _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
 
     ## symbolic jacobian
@@ -281,7 +281,7 @@ function _symbolic_jacobian(p::AbstractParam, res, t_sym, Y_sym, YP_sym, γ_sym,
 
     return Jac, jacFunc, J_sp
 end
-function _symbolic_initial_conditions_res(p::AbstractParam, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
+function _symbolic_initial_conditions_res(p::AbstractModel, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
     
     res_diff = res[1:p.N.diff]
     res_alg = res[p.N.diff+1:end]
@@ -291,7 +291,7 @@ function _symbolic_initial_conditions_res(p::AbstractParam, res, t_sym, Y_sym, Y
     
     return res_algFunc, res_diffFunc
 end
-function _symbolic_initial_conditions_jac(p::AbstractParam, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)
+function _symbolic_initial_conditions_jac(p::AbstractModel, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)
     
     jac_alg = @inbounds Jac[p.N.diff+1:end,p.N.diff+1:end]
     
@@ -302,7 +302,7 @@ end
 
 function get_only_θ_used_in_model(θ_sym, θ_keys, X...)
     """
-    Some of the parameters in θ may not be used in the model. This returns
+    Some of the parameters in θ may not be used in the sol. This returns
     a vector of the ones that are actually used and their sorted names
     """
     used_params_tot = eltype(θ_sym)[]
@@ -314,7 +314,7 @@ function get_only_θ_used_in_model(θ_sym, θ_keys, X...)
     dummy = BitArray{1}(undef, length(θ_sym))
     @inbounds for x in unique(used_params_tot)
         dummy .= isequal.(x, θ_sym)
-        if sum(dummy) === 1
+        if sum(dummy) == 1
             index_param = findfirst(dummy)
             push!(index_params, index_param)
         end
@@ -337,16 +337,27 @@ function get_only_θ_used_in_model(θ_sym, θ_keys, X...)
     
     return θ_sym_slim, θ_keys_slim
 end
-update_θ!(p::param) = update_θ!(p.cache.θ_tot,p.cache.θ_keys,p.θ)
-function update_θ!(θ::Vector{Float64},keys::Vector{Symbol},θ_Dict::Dict{Symbol,Float64})
+@inline update_θ!(p::model) = update_θ!(p.cache.θ_tot,p.cache.θ_keys,p)
+@inline function update_θ!(θ::Vector{Float64},keys::Vector{Symbol},p::model{jac}) where jac<:jacobian_symbolic
+    θ_Dict = p.θ
     @inbounds for i in 1:length(θ)
         θ[i] = θ_Dict[keys[i]]
     end
     θ_Dict[:I1C] = calc_I1C(θ_Dict)
     return nothing
 end
+@inline function update_θ!(θ::Vector{Float64},keys::Vector{Symbol},p::model{jac}) where jac<:jacobian_AD
+    θ_Dict = p.θ
+    @inbounds for i in 1:length(θ)
+        θ[i] = θ_Dict[keys[i]]
+    end
+    θ_Dict[:I1C] = calc_I1C(θ_Dict)
 
-function get_symbolic_vars(p::AbstractParam;
+    @inbounds p.cache.θ_tot .= @views θ[1:length(p.cache.θ_tot)]
+    return nothing
+end
+
+function get_symbolic_vars(p::AbstractModel;
     original_keys=nothing)
     if isnothing(original_keys)
         θ_keys = sort!(Symbol.(keys(p.θ)))
@@ -368,7 +379,7 @@ function get_symbolic_vars(p::AbstractParam;
     YP = collect(YP)
     θ  = collect(θ)
 
-    p = param_skeleton([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(param_skeleton),fieldtypes(param_skeleton))]...)
+    p = model_skeleton([convert(_type,deepcopy(getproperty(p,field))) for (field,_type) in zip(fieldnames(model_skeleton),fieldtypes(model_skeleton))]...)
     p.opts.SOC = SOC
 
     @inbounds for (i,key) in enumerate(θ_keys)
@@ -412,7 +423,7 @@ function remove_comments(str::Vector{Char},first::String="#=",last::String="=#")
     ind_first = find_in_string(str, first, 1)
     ind_last = find_in_string(str, last, length(last))
 
-    @assert length(ind_first) === length(ind_last)
+    @assert length(ind_first) == length(ind_last)
 
     ind_first = reverse(ind_first)
     ind_last  = reverse(ind_last)
@@ -469,7 +480,7 @@ function find_next(str,first,x;itermax=900000)
     while (@inbounds str[ind]) != x
         ind = ind .+ 1
         iter += 1
-        if iter === itermax error(str[ind]) end
+        if iter == itermax error(str[ind]) end
     end
     return ind
 end
