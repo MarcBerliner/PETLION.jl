@@ -63,6 +63,6 @@ const run_model! = simulate!
 const options_model = options_simulation
 const model_output = solution
 
-export Params, run_model, run_model!, options_model
+export Params, run_model, run_model!, options_model, model_output
 
 end # module
