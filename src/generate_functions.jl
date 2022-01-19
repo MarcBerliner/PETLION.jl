@@ -177,14 +177,15 @@ function load_functions_forward_diff(p::AbstractModel)
 
     J_y_sp_alg = @inbounds J_y_sp[p.N.diff+1:end,p.N.diff+1:end]
 
-    function build_color_jacobian_struct(J, f!, N, )
+    function build_color_jacobian_struct(J, f!, N)
         colorvec = matrix_colors(J)
 
-        Y_cache = zeros(Float64, N+1)
+        Y_cache = zeros(Float64, N)
 
         _Y_cache  = zeros(Float64,p.N.tot)
         _YP_cache = zeros(Float64,p.N.tot)
-        func = res_FD(f!, _Y_cache, _YP_cache, p.cache.θ_tot, p.N)
+        _Y_new = zeros(p.N.tot)
+        func = res_FD(f!, _Y_cache, _YP_cache, _Y_new, p.cache.θ_tot, p.N)
         
         jac_cache = ForwardColorJacCache(
             func,
@@ -201,13 +202,14 @@ function load_functions_forward_diff(p::AbstractModel)
     initial_guess! = eval(Y0Func)
     f_alg!         = eval(res_algFunc)
     f_diff!        = eval(res_diffFunc)
-    f! = function (res,t,Y,YP,θ_tot)
-        f_diff!((@views @inbounds res[1:p.N.diff]),       t, Y, YP, θ_tot)
-        f_alg!( (@views @inbounds res[p.N.diff+1:end-1]), t, Y, YP, θ_tot)
+    N_diff = p.N.diff
+    f! = function (res::Vector{<:Number},t,Y,YP,θ_tot)
+        f_diff!((@views @inbounds res[1:N_diff]),       t, Y, YP, θ_tot)
+        f_alg!( (@views @inbounds res[N_diff+1:end-1]), t, Y, YP, θ_tot)
     end
 
-    J_y!     = build_color_jacobian_struct(J_y_sp, f!, p.N.tot-1)
-    J_y_alg! = build_color_jacobian_struct(J_y_sp_alg, f_alg!, p.N.alg-1)
+    J_y!     = build_color_jacobian_struct(J_y_sp, f!, p.N.tot)
+    J_y_alg! = build_color_jacobian_struct(J_y_sp_alg, f_alg!, p.N.alg)
 
     @assert size(J_y!.sp) == (p.N.tot-1,p.N.tot)
     @assert size(J_y_alg!.sp) == (p.N.alg-1,p.N.alg)

@@ -265,6 +265,63 @@ end
     end
 end
 
+@inline function check_input_arguments(names::Tuple{Symbol})
+    """
+    Checking if the inputs to the simulation are valid.
+    Try/catch block in `assess_input` finds any method errors
+    """
+    name = @inbounds names[1]
+    return name
+end
+@inline function check_input_arguments(names::T) where T<:Tuple
+    """
+    There are more 0 or >1 input arguments, which is invalid
+    """
+
+    # Tuple of all methods defined by AbstractMethod
+    valid_methods = (method_symbol.(subtypes(AbstractMethod))...,)
+
+    input_methods = Symbol[]
+    invalid_args = Symbol[]
+    @inbounds for name in names
+        if name ∈ valid_methods
+            push!(input_methods, name)
+        else
+            push!(invalid_args, name)
+        end
+    end
+    input_methods = (input_methods...,)
+    invalid_args = (invalid_args...,)
+        
+    if length(input_methods) === 0
+        str_methods = replace("$(valid_methods)", ":"=>"")
+        error("ERROR\n--------\n" *
+        "  No inputs are selected, choose one from: $str_methods")
+    end
+
+    # If there are more than one names, then that means that
+    # (a) ≥1 inputs are selected, or (b) an invalid input is selected
+    str = "ERROR\n--------\n"
+
+    if length(input_methods) > 1
+        str_methods = replace("$(valid_methods)", ":"=>"")
+        str *= "  Cannot select more than one input from: $(str_methods)"
+    end
+        
+    if length(invalid_args) ≥ 1 && length(input_methods) > 1
+        str *= "\n"
+    end
+
+    if length(invalid_args) ≥ 1
+        str *= "  Invalid keyword argument"
+        str *= length(invalid_args) == 1 ? ": " : "s: "
+        str_args = replace(length(invalid_args) == 1 ? "$(invalid_args[1])" : "$(invalid_args)", ":"=>"")
+        str *= str_args
+    end
+
+    error(str)
+end
+
 @inline function check_reinitialization!(sol::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, funcs) where {R1<:solution, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions_immutable,R6<:AbstractOptionsModel}
     """
     Checking the current function for discontinuities.

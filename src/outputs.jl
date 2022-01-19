@@ -1,5 +1,5 @@
 const empty_vector_of_array = VectorOfArray(Array{Vector{Float64}}(Float64[]))
-Base.@kwdef struct model_states{vec1D,vec2D,R1}
+Base.@kwdef struct solution_states{vec1D,vec2D,R1}
     """
     If you want to add anything to this struct, you must also check/modify set_vars!`.
     Otherwise, it may not work as intended
@@ -27,17 +27,15 @@ Base.@kwdef struct model_states{vec1D,vec2D,R1}
     results::R1 = R1 == Array{run_results,1} ? run_results[] : nothing
 end
 
-@inline model_states_logic(output::Symbol) = model_states_logic((output,))
-@inline model_states_logic() = model_states_logic(())
-
+@inline solution_states_logic(output::Symbol) = solution_states_logic((output,))
 eval(quote
-@inline function model_states_logic(outputs::T) where T<:Tuple
-    outputs_tot = $(fieldnames(model_states)[1:end-1])
+@inline function solution_states_logic(outputs::T=()) where T<:Tuple
+    outputs_tot = $(fieldnames(solution_states)[1:end-1])
     
     use_all = :all ∈ outputs
 
     x = @inbounds (use_all || field ∈ outputs for field in outputs_tot)
     
-    return model_states{Bool,Bool,T}(x..., outputs), outputs
+    return solution_states{Bool,Bool,T}(x..., outputs), use_all ? outputs : outputs
 end
 end)

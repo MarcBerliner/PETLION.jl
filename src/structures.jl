@@ -40,23 +40,23 @@ end
 
 struct run_constant{T<:AbstractMethod,in<:Union{Number,Symbol,Function}} <: AbstractRun{T,in}
     input::in
-    value::Vector{Float64}
+    value::Base.RefValue{Float64}
     method::T
     t0::Float64
     tf::Float64
-    name::String
+    name::Symbol
     info::run_info
 end
 struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
     func::func
-    value::Vector{Float64}
+    value::Base.RefValue{Float64}
     method::T
     t0::Float64
     tf::Float64
-    name::String
+    name::Symbol
     info::run_info
 end
-@inline value(run::AbstractRun) = @inbounds run.value[1]
+@inline value(run::AbstractRun) = @inbounds run.value[]
 
 Base.@kwdef struct index_state <: AbstractUnitRange{Int64}
     start::Int64 = 0
@@ -80,32 +80,39 @@ struct res_FD{T<:Function} <: Function
     f!::T
     Y_cache::Vector{Float64}
     YP_cache::Vector{Float64}
+    Y_new::Vector{Float64}
     θ_tot::Vector{Float64}
     N::discretizations_per_section
 end
-function (res_FD::res_FD{T})(res::AbstractVector{<:Number}, Y::AbstractVector{<:Number}) where T<:Function
+@inline function (res_FD::res_FD{T1})(res::Vector{T2}, Y::Vector{T2}) where {T1<:Function,T2<:Number}
     if length(Y) == res_FD.N.tot
         Y_new = Y
     else
-        Y_new = zeros(eltype(Y), length(res_FD.Y_cache))
+        Y_new = zeros(T2, res_FD.N.tot)
         @inbounds @views Y_new[1:res_FD.N.diff] .= res_FD.Y_cache[1:res_FD.N.diff]
         @inbounds @views Y_new[res_FD.N.diff+1:end] .= Y
     end
     res_FD.f!(res, 0.0, Y_new, res_FD.YP_cache, res_FD.θ_tot)
+    return nothing
 end
 
-struct jacobian_AD{T<:Function} <: AbstractJacobian
+struct jacobian_AD{T<:Function,cache<:ForwardColorJacCache} <: AbstractJacobian
     f!::res_FD{T}
     sp::SparseMatrixCSC{Float64,Int64}
-    jac_cache::ForwardColorJacCache
+    jac_cache::cache
 end
-@inline function (jac::jacobian_AD{T})(t,Y,YP,γ::Float64,p::P,run) where {T<:Function,P<:AbstractModel}
+@inline function (jac::jacobian_AD{T1,<:ForwardColorJacCache})(t,Y::T2,YP,γ::Float64,p::AbstractModel,run) where {T1<:Function,T2<:SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}}
+    # Jacobian for just the algebraic terms
     J = jac.sp
     forwarddiff_color_jacobian!(J, jac.f!, Y, jac.jac_cache)
-    if size(J) == (p.N.tot-1,p.N.tot)
-        @inbounds for i in 1:p.N.diff
-            J[i,i] += -γ
-        end
+    return nothing
+end
+@inline function (jac::jacobian_AD{T1,<:ForwardColorJacCache})(t,Y::T2,YP,γ::Float64,p::AbstractModel,run) where {T1<:Function,T2<:Vector{Float64}}
+    # Jacobian for the differential and algebraic terms
+    J = jac.sp
+    forwarddiff_color_jacobian!(J, jac.f!, Y, jac.jac_cache)
+    @inbounds for i in 1:p.N.diff
+        J[i,i] += -γ
     end
     return nothing
 end
@@ -260,13 +267,13 @@ end
 options_numerical(temp,solid_diff,Fickian,age,x...) = 
     options_numerical{temp,solid_diff,Fickian,age}(temp,solid_diff,Fickian,age,x...)
 
-const states_logic = model_states{
+const states_logic = solution_states{
     Bool,
     Bool,
     <:Tuple
 }
 
-const indices_states = model_states{
+const indices_states = solution_states{
     index_state,
     index_state,
     Tuple,
@@ -289,7 +296,7 @@ Base.@kwdef mutable struct options_simulation <: AbstractOptionsModel
     tdiscon::Vector{<:Number} = Float64[]
     interp_bc::Symbol = :interpolate
     save_start::Bool = false
-    var_keep::states_logic = model_states_logic(outputs)[1]
+    var_keep::states_logic = solution_states_logic(outputs)[1]
     stop_function::Function = (x...) -> nothing
     calc_integrator::Bool = false
 end
@@ -382,7 +389,7 @@ struct run_results{T<:AbstractRun}
     p::model
 end
 
-const solution = model_states{
+const solution = solution_states{
     Array{Float64,1},
     VectorOfArray{Float64,2,Array{Array{Float64,1},1}},
     Array{run_results,1},
@@ -631,9 +638,6 @@ function Base.show(io::IO, opts::T) where T<:AbstractOptionsModel
     
     print(io, join(str, "\n"))
 end
-method_symbol(::Type{method_I}) = :I
-method_symbol(::Type{method_V}) = :V
-method_symbol(::Type{method_P}) = :P
 
 method_name(::run_constant{method_I,<:Any};        shorthand::Bool=false) = shorthand ? "I"      : "current"
 method_name(::run_constant{method_V,<:Any};        shorthand::Bool=false) = shorthand ? "V"      : "voltage"

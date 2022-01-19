@@ -4,6 +4,7 @@ using StatsBase: mean
 using SciMLBase: DAEFunction, DAEProblem, step!, init
 using Dierckx: Spline1D
 using GeneralizedGenerated: mk_function, RuntimeFn
+using InteractiveUtils: subtypes
 using LinearAlgebra: diagind, Tridiagonal, norm
 using KLU: klu, klu!, KLUFactorization
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
@@ -46,15 +47,15 @@ include("structures.jl")
 include("params.jl")
 include("external.jl")
 include("set_variables.jl")
-include("simulate.jl")
 include("model_evaluation.jl")
-include("checks.jl")
 include("generate_functions.jl")
 include("physics_equations/residuals.jl")
 include("physics_equations/scalar_residual.jl")
 include("physics_equations/auxiliary_states_and_coefficients.jl")
 include("physics_equations/custom_functions.jl")
 include("physics_equations/numerical_tools.jl")
+include("physics_equations/input_methods.jl")
+include("checks.jl")
 
 ## Backwards compatability
 const Params = petlion

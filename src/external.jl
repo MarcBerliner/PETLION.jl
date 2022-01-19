@@ -126,7 +126,7 @@ function build_cache(θ, ind, N, numerics, opts)
 
     vars = variables_in_indices()
     
-    opts.var_keep = model_states_logic(opts.outputs)[1]
+    opts.var_keep = solution_states_logic(opts.outputs)[1]
 
     Y0 = zeros(Float64, N.tot)
     YP0 = zeros(Float64, N.tot)
@@ -328,7 +328,7 @@ function state_indices(N, numerics)
     
     N_tot = N_diff + N_alg
     
-    # These are the rest of the fields in the model_states struct that, while must be input, are unused
+    # These are the rest of the fields in the solution_states struct that, while must be input, are unused
     Y = YP = t = V = P = SOC = index_state()
     state_vars = (state_vars...,)
 

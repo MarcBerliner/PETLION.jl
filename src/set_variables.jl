@@ -67,14 +67,9 @@ end
     @inbounds x[end] .= x_val
 end
 
-@inline function (sol::solution)(tspan::Union{Number,AbstractVector}; interp_bc::Symbol=:interpolate, k::Int64=1,kw...)
-    if tspan isa UnitRange
-        t = collect(tspan)
-    elseif tspan isa Number
-        t = Float64[Float64(tspan)]
-    else
-        t = tspan
-    end
+(sol::solution)(t::T;kw...) where {T<:Number} = sol(Float64[t];kw...)
+(sol::solution)(t::T;kw...) where {T<:AbstractUnitRange} = sol(collect(t);kw...)
+@inline function (sol::solution)(t::AbstractArray{<:Number}; interp_bc::Symbol=:interpolate, k::Int64=1,kw...)
 
     var_keep = @inbounds @views sol.results[end].opts.var_keep
     function f(field)
@@ -95,7 +90,7 @@ end
     return sol
 end
 @inline interpolate_variable(x::Any,y...;kw...) = x
-@inline function interpolate_variable(x::R1, sol::R2, tspan::T1, interp_bc::Symbol;kw...) where {R1<:AbstractVector{Float64},R2<:solution,T1<:Union{Real,AbstractArray}}
+@inline function interpolate_variable(x::R1, sol::R2, tspan::T1, interp_bc::Symbol;kw...) where {R1<:AbstractVector{Float64},R2<:solution,T1<:AbstractArray{<:Number}}
     spl = Spline1D(sol.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))),kw...)
     out = spl(tspan)
     

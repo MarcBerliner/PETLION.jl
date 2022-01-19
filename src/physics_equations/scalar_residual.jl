@@ -16,7 +16,7 @@
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
 
-calc_η_plating(Y::Vector{<:Number},p::AbstractModel) = @views @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+calc_η_plating(Y::Vector{<:Number},p::AbstractModel) = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
 calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
 
 function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractModel)
@@ -65,18 +65,14 @@ for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:K_eff,:η
     eval(Meta.parse(str))
 end
 
-@inline method_I(Y, p)   = calc_I(Y,p)
-@inline method_V(Y, p)   = calc_V(Y,p)
-@inline method_P(Y, p)   = calc_P(Y,p)
-
 @inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_constant{method,<:Any}) where {method<:AbstractMethod,T<:Number} = @inbounds (res[end] = method(Y,p) - value(run))
 
 @inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_function{method,func}) where {method<:AbstractMethod,T<:Num,func<:Function}     = @inbounds (res[end] = method(Y,p) - run.func(t,Y,YP,p))
-@inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_function{method,func}) where {method<:AbstractMethod,T<:Float64,func<:Function} = @inbounds (val = run.func(t,Y,YP,p); run.value .= val; res[end] = method(Y,p) - val)
+@inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_function{method,func}) where {method<:AbstractMethod,T<:Float64,func<:Function} = @inbounds (val = run.func(t,Y,YP,p); run.value[] = val; res[end] = method(Y,p) - val)
 
 @inline function scalar_jacobian(t,Y,YP,γ,p::AbstractModel,run::T) where T<:Union{run_constant,run_function}
     J = get_jacobian_sparsity(p,run;jac_type=typeof(t))
-    J_nzval = @views @inbounds J.nzval[collect(1:length(J.nzval))]
+    J_nzval = @views @inbounds J.nzval[1:length(J.nzval)]
     scalar_jacobian!(J_nzval,t,Y,YP,γ,p,run)
     return J
 end
@@ -136,6 +132,7 @@ end
 @inline num_types_in_tuple(sig::DataType) = length(sig.parameters)
 @inline num_types_in_tuple(sig::UnionAll) = length(Base.unwrap_unionall(sig).parameters)
 
+@inline redefine_func(f::Any;kw...) = f
 @inline function redefine_func(f::T;
     args::Int64=numargs(f,4),
     ) where T<:Function
@@ -464,42 +461,64 @@ Multiple dispatch for the Jacobian function
     @inbounds J_new.nzval .= J.sp.nzval
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y,YP,γ,p,run) where {T1<:Function,T2,T3<:Function}
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y,YP,γ,p::model{jac},run) where {jac<:jacobian_symbolic,T1<:Function,T2,T3<:Function}
     J.base_func(J.J_base,t,Y,YP,γ,J.θ_tot)
     J.scalar_func(J.J_scalar,t,Y,YP,γ,J.θ_tot)
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y,YP,γ,p,run) where {T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y,YP,γ,p::model{jac},run) where {jac<:jacobian_symbolic,T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
     J.base_func(J.J_base,t,Y,YP,γ,J.θ_tot)
     scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:Function}
+
+@inline function (J::jacobian_combined{jac,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{jac},run) where {jac<:jacobian_AD,T2<:AbstractVector{<:Float64},T3<:Function}
     J.scalar_func(J.J_scalar,t,Y,YP,γ,J.θ_tot)
     res_FD = J.base_func.f!
-    if size(J.sp) == (p.N.alg,p.N.alg)
-        @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
-        Y_new = @views @inbounds Y[p.N.diff+1:end]
-        @inbounds res_FD.YP_cache .= 0.0
-    else
-        @inbounds res_FD.YP_cache .= YP
-        Y_new = Y
-    end
+    
+    # size(J.sp) == (p.N.tot,p.N.tot)
+    @inbounds res_FD.YP_cache .= YP
+    Y_new = Y
+    
     J.base_func(t,Y_new,YP,γ,p,run)
     J.J_base .= J.base_func.sp.nzval
     return nothing
 end
-@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{<:jacobian_AD},run) where {T1<:Function,T2,T3<:typeof(scalar_jacobian!)}
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{jac},run) where {jac<:jacobian_AD,T1<:Function,T2<:AbstractVector{<:Float64},T3<:Function}
+    J.scalar_func(J.J_scalar,t,Y,YP,γ,J.θ_tot)
+    res_FD = J.base_func.f!
+
+    # size(J.sp) == (p.N.alg,p.N.alg)
+    @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
+    Y_new = @views @inbounds Y[p.N.diff+1:end]
+    @inbounds res_FD.YP_cache .= 0.0
+        
+    J.base_func(t,Y_new,YP,γ,p,run)
+    J.J_base .= J.base_func.sp.nzval
+    return nothing
+end
+
+@inline function (J::jacobian_combined{jac,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{jac},run) where {jac<:jacobian_AD,T2<:AbstractVector{<:Float64},T3<:typeof(scalar_jacobian!)}
     scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
     res_FD = J.base_func.f!
-    if size(J.sp) == (p.N.alg,p.N.alg)
-        @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
-        Y_new = @views @inbounds Y[p.N.diff+1:end]
-        @inbounds res_FD.YP_cache .= 0.0
-    else
-        @inbounds res_FD.YP_cache .= YP
-        Y_new = Y
-    end
+
+    # size(J.sp) == (p.N.tot,p.N.tot)
+    @inbounds res_FD.YP_cache .= YP
+    Y_new = Y
+    
+    J.base_func(t,Y_new,YP,γ,p,run)
+    J.J_base .= J.base_func.sp.nzval
+    return nothing
+end
+@inline function (J::jacobian_combined{T1,T2,T3})(t,Y::Vector{Float64},YP::AbstractVector{Float64},γ,p::model{jac},run) where {jac<:jacobian_AD,T1<:Function,T2<:AbstractVector{<:Float64},T3<:typeof(scalar_jacobian!)}
+    scalar_jacobian!(J.J_scalar,t,Y,YP,γ,p,run)
+    res_FD = J.base_func.f!
+    
+    # size(J.sp) == (p.N.alg,p.N.alg)
+    @inbounds @views res_FD.Y_cache[1:res_FD.N.diff] .= Y[1:res_FD.N.diff]
+    Y_new = @views @inbounds Y[p.N.diff+1:end]
+    @inbounds res_FD.YP_cache .= 0.0
+    
     J.base_func(t,Y_new,YP,γ,p,run)
     J.J_base .= J.base_func.sp.nzval
     return nothing
