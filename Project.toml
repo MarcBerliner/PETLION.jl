@@ -1,7 +1,7 @@
 name = "PETLION"
 uuid = "5e0a28e4-193c-47fa-bbb8-9c901cc1ac2c"
 authors = ["Marc D. Berliner", "Richard D. Braatz"]
-version = "0.2.3"
+version = "0.2.4"
 
 [deps]
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
@@ -29,7 +29,7 @@ BSON = "0.3"
 Dierckx = "0.5"
 GeneralizedGenerated = "0.3"
 IfElse = "0.1.0"
-KLU = "0.2"
+KLU = "0.3"
 PkgVersion = "0.1"
 RecipesBase = "1"
 RecursiveArrayTools = "2"

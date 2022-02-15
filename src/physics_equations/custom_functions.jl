@@ -80,44 +80,43 @@ function D_eff_linear_one_term(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractMo
     return D_eff_p, D_eff_s, D_eff_n
 end
 
+D_eff(c_e, T) = 1e-4*10.0^((-4.43 - 54.0 / (T - 229-5e-3 * c_e) - 0.22e-3 * c_e))
 function D_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     D_eff evaluates the diffusion coefficients for the electrolyte phase [m^2/s]
     """
     
-    func(c_e, T) = 1e-4*10.0^((-4.43 - 54.0 / (T - 229-5e-3 * c_e) - 0.22e-3 * c_e))
+    
 
-    D_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p].*func.(c_e_p, T_p)
-    D_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s].*func.(c_e_s, T_s)
-    D_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n].*func.(c_e_n, T_n)
+    D_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p].*D_eff.(c_e_p, T_p)
+    D_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s].*D_eff.(c_e_s, T_s)
+    D_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n].*D_eff.(c_e_n, T_n)
 
     return D_eff_p, D_eff_s, D_eff_n
 end
 
+K_eff(c_e, T, p=nothing) = 1e-4*c_e*((-10.5 + 0.668*1e-3*c_e + 0.494*1e-6*c_e^2) + (0.074 - 1.78*1e-5*c_e - 8.86*1e-10*c_e^2)*T + (-6.96*1e-5 + 2.8*1e-8*c_e)*T^2)^2
 function K_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     K_eff evaluates the conductivity coefficients for the electrolyte phase [S/m]
     """
 
-    func(c_e, T) = @. 1e-4*c_e*((-10.5 + 0.668*1e-3*c_e + 0.494*1e-6*c_e^2) + (0.074 - 1.78*1e-5*c_e - 8.86*1e-10*c_e^2)*T + (-6.96*1e-5 + 2.8*1e-8*c_e)*T^2)^2
-
-    K_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p] .* func(c_e_p, T_p)
-    K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* func(c_e_s, T_s)
-    K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* func(c_e_n, T_n)
+    K_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p] .* K_eff.(c_e_p, T_p)
+    K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* K_eff.(c_e_s, T_s)
+    K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* K_eff.(c_e_n, T_n)
 
     return K_eff_p, K_eff_s, K_eff_n
 end
 
+K_eff_isothermal(c_e,T) = 4.1253*1e-2 + 5.007*1e-4*c_e - 4.7212*1e-7*c_e^2 + 1.5094*1e-10*c_e^3 - 1.6018*1e-14*c_e^4
 function K_eff_isothermal(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     K_eff_isothermal evaluates the conductivity coefficients for the electrolyte phase [S/m]
     """
 
-    func(c_e) = @. 4.1253*1e-2 + 5.007*1e-4*c_e - 4.7212*1e-7*c_e^2 + 1.5094*1e-10*c_e^3 - 1.6018*1e-14*c_e^4
-
-    K_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p] .* func(c_e_p)
-    K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* func(c_e_s)
-    K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* func(c_e_n)
+    K_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p] .* K_eff_isothermal.(c_e_p, T_p)
+    K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* K_eff_isothermal.(c_e_s, T_s)
+    K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* K_eff_isothermal.(c_e_n, T_n)
 
     return K_eff_p, K_eff_s, K_eff_n
 end
@@ -184,30 +183,30 @@ end
 
 
 ## Thermodynamic factors
+thermodynamic_factor_linear(c_e,T) = 1.0
 function thermodynamic_factor_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     Thermodynamic factor for the activity coefficient. The term `(1-t₊)` is included elsewhere,
     do not include the multiple in this function
     """
-    func(c_e, T) = ones(length(c_e))
 
-    ν_p = func(c_e_p, T_p)
-    ν_s = func(c_e_s, T_s)
-    ν_n = func(c_e_n, T_n)
+    ν_p = thermodynamic_factor_linear.(c_e_p, T_p)
+    ν_s = thermodynamic_factor_linear.(c_e_s, T_s)
+    ν_n = thermodynamic_factor_linear.(c_e_n, T_n)
 
     return ν_p, ν_s, ν_n
 end
 
+thermodynamic_factor(c_e, T) = 0.601 - 0.24(c_e/1000)^0.5 +0.982*(1-0.0052(T-293))*(c_e/1000)^1.5
 function thermodynamic_factor(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     """
     Thermodynamic factor for the activity coefficient. The term `(1-t₊)` is included elsewhere,
     do not include the multiple in this function
     """
-    func(c_e, T) = @. (0.601 - 0.24(c_e/1000)^0.5 +0.982*(1-0.0052(T-293))*(c_e/1000)^1.5)
 
-    ν_p = func(c_e_p, T_p)
-    ν_s = func(c_e_s, T_s)
-    ν_n = func(c_e_n, T_n)
+    ν_p = thermodynamic_factor.(c_e_p, T_p)
+    ν_s = thermodynamic_factor.(c_e_s, T_s)
+    ν_n = thermodynamic_factor.(c_e_n, T_n)
 
     return ν_p, ν_s, ν_n
 end

@@ -438,7 +438,17 @@ end
 end
 
 @inline factorize!(factor::SuiteSparse.UMFPACK.UmfpackLU{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = LinearAlgebra.lu!(factor,A)
-@inline factorize!(factor::KLUFactorization{Float64, Int64},A::SparseMatrixCSC{Float64, Int64}) = klu!(factor,A)
+@inline function factorize!(factor::KLUFactorization{Float64, Int64},A::SparseMatrixCSC{Float64, Int64})
+    klu!(factor,A)
+    
+    #=
+    # If the condition number is too large, then a refactor may be necessary
+    cond_est = 1.0/rcond(factor)
+    if cond_est > 1e12
+        klu_factor!(factor)
+    end
+    =#
+end
 @inline function newtons_method!(p::model,Y::R1,YP::R1,run,opts::AbstractOptionsModel,R_alg::T1,R_diff::T2,J_alg::T3;
     itermax::Int64=100, t::Float64=0.0
     ) where {R1<:Vector{Float64},T1<:residual_combined,T2<:residual_combined,T3<:jacobian_combined}
@@ -455,15 +465,6 @@ end
     @inbounds for iter in 1:itermax
         # updating res, Y, and J
         R_alg(res,t,Y,YP,p,run)
-        #=if iter == 1
-            println("t:   $(typeof(t))")
-            println("Y:   $(typeof(Y))")
-            println("YP:  $(typeof(YP))")
-            println("γ:   $(typeof(γ))")
-            println("p:   $(typeof(p))")
-            println("run: $(typeof(run))")
-        end
-        error("")=#
         J_alg(t,Y,YP,γ,p,run)
         factorize!(factor, J)
         

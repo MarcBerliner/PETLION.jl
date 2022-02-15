@@ -6,7 +6,7 @@ using Dierckx: Spline1D
 using GeneralizedGenerated: mk_function, RuntimeFn
 using InteractiveUtils: subtypes
 using LinearAlgebra: diagind, Tridiagonal, norm
-using KLU: klu, klu!, KLUFactorization
+using KLU: klu, klu!, KLUFactorization, rcond, klu_factor!
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
 using RecursiveArrayTools: VectorOfArray

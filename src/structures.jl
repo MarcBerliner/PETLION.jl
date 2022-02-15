@@ -469,23 +469,23 @@ end
 
 function C_rate_string(I::Number;digits::Int64=4)
     I_rat = rationalize(Float64(I))
-    num = I_rat.num
+    num = abs(I_rat.num)
     den = I_rat.den
 
-    if den > 100 || (abs(num) > 10 && den > 10)
+    if den > 100 || (num > 10 && den > 10)
         return "$(round(I;digits=digits))C"
     end
     
     str = I < 0 ? "-" : ""
     
-    if isone(abs(num)) && !isone(abs(den))
+    if isone(num) && !isone(den)
         str *= "C"
     else
-        str *= "$(abs(num))C"
+        str *= "$(num)C"
     end
     
     if !isone(den)
-        str *= "/$den"
+        str *= "/$(den)"
     end
     
     return str
