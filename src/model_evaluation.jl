@@ -449,6 +449,11 @@ end
     end
     =#
 end
+
+@inline function newtons_method!(p::model,Y,YP,run::AbstractRun,opts=p.opts;kw...)
+    funcs = p.funcs(run)
+    newtons_method!(p,Y,YP,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg;kw...)
+end
 @inline function newtons_method!(p::model,Y::R1,YP::R1,run,opts::AbstractOptionsModel,R_alg::T1,R_diff::T2,J_alg::T3;
     itermax::Int64=100, t::Float64=0.0
     ) where {R1<:Vector{Float64},T1<:residual_combined,T2<:residual_combined,T3<:jacobian_combined}

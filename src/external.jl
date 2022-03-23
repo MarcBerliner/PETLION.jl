@@ -337,7 +337,7 @@ function state_indices(N, numerics)
     return ind, N_diff, N_alg, N_tot
 end
 
-@inline function guess_init(p::AbstractModel, X_applied=0.0)
+@inline function guess_init(p::AbstractModel, X_applied=0.0; SOC=p.opts.SOC)
     """
     Get the initial guess in the DAE initialization.
     This function is made symbolic by Symbolics and saved as 
@@ -351,8 +351,8 @@ end
     
     build_T!(states, p)
 
-    states[:c_s_avg].p .= p.θ[:c_max_p] * (p.opts.SOC*(p.θ[:θ_max_p] - p.θ[:θ_min_p]) + p.θ[:θ_min_p])
-    states[:c_s_avg].n .= p.θ[:c_max_n] * (p.opts.SOC*(p.θ[:θ_max_n] - p.θ[:θ_min_n]) + p.θ[:θ_min_n])
+    states[:c_s_avg].p .= p.θ[:c_max_p] * (SOC*(p.θ[:θ_max_p] - p.θ[:θ_min_p]) + p.θ[:θ_min_p])
+    states[:c_s_avg].n .= p.θ[:c_max_n] * (SOC*(p.θ[:θ_max_n] - p.θ[:θ_min_n]) + p.θ[:θ_min_n])
     
     build_c_s_star!(states, p)
 

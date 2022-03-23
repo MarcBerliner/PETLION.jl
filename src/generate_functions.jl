@@ -71,13 +71,17 @@ function load_functions_symbolic(p::AbstractModel)
         ## Jacobian
         @load dir * "J_sp.jl" J_y_sp θ_keys
     else
-        Y0Func,res_algFunc,res_diffFunc,jacFunc,jac_algFunc,J_y_sp,θ_keys = generate_functions_symbolic(p)
+        Y0Func,res_algFunc,res_diffFunc,jacFunc,jac_algFunc,J_y_sp,θ_keys,progress = generate_functions_symbolic(p)
         
         initial_guess! = eval(Y0Func)
         f_alg!         = eval(res_algFunc)
         f_diff!        = eval(res_diffFunc)
-        J_y!_func      = eval(jacFunc)
         J_y_alg!_func  = eval(jac_algFunc)
+        fillpercent!(progress, 5)
+        
+        J_y!_func      = eval(jacFunc)
+        fillpercent!(progress, 5)
+        ProgressMeter.finish!(progress)
     end
 
     J_y!_sp     = sparse(J_y_sp...)
@@ -89,33 +93,43 @@ function load_functions_symbolic(p::AbstractModel)
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys
 end
 
+ProgressMeter.finish!(::Nothing;kw...) = nothing
+fillpercent!(progress::ProgressMeter.Progress, n::Int) = (for _ in 1:(n*progress.n÷100); ProgressMeter.next!(progress); end)
+fillpercent!(::Nothing,::Int) = nothing
 function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYMBOLIC_FUNCTIONS])
     
-    if verbose println("Creating the functions for $p\n\nMay take a few minutes...") end
-
+    if verbose
+        println("Creating the functions for $p\n")
+        progress = ProgressMeter.Progress(200)
+        fillpercent!(progress, 1)
+        ProgressMeter.update!(progress)
+    else
+        progress = nothing
+    end
+    
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
 
     ## Y0 function
-    if verbose println("1/4: Making initial guess function") end
     Y0_sym = _symbolic_initial_guess(p_sym, SOC_sym, θ_sym, X_applied)
+    fillpercent!(progress, 4)
 
-    ## batteryModel function
-    if verbose println("2/4: Making symbolic sol") end
+    ## PET_residuals function
     res = _symbolic_residuals(p_sym, t_sym, Y_sym, YP_sym)
+    fillpercent!(progress, 15)
 
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
     
     Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false)[2]
 
     ## jacobian
-    if verbose println("3/4: Making symbolic Jacobian") end
-    Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, verbose=verbose)
+    Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, progress=progress)
 
-    if verbose println("4/4: Making initial condition functions") end
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
+    fillpercent!(progress, 5)
 
     jac_algFunc = _symbolic_initial_conditions_jac(p, Jac, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)
-    
+    fillpercent!(progress, 10 + (options[:SAVE_SYMBOLIC_FUNCTIONS] ? 0 : 5))
+
     J_y_sp = (findnz(J_sp)..., p.N.tot-1, p.N.tot)
         
     θ_keys = θ_keys_slim
@@ -141,9 +155,10 @@ function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYM
         @save dir * "J_sp.jl" J_y_sp θ_keys
     end
 
-    if verbose println("Finished\n") end
+    fillpercent!(progress, (options[:SAVE_SYMBOLIC_FUNCTIONS] ? 5 : 0))
+    ProgressMeter.finish!(progress)
 
-    return Y0Func, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys
+    return Y0Func, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys, progress
 end
 
 function load_functions_forward_diff(p::AbstractModel)
@@ -266,13 +281,14 @@ function _symbolic_jacobian(p::AbstractModel=petlion(LCO);inds::T=1:p.N.tot) whe
 
     return Jac
 end
-function _symbolic_jacobian(p::AbstractModel, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim; verbose=false)
+function _symbolic_jacobian(p::AbstractModel, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim; progress=nothing)
     J_sp, sp_x, sp_xp = _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
 
     ## symbolic jacobian
     Jac_x  = sparsejacobian_multithread(res, Y_sym;  sp = sp_x,  simplify=false)
     Jac_xp = sparsejacobian_multithread(res, YP_sym; sp = sp_xp, simplify=false)
     
+    fillpercent!(progress, 25)
     Jac = Jac_x
     @inbounds for (i,j) in zip(Jac_xp.rowval,Jac_xp.colptr)
         Jac[i,j] += γ_sym*Jac_xp[i,j]
@@ -280,6 +296,7 @@ function _symbolic_jacobian(p::AbstractModel, res, t_sym, Y_sym, YP_sym, γ_sym,
 
     # building the sparse jacobian
     jacFunc = build_function(Jac.nzval, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)[2]
+    fillpercent!(progress, 25)
 
     return Jac, jacFunc, J_sp
 end

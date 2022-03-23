@@ -467,7 +467,7 @@ function time_units(t::Number)
     return t, time_unit, time_scale
 end
 
-function C_rate_string(I::Number;digits::Int64=4)
+function C_rate_string(I::Number;digits::Int64=4,show_sign::Bool=true)
     I_rat = rationalize(Float64(I))
     num = abs(I_rat.num)
     den = I_rat.den
@@ -476,7 +476,7 @@ function C_rate_string(I::Number;digits::Int64=4)
         return "$(round(I;digits=digits))C"
     end
     
-    str = I < 0 ? "-" : ""
+    str = I < 0 && show_sign ? "-" : ""
     
     if isone(num) && !isone(den)
         str *= "C"

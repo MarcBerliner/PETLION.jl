@@ -16,6 +16,7 @@ using SpecialFunctions: erf
 using SHA: sha1
 
 import PkgVersion
+import ProgressMeter
 import SuiteSparse
 import Sundials
 import LinearAlgebra
