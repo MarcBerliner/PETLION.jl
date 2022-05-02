@@ -1,7 +1,7 @@
 name = "PETLION"
 uuid = "5e0a28e4-193c-47fa-bbb8-9c901cc1ac2c"
 authors = ["Marc D. Berliner", "Richard D. Braatz"]
-version = "0.2.5"
+version = "0.2.6"
 
 [deps]
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
