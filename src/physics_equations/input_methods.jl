@@ -40,14 +40,16 @@ method_symbol(::Type{method_V}) = :V
 @inline method_V(Y, p)   = calc_V(Y,p)
 
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol, res_I_guess) where {method<:method_P,in<:Number}
-    input = run.input
-    @inbounds run.value[] = Y0[p.ind.I[1]] = input/(calc_V(Y0,p)*p.θ[:I1C])
+    @inbounds run.value[] = input = run.input
+
+    @inbounds Y0[p.ind.I[1]] = input/(calc_V(Y0,p)*p.θ[:I1C])
     return nothing
 end
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::solution, res_I_guess) where {method<:method_P,in<:Symbol}
-    input = run.input
+    @inbounds run.value[] = input = run.input
     if check_is_hold(input,sol)
-        @inbounds run.value[] = Y0[p.ind.I[1]] = calc_P((@views @inbounds sol.Y[end]), p)
+
+        @inbounds Y0[p.ind.I[1]] = calc_P((@views @inbounds sol.Y[end]), p)
     elseif input == :rest
         @inbounds run.value[] = Y0[p.ind.I[1]] = 0.0
     else
@@ -73,8 +75,8 @@ method_symbol(::Type{method_P}) = :P
 @inline function initial_current!(Y0::Vector{Float64},YP0,p,run::run_constant{method,in},sol::solution, res_I_guess) where {method<:method_V,in<:Number}
     input = run.input
     @inbounds run.value[] = input
-    if !isempty(sol)
-        @inbounds Y0[p.ind.I[1]] = calc_I((@views @inbounds sol.Y[end]), p)
+    if !isempty(sol) && (I_prev = calc_I((@views @inbounds sol.Y[end]), p); I_prev ≠ 0)
+        @inbounds Y0[p.ind.I[1]] = I_prev
     else
         OCV = calc_V(Y0,p)
         @inbounds Y0[p.ind.I[1]] = input > OCV ? +1.0 : -1.0
