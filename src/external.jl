@@ -129,6 +129,7 @@ function build_cache(θ, ind, N, numerics, opts)
     opts.var_keep = solution_states_logic(opts.outputs)[1]
 
     Y0 = zeros(Float64, N.tot)
+    Y_full = zeros(Float64, N.tot)
     YP0 = zeros(Float64, N.tot)
     res = zeros(Float64, N.alg)
     Y_alg = zeros(Float64, N.alg)
@@ -147,6 +148,7 @@ function build_cache(θ, ind, N, numerics, opts)
         vars,
         save_start_dict,
         Y0,
+        Y_full,
         YP0,
         res,
         Y_alg,
@@ -409,7 +411,7 @@ end
 
 function strings_directory_func(N::discretizations_per_section, numerics::T; create_dir=false) where T<:options_numerical
 
-    dir_saved_models = "saved_models"
+    dir_saved_models = options[:DIR_SAVED_MODELS]
     # If the file directory is not specified, use the current working directory
     if !isnothing(options[:FILE_DIRECTORY])
         dir_saved_models = joinpath(options[:FILE_DIRECTORY], dir_saved_models)

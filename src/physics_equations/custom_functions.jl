@@ -7,8 +7,8 @@ function D_s_eff_isothermal(c_s_avg_p, c_s_avg_n, T_p, T_n, p::AbstractModel)
     The user may modify the script to meet specific requirements
     """
 
-    D_sp_eff = repeat([p.θ[:D_sp]], p.N.p)
-    D_sn_eff = repeat([p.θ[:D_sn]], p.N.n)
+    D_sp_eff = p.θ[:D_sp]*ones(p.N.p)
+    D_sn_eff = p.θ[:D_sn]*ones(p.N.n)
 
     return D_sp_eff, D_sn_eff
 end
@@ -61,9 +61,9 @@ function D_eff_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     D_eff_linear evaluates the diffusion coefficients for the electrolyte phase [m^2/s]
     """
 
-    D_eff_p = p.θ[:D_p].*p.θ[:ϵ_p].^p.θ[:brugg_p].*ones(p.N.p)
-    D_eff_s = p.θ[:D_s].*p.θ[:ϵ_s].^p.θ[:brugg_s].*ones(p.N.s)
-    D_eff_n = p.θ[:D_n].*p.θ[:ϵ_n].^p.θ[:brugg_n].*ones(p.N.n)
+    D_eff_p = (p.θ[:D_p]*p.θ[:ϵ_p]^p.θ[:brugg_p])*ones(p.N.p)
+    D_eff_s = (p.θ[:D_s]*p.θ[:ϵ_s]^p.θ[:brugg_s])*ones(p.N.s)
+    D_eff_n = (p.θ[:D_n]*p.θ[:ϵ_n]^p.θ[:brugg_n])*ones(p.N.n)
     
     return D_eff_p, D_eff_s, D_eff_n
 end
@@ -73,9 +73,9 @@ function D_eff_linear_one_term(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractMo
     D_eff_linear evaluates the diffusion coefficients for the electrolyte phase [m^2/s]
     """
 
-    D_eff_p = p.θ[:D_e].*p.θ[:ϵ_p].^p.θ[:brugg_p].*ones(p.N.p)
-    D_eff_s = p.θ[:D_e].*p.θ[:ϵ_s].^p.θ[:brugg_s].*ones(p.N.s)
-    D_eff_n = p.θ[:D_e].*p.θ[:ϵ_n].^p.θ[:brugg_n].*ones(p.N.n)
+    D_eff_p = (p.θ[:D_e]*p.θ[:ϵ_p]^p.θ[:brugg_p])*ones(p.N.p)
+    D_eff_s = (p.θ[:D_e]*p.θ[:ϵ_s]^p.θ[:brugg_s])*ones(p.N.s)
+    D_eff_n = (p.θ[:D_e]*p.θ[:ϵ_n]^p.θ[:brugg_n])*ones(p.N.n)
     
     return D_eff_p, D_eff_s, D_eff_n
 end
@@ -86,11 +86,9 @@ function D_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     D_eff evaluates the diffusion coefficients for the electrolyte phase [m^2/s]
     """
     
-    
-
-    D_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p].*D_eff.(c_e_p, T_p)
-    D_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s].*D_eff.(c_e_s, T_s)
-    D_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n].*D_eff.(c_e_n, T_n)
+    D_eff_p = (p.θ[:ϵ_p]^p.θ[:brugg_p])*D_eff.(c_e_p, T_p)
+    D_eff_s = (p.θ[:ϵ_s]^p.θ[:brugg_s])*D_eff.(c_e_s, T_s)
+    D_eff_n = (p.θ[:ϵ_n]^p.θ[:brugg_n])*D_eff.(c_e_n, T_n)
 
     return D_eff_p, D_eff_s, D_eff_n
 end
@@ -101,9 +99,9 @@ function K_eff(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     K_eff evaluates the conductivity coefficients for the electrolyte phase [S/m]
     """
 
-    K_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p] .* K_eff.(c_e_p, T_p)
-    K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* K_eff.(c_e_s, T_s)
-    K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* K_eff.(c_e_n, T_n)
+    K_eff_p = (p.θ[:ϵ_p]^p.θ[:brugg_p])*K_eff.(c_e_p, T_p)
+    K_eff_s = (p.θ[:ϵ_s]^p.θ[:brugg_s])*K_eff.(c_e_s, T_s)
+    K_eff_n = (p.θ[:ϵ_n]^p.θ[:brugg_n])*K_eff.(c_e_n, T_n)
 
     return K_eff_p, K_eff_s, K_eff_n
 end
@@ -114,9 +112,9 @@ function K_eff_isothermal(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
     K_eff_isothermal evaluates the conductivity coefficients for the electrolyte phase [S/m]
     """
 
-    K_eff_p = p.θ[:ϵ_p].^p.θ[:brugg_p] .* K_eff_isothermal.(c_e_p, T_p)
-    K_eff_s = p.θ[:ϵ_s].^p.θ[:brugg_s] .* K_eff_isothermal.(c_e_s, T_s)
-    K_eff_n = p.θ[:ϵ_n].^p.θ[:brugg_n] .* K_eff_isothermal.(c_e_n, T_n)
+    K_eff_p = (p.θ[:ϵ_p]^p.θ[:brugg_p])*K_eff_isothermal.(c_e_p, T_p)
+    K_eff_s = (p.θ[:ϵ_s]^p.θ[:brugg_s])*K_eff_isothermal.(c_e_s, T_s)
+    K_eff_n = (p.θ[:ϵ_n]^p.θ[:brugg_n])*K_eff_isothermal.(c_e_n, T_n)
 
     return K_eff_p, K_eff_s, K_eff_n
 end
@@ -175,13 +173,6 @@ function OCV_LiC6_with_NMC(θ_n, T=298.15, p=nothing)
     return U_n, ∂U∂T_n
 end
 
-
-
-
-
-
-
-
 ## Thermodynamic factors
 thermodynamic_factor_linear(c_e,T) = 1.0
 function thermodynamic_factor_linear(c_e_p, c_e_s, c_e_n, T_p, T_s, T_n, p::AbstractModel)
@@ -219,7 +210,7 @@ end
 sqrt_ReLU(x;minval=0) = sqrt(max(minval,x))
 
 function rxn_BV(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p;
-    sqrt=sqrt_ReLU
+    sqrt=sqrt_ReLU,
     )
     # The modified sqrt function is to avoid errors when concentrations momentarily become non-physical
 
@@ -248,7 +239,7 @@ function MHC_kfunc(η, λ)
 end
 
 function rxn_MHC(c_s_star, c_e, T, η, k_i, λ_MHC, c_s_max, p;
-    sqrt=sqrt_ReLU
+    sqrt=sqrt_ReLU,
     )
     # The modified sqrt function is to avoid errors when concentrations momentarily become non-physical
 

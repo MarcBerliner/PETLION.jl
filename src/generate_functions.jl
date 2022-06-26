@@ -27,7 +27,7 @@ function get_saved_model_version(p::AbstractModel)
     
     out = readline(str)
     out = replace(out, "PETLION version: v" => "")
-    # convert this to a tuple
+    # convert this to a tuple, e.g. (0, 2, 4)
     out = (Meta.parse.(split(out,"."))...,)
 end
 
@@ -81,7 +81,7 @@ function load_functions_symbolic(p::AbstractModel)
         
         J_y!_func      = eval(jacFunc)
         fillpercent!(progress, 5)
-        ProgressMeter.finish!(progress)
+        finishpercent!(progress)
     end
 
     J_y!_sp     = sparse(J_y_sp...)
@@ -93,13 +93,16 @@ function load_functions_symbolic(p::AbstractModel)
     return initial_guess!, f_alg!, f_diff!, J_y!, J_y_alg!, θ_keys
 end
 
-ProgressMeter.finish!(::Nothing;kw...) = nothing
 fillpercent!(progress::ProgressMeter.Progress, n::Int) = (for _ in 1:(n*progress.n÷100); ProgressMeter.next!(progress); end)
 fillpercent!(::Nothing,::Int) = nothing
+
+finishpercent!(progress::ProgressMeter.Progress;kw...) = ProgressMeter.finish!(progress;kw...)
+finishpercent!(::Nothing;kw...) = nothing
+
 function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYMBOLIC_FUNCTIONS])
     
     if verbose
-        println("Creating the functions for $p\n")
+        println("Creating the model")
         progress = ProgressMeter.Progress(200)
         fillpercent!(progress, 1)
         ProgressMeter.update!(progress)
@@ -144,7 +147,7 @@ function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYM
             write(f, str)
         end
 
-        save_string(x) = (string(x) |> remove_comments |> rearrange_if_statements |> join)
+        save_string(x) = (string(x) |> rearrange_inbounds |> remove_comments |> rearrange_if_statements |> join)
         
         write(dir * "initial_guess.jl", save_string(Y0Func))
         write(dir * "J_y.jl",           save_string(jacFunc))
@@ -156,7 +159,7 @@ function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYM
     end
 
     fillpercent!(progress, (options[:SAVE_SYMBOLIC_FUNCTIONS] ? 5 : 0))
-    ProgressMeter.finish!(progress)
+    finishpercent!(progress)
 
     return Y0Func, res_algFunc, res_diffFunc, jacFunc, jac_algFunc, J_y_sp, θ_keys, progress
 end
@@ -271,8 +274,8 @@ function _symbolic_jacobian(p::AbstractModel=petlion(LCO);inds::T=1:p.N.tot) whe
     YP_sym = @inbounds @views YP_sym[inds]
 
     ## symbolic jacobian
-    Jac_x  = sparsejacobian_multithread(res, Y_sym;  simplify=false)
-    Jac_xp = sparsejacobian_multithread(res, YP_sym; simplify=false)
+    Jac_x  = sparsejacobian(res, Y_sym;  simplify=false)
+    Jac_xp = sparsejacobian(res, YP_sym; simplify=false)
     
     Jac = Jac_x
     @inbounds for (i,j) in zip(Jac_xp.rowval,Jac_xp.colptr)
@@ -285,8 +288,8 @@ function _symbolic_jacobian(p::AbstractModel, res, t_sym, Y_sym, YP_sym, γ_sym,
     J_sp, sp_x, sp_xp = _Jacobian_sparsity_pattern(p, res, Y_sym, YP_sym)
 
     ## symbolic jacobian
-    Jac_x  = sparsejacobian_multithread(res, Y_sym;  sp = sp_x,  simplify=false)
-    Jac_xp = sparsejacobian_multithread(res, YP_sym; sp = sp_xp, simplify=false)
+    Jac_x  = sparsejacobian(res, Y_sym;  simplify=false)
+    Jac_xp = sparsejacobian(res, YP_sym; simplify=false)
     
     fillpercent!(progress, 25)
     Jac = Jac_x
@@ -325,8 +328,8 @@ function get_only_θ_used_in_model(θ_sym, θ_keys, X...)
     a vector of the ones that are actually used and their sorted names
     """
     used_params_tot = eltype(θ_sym)[]
-    @inbounds for _X in X, x in _X
-        append!(used_params_tot, get_variables(x))
+    @inbounds for vector in X, element in vector
+        append!(used_params_tot, get_variables(element))
     end
     index_params = Int64[]
 
@@ -385,7 +388,7 @@ function get_symbolic_vars(p::AbstractModel;
         all_keys = sort!(Symbol.(keys(p.θ)))
         
         @inbounds for key in all_keys
-            if !(key ∈ θ_keys)
+            if key ∉ θ_keys
                 push!(θ_keys, key)
             end
         end
@@ -408,28 +411,9 @@ function get_symbolic_vars(p::AbstractModel;
     return θ, Y, YP, t, SOC, X_applied, γ, p, θ_keys
 end
 
-function sparsejacobian_multithread(ops::AbstractVector{<:Num}, vars::AbstractVector{<:Num};
-    sp = jacobian_sparsity(ops, vars),
-    simplify = true,
-    multithread = true,
-    )
-
-    I,J,_ = findnz(sp)
-
-    exprs = Vector{Num}(undef, length(I))
-
-    if multithread
-        @inbounds Threads.@threads for iter in 1:length(I)
-            @inbounds exprs[iter] = expand_derivatives(Differential(vars[J[iter]])(ops[I[iter]]), simplify)
-        end
-    else
-        @inbounds for iter in 1:length(I)
-            @inbounds exprs[iter] = expand_derivatives(Differential(vars[J[iter]])(ops[I[iter]]), simplify)
-        end
-    end
-
-    jac = sparse(I,J, exprs, length(ops), length(vars))
-    return jac
+function rearrange_inbounds(str::String)
+    str = replace(str,"@inbounds" => "")
+    str = "@inbounds " * str
 end
 
 remove_comments(str::String,x...) = remove_comments(collect(str),x...)
@@ -444,8 +428,8 @@ function remove_comments(str::Vector{Char},first::String="#=",last::String="=#")
 
     @assert length(ind_first) == length(ind_last)
 
-    ind_first = reverse(ind_first)
-    ind_last  = reverse(ind_last)
+    ind_first .= reverse(ind_first)
+    ind_last  .= reverse(ind_last)
 
     @inbounds for (l,u) in zip(ind_first,ind_last)
         index = l:u
@@ -471,22 +455,11 @@ function find_in_string(str::AbstractVector,x::String,I::T=1:length(x)) where T
     return ind_vec
 end
 
-function replace_repeated(str,x...)
-    len_prev = length(str)
-    len_new = 0
-    @inbounds while len_prev != len_new
-        len_prev = length(str)
-        str = replace(str, x...)
-        len_new = length(str)
-    end
-    return str
-end
-
 find_next(str::String,x...;kw...) = find_next(collect(str),x...;kw...)
 function find_next(str,first,x::AbstractArray;itermax=900000)
     ind = first .+ (0:length(x)-1)
     iter = 0
-    while (@views @inbounds str[ind]) != x
+    while (@views @inbounds str[ind]) ≠ x
         ind = ind .+ 1
         iter += 1
         if ind[end] > length(str) error("Couldn't find the string") end
@@ -496,7 +469,7 @@ end
 function find_next(str,first,x;itermax=900000)
     ind = first
     iter = 0
-    while (@inbounds str[ind]) != x
+    while (@inbounds str[ind]) ≠ x
         ind = ind .+ 1
         iter += 1
         if iter == itermax error(str[ind]) end
@@ -506,6 +479,9 @@ end
 
 rearrange_if_statements(str::String) = rearrange_if_statements(collect(str))
 function rearrange_if_statements(str::Vector{Char})
+    ```
+    Puts all if statements from Symbolics on a single line
+    ```
     inds = find_in_string(str, "if")
     @inbounds for ind_start in reverse(inds), _ in 1:4
         ind = find_next(str,ind_start[1] .+ (-1:0),['\n', ' '])

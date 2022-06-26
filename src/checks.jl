@@ -31,19 +31,19 @@ end
 @inline function check_stop_I(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
     ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions_immutable}
     
-    if (I - bounds.I_max > ϵ)
+    if (I - bounds.I_max > ϵ) && calc_I(YP,p) > 0
         t_frac = (bounds.prev.I - bounds.I_max)/(bounds.prev.I - I)
         if t_frac < bounds.prev.t_final_interp_frac
             bounds.prev.t_final_interp_frac = t_frac
             run.info.flag = 7
-            run.info.exit_reason = "Above maximum permitted C-rate"
+            run.info.exit_reason = "Above max. C-rate"
         end
-    elseif (bounds.I_min - I > ϵ)
+    elseif (bounds.I_min - I > ϵ) && calc_I(YP,p) < 0
         t_frac = (bounds.prev.I - bounds.I_min)/(bounds.prev.I - I)
         if t_frac < bounds.prev.t_final_interp_frac
             bounds.prev.t_final_interp_frac = t_frac
             run.info.flag = 8
-            run.info.exit_reason = "Below minimum permitted C-rate"
+            run.info.exit_reason = "Below min. C-rate"
         end
     end
     bounds.prev.I = I    
@@ -57,19 +57,19 @@ end
     ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions_immutable}
     
     V = calc_V(Y,p)
-    if (bounds.V_min - V > ϵ) && I < 0
+    if (bounds.V_min - V > ϵ) && calc_V(YP,p) < 0
         t_frac = (bounds.prev.V - bounds.V_min)/(bounds.prev.V - V)
         if t_frac < bounds.prev.t_final_interp_frac
             bounds.prev.t_final_interp_frac = t_frac
             run.info.flag = 1
-            run.info.exit_reason = "Below minimum voltage limit"
+            run.info.exit_reason = "Below min. voltage"
         end
-    elseif (V - bounds.V_max > ϵ) && I > 0
+    elseif (V - bounds.V_max > ϵ) && calc_V(YP,p) > 0
         t_frac = (bounds.prev.V - bounds.V_max)/(bounds.prev.V - V)
         if t_frac < bounds.prev.t_final_interp_frac
             bounds.prev.t_final_interp_frac = t_frac
             run.info.flag = 2
-            run.info.exit_reason = "Above maximum voltage limit"
+            run.info.exit_reason = "Above max. voltage"
         end
     end
     bounds.prev.V = V
@@ -86,14 +86,14 @@ end
         if t_frac < bounds.prev.t_final_interp_frac
             bounds.prev.t_final_interp_frac = t_frac
             run.info.flag = 3
-            run.info.exit_reason = "Below minimum SOC limit"
+            run.info.exit_reason = "Below min. SOC"
         end
     elseif (SOC - bounds.SOC_max > ϵ) && I > 0
         t_frac = (bounds.prev.SOC - bounds.SOC_max)/(bounds.prev.SOC - SOC)
         if t_frac < bounds.prev.t_final_interp_frac
             bounds.prev.t_final_interp_frac = t_frac
             run.info.flag = 4
-            run.info.exit_reason = "Above maximum SOC limit"
+            run.info.exit_reason = "Above max. SOC"
         end
     end
     bounds.prev.SOC = SOC
@@ -105,14 +105,14 @@ end
 @inline function check_stop_T(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
     ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:model_temp{true},R5<:boundary_stop_conditions_immutable}
 
-    if !isnan(bounds.T_max)
+    if !isnan(bounds.T_max) && run.name ≠ :dT && run.name ≠ :T
         T = temperature_weighting(calc_T(Y,p),p)
-        if T - bounds.T_max > ϵ
+        if T - bounds.T_max > ϵ && temperature_weighting(calc_T(YP,p),p) > 0
             t_frac = (bounds.prev.T - bounds.T_max)/(bounds.prev.T - T)
             if t_frac < bounds.prev.t_final_interp_frac
                 bounds.prev.t_final_interp_frac = t_frac
                 run.info.flag = 5
-                run.info.exit_reason = "Above maximum permitted temperature"
+                run.info.exit_reason = "Above max. temperature"
             end
         end
         bounds.prev.T = T
@@ -148,7 +148,7 @@ end
                 if t_frac < bounds.prev.t_final_interp_frac
                     bounds.prev.t_final_interp_frac = t_frac
                     run.info.flag = 6
-                    run.info.exit_reason = "Above c_s_n saturation threshold"
+                    run.info.exit_reason = "Above max. c_s_n"
                 end
             end
         end
@@ -171,7 +171,7 @@ end
             if t_frac < bounds.prev.t_final_interp_frac
                 bounds.prev.t_final_interp_frac = t_frac
                 run.info.flag = 9
-                run.info.exit_reason = "Below minimum permitted c_e"
+                run.info.exit_reason = "Below min. c_e"
             end
         end
         bounds.prev.c_e_min = c_e_min
@@ -183,16 +183,18 @@ end
 @inline function check_stop_η_plating(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
     ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model, R5<:boundary_stop_conditions_immutable}
     
-    η_plating = calc_η_plating(Y,p)
-    if !isnan(bounds.η_plating_min) && bounds.η_plating_min - η_plating > ϵ
-        t_frac = (bounds.prev.η_plating - bounds.η_plating_min)/(bounds.prev.η_plating - η_plating)
-        if t_frac < bounds.prev.t_final_interp_frac
-            bounds.prev.t_final_interp_frac = t_frac
-            run.info.flag = 9
-            run.info.exit_reason = "Below minimum permitted η_plating"
+    if !isnan(bounds.η_plating_min)
+        η_plating = calc_η_plating(Y,p)
+        if bounds.η_plating_min - η_plating > ϵ && calc_η_plating(YP,p) < 0
+            t_frac = (bounds.prev.η_plating - bounds.η_plating_min)/(bounds.prev.η_plating - η_plating)
+            if t_frac < bounds.prev.t_final_interp_frac
+                bounds.prev.t_final_interp_frac = t_frac
+                run.info.flag = 9
+                run.info.exit_reason = "Below min. η_plating"
+            end
         end
+        bounds.prev.η_plating = η_plating
     end
-    bounds.prev.η_plating = η_plating
 
     return nothing
 end
@@ -211,7 +213,7 @@ end
         if t_frac < bounds.prev.t_final_interp_frac
             bounds.prev.t_final_interp_frac = t_frac
             run.info.flag = 10
-            run.info.exit_reason = "Above maximum film growth rate"
+            run.info.exit_reason = "Above max. film growth rate"
         end
     end
     bounds.prev.dfilm = dfilm_max
@@ -296,7 +298,7 @@ end
     if length(input_methods) === 0
         str_methods = replace("$(valid_methods)", ":"=>"")
         error("ERROR\n--------\n" *
-        "  No inputs are selected, choose one from: $str_methods")
+        " No inputs are selected, choose one from: $str_methods")
     end
 
     # If there are more than one names, then that means that
@@ -305,7 +307,7 @@ end
 
     if length(input_methods) > 1
         str_methods = replace("$(valid_methods)", ":"=>"")
-        str *= "  Cannot select more than one input from: $(str_methods)"
+        str *= " Cannot select more than one input from: $(str_methods)"
     end
         
     if length(invalid_args) ≥ 1 && length(input_methods) > 1
@@ -313,13 +315,29 @@ end
     end
 
     if length(invalid_args) ≥ 1
-        str *= "  Invalid keyword argument"
+        str *= " Invalid keyword argument"
         str *= length(invalid_args) == 1 ? ": " : "s: "
         str_args = replace(length(invalid_args) == 1 ? "$(invalid_args[1])" : "$(invalid_args)", ":"=>"")
         str *= str_args
     end
 
     error(str)
+end
+
+@inline function check_initial_SOC(bounds::boundary_stop_conditions_immutable, SOC::T, I::Float64) where T<:Number
+    """
+    For new runs, check that the SOC is within the bounds
+    for (dis)charge
+    """
+    if I == 0
+        return nothing
+    elseif !(SOC < bounds.SOC_max) && I > 0
+        show_int = x -> x == round(Int, x) ? Int(x) : x
+        error("The initial SOC ($(show_int(SOC))) must be less than SOC_max ($(show_int(bounds.SOC_max))) when charging")
+    elseif !(SOC > bounds.SOC_min) && I < 0
+        show_int = x -> x == round(Int, x) ? Int(x) : x
+        error("The initial SOC ($(show_int(SOC))) must be greater than SOC_min ($(show_int(bounds.SOC_min))) when discharging")
+    end
 end
 
 @inline function check_reinitialization!(sol::R1, int::R2, run::R3, p::R4, bounds::R5, opts::R6, funcs) where {R1<:solution, R2<:Sundials.IDAIntegrator, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions_immutable,R6<:AbstractOptionsModel}
@@ -359,7 +377,7 @@ end
 end
 
 function check_errors_initial(θ, numerics, N)
-    if !(numerics.jacobian ∈ (:symbolic, :AD))
+    if numerics.jacobian ∉ (:symbolic, :AD)
         error("`jacobian` can either be :symbolic or :AD")
     end
 

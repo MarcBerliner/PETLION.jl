@@ -67,32 +67,75 @@ end
     @inbounds x[end] .= x_val
 end
 
+export reset_t!
+@inline reset_t!(sol::solution) = (sol.t .-= sol.t[1]; sol)
+
+@inline function tspan_index(t::T1,tspans::T2) where {T1<:Number,T2<:Vector{Tuple{Float64, Float64}}}
+    if t < tspans[1][1]
+        return 1
+    end
+    @inbounds for i in 1:length(tspans)
+        t0,tf=tspans[i]
+        if t0 ≤ t ≤ tf
+            return i
+        end
+    end
+    return length(tspans)
+end
+@inline Base.broadcasted(::typeof(tspan_index), t_vec::T, tspans) where T<:AbstractArray = [tspan_index(t,tspans) for t in t_vec]
+
 (sol::solution)(t::T;kw...) where {T<:Number} = sol(Float64[t];kw...)
 (sol::solution)(t::T;kw...) where {T<:AbstractUnitRange} = sol(collect(t);kw...)
-@inline function (sol::solution)(t::AbstractArray{<:Number}; interp_bc::Symbol=:interpolate, k::Int64=1,kw...)
+@inline function (sol::solution)(t::T; interp_bc::Symbol=:interpolate, k::Int64=3,kw...) where T<:AbstractArray{<:Number}
+    tspans = [sol.results[i].tspan for i in 1:length(sol)]
+    ind_sol = tspan_index.(t,tspans)
+    ind_sol_unique = unique(ind_sol)
+
+    tspan_indices = Dict(ind_sol_unique .=> [findall(ind_sol .== ind) for ind in ind_sol_unique])
+    sol_indices = Dict(ind_sol_unique .=> [sol.results[ind].run_index for ind in ind_sol_unique])
+
+    if interp_bc == :interpolate
+        bc = "nearest"
+    elseif interp_bc == :extrapolate
+        bc = "extrapolate"
+    else
+        error("Invalid interp_bc method.")
+    end
 
     var_keep = @inbounds @views sol.results[end].opts.var_keep
-    function f(field)
+    function f(field::Symbol)
         x = getproperty(sol, field)
         if field == :t
             return t
         elseif x isa AbstractArray{Float64} && getproperty(var_keep, field) && length(x) > 1
-            return interpolate_variable(x, sol, t, interp_bc; k=k, kw...)
+            return interpolate_variable(x, sol, t, interp_bc, tspan_indices, sol_indices; k=k, bc=bc, kw...)
+        elseif field == :results
+            return x[ind_sol_unique]
         else
             return x
         end
     end
     
     states_tot = @inbounds (f(field) for field in fieldnames(solution))
+    
+    sol_interp = solution(states_tot...)
 
-    sol = solution(states_tot...)
-
-    return sol
+    return sol_interp
 end
 @inline interpolate_variable(x::Any,y...;kw...) = x
-@inline function interpolate_variable(x::R1, sol::R2, tspan::T1, interp_bc::Symbol;kw...) where {R1<:AbstractVector{Float64},R2<:solution,T1<:AbstractArray{<:Number}}
-    spl = Spline1D(sol.t, x; bc = (interp_bc == :interpolate ? "nearest" : (interp_bc == :extrapolate ? "extrapolate" : error("Invalid interp_bc method."))),kw...)
-    out = spl(tspan)
+@inline function interpolate_variable(x::R1, sol::R2, tspan::T1, interp_bc::Symbol,tspan_indices::Dict{Int64,Vector{Int64}},sol_indices::Dict{Int64,UnitRange{Int64}};k::Int64=3,kw...) where {R1<:AbstractVector{Float64},R2<:solution,T1<:AbstractArray{<:Number}}
+    out = zeros(Float64,length(tspan))
+    
+    @inbounds for ind in keys(tspan_indices)
+        tspan_ind = tspan_indices[ind]
+        sol_inds = sol_indices[ind]
+        
+        spl = Spline1D((@views @inbounds sol.t[sol_inds]), (@views @inbounds x[sol_inds]);
+            k=min(k,length(sol_inds)),
+            kw...,
+        )
+        @inbounds out[tspan_ind] = spl((@views tspan[tspan_ind]))
+    end
     
     return out
 end

@@ -3,6 +3,7 @@ const options = Dict{Symbol,Any}(
     :SAVE_SYMBOLIC_FUNCTIONS => true,
     :FILE_DIRECTORY => nothing,
     :FACTORIZATION_METHOD => :KLU, # :KLU or :LU
+    :DIR_SAVED_MODELS => "saved_models",
 )
 
 # https://en.wikipedia.org/wiki/2019_redefinition_of_the_SI_base_units
@@ -321,6 +322,7 @@ struct cache_run
     vars::Tuple
     save_start_dict::Dict{save_start_info,Vector{Float64}}
     Y0::Vector{Float64}
+    Y_full::Vector{Float64}
     YP0::Vector{Float64}
     res::Vector{Float64}
     Y_alg::Vector{Float64}
@@ -421,15 +423,23 @@ const STATE_NAMES = Dict{Symbol,String}(
     :j_s => "Side Reaction Flux (mol/m²⋅s)",
     :Φ_e => "Electrolyte Potential (V)",
     :Φ_s => "Solid-phase Potential (V)",
+    :t => "Time (s)",
     :I => "Current (C-rate)",
     :V => "Voltage (V)",
     :P => "Power (W)",
-    :SOC => "State-of-Charge (-)",
-    :SOH => "State-of-Health (-)",
+    :SOC => "State of Charge (-)",
+    :SOH => "State of Health (-)",
 )
 
 ## Modifying Base functions
-@recipe function plot(sol::solution, x_name::Symbol=:V;linewidth=2,legend=false)
+@recipe function plot(sol::solution, x_name::Union{Symbol,String}=:V;linewidth=2,legend=false)
+    x_name = Symbol(x_name)
+    if x_name ∉ fieldnames(solution)
+        error("$x_name is not a valid state")
+    elseif !getproperty(sol.results[end].opts.var_keep, x_name)
+        error("$x_name is not in `outputs`")
+    end
+
     x = getproperty(sol, x_name)
     if x isa AbstractMatrix
         x = x'
@@ -441,15 +451,11 @@ const STATE_NAMES = Dict{Symbol,String}(
         ylabel = "$x_name"
     end
     
-    if length(sol.t) ≠ length(x) error("$x_name is not in `outputs`") end
-    
-    time_unit, time_scale = time_units(sol.t[end])[2:3]
-
     legend --> legend
     yguide --> ylabel
-    xguide --> "Time ($(time_unit))"
+    xguide --> "Time (s)"
     linewidth --> linewidth
-    sol.t./time_scale, x
+    sol.t, x
 end
 
 function time_units(t::Number)
@@ -497,8 +503,8 @@ function Base.show(io::IO, p::AbstractModel)
             return ""
         end
         
-        pad = 19
-        str = "  $title "
+        pad = 18
+        str = " $title "
         if isnan(max)
             str = rpad(str * "min:",pad)*"$min$units\n"
         elseif isnan(min)
@@ -510,54 +516,52 @@ function Base.show(io::IO, p::AbstractModel)
         return str
         
     end
-    
-    # spacing
-    sp = p.numerics.solid_diffusion == :Fickian ? "  " : ""
 
     # create the header for model
     if p isa model_skeleton
-        header = "model_skeleton"
+        header = "model"
     else
         header = [x for x in remove_module_name(summary(p))]
         deleteat!(header, findall('{' .== header)[2]:length(header)-1)
         header = join(header)
     end
     header = "$(@__MODULE__) $header"
+
+    lim_electrode, Q_min = limiting_electrode(p)
     
     str = string(
     "$header:\n",
-    "  Cathode: $(p.numerics.cathode), $(p.numerics.rxn_p), & $(p.numerics.OCV_p)\n",
-    "  Anode:   $(p.numerics.anode), $(p.numerics.rxn_n), & $(p.numerics.OCV_n)\n",
-    "  System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), $(p.numerics.K_eff), & $(p.numerics.thermodynamic_factor)\n",
-    :model_methods ∈ fieldnames(typeof(p)) && !isempty(p.model_methods) ? 
-    "  Methods: $(join(p.model_methods, ", "))\n" : "",
-    "  --------\n",
-    "  Temperature:     $(p.numerics.temperature)\n",
-    "  Solid diffusion: $(p.numerics.solid_diffusion)",
+    " Cathode: $(p.numerics.cathode), $(p.numerics.rxn_p), & $(p.numerics.OCV_p)\n",
+    " Anode:   $(p.numerics.anode), $(p.numerics.rxn_n), & $(p.numerics.OCV_n)\n",
+    " System:  $(p.numerics.D_s_eff), $(p.numerics.rxn_rate), $(p.numerics.D_eff), $(p.numerics.K_eff), & $(p.numerics.thermodynamic_factor)\n",
+    " ---Options---\n",
+    " Temperature:     $(p.numerics.temperature)\n",
+    " Solid diffusion: $(p.numerics.solid_diffusion)",
     p.numerics.solid_diffusion == :Fickian ? 
     ", $(p.numerics.Fickian_method)\n" : "\n",
-    "  Aging:           $(p.numerics.aging)\n",
+    " Aging:           $(p.numerics.aging)\n",
+    " Total capacity:  $(round(Q_min;digits=2)) Ah/m², $(lim_electrode)-limited\n",
     show_bounds("Voltage", p.bounds.V_min, p.bounds.V_max, " V"),
     show_bounds("SOC", p.bounds.SOC_min, p.bounds.SOC_max),
     show_bounds("Current", p.bounds.I_min, p.bounds.I_max, "C"),
     p.numerics.temperature ?
     show_bounds("Temperature", NaN, p.bounds.T_max-273.15, " °C") : "",
     show_bounds("Anode sat.", NaN, p.bounds.c_s_n_max),
-    "  --------\n",
+    " ---Node Points---\n",
     p.numerics.temperature ?
-    "  N.a: $sp$(p.N.a)\n" : "",
-    "  N.p: $sp$(p.N.p)\n",
+    " Pos. tab:       $(p.N.a)\n" : "",
+    " Pos. electrode: $(p.N.p)\n",
     p.numerics.solid_diffusion == :Fickian ?
-    "  N.r_p: $(p.N.r_p)\n" : "",
-    "  N.s: $sp$(p.N.s)\n",
-    "  N.n: $sp$(p.N.n)\n",
+    " Pos. particles: $(p.N.r_p)\n" : "",
+    " Separator:      $(p.N.s)\n",
+    " Neg. electrode: $(p.N.n)\n",
     p.numerics.solid_diffusion == :Fickian ?
-    "  N.r_n: $(p.N.r_n)\n" : "",
+    " Neg. particles: $(p.N.r_n)\n" : "",
     p.numerics.temperature ?
-    "  N.z: $sp$(p.N.z)\n" : "",
+    " Neg. tab:       $(p.N.z)\n" : "",
     )
     
-    print(io, str[1:end-1])
+    print(io, str[1:end-1]) # removes the final \n
 end
 
 function Base.show(io::IO, ind::indices_states)
@@ -591,7 +595,7 @@ function Base.show(io::IO, ind::indices_states)
 
     str = [
         "indices_states:";
-        ["  " * rpad("$(var): ", pad) * "$(length(index) > 1 ? index : index[1]), $(_type)" for (index,var,_type) in zip(indices,vars,types)]
+        [" " * rpad("$(var): ", pad) * "$(length(index) > 1 ? index : index[1]), $(_type)" for (index,var,_type) in zip(indices,vars,types)]
     ]
     
     print(io, join(str, "\n"))
@@ -607,12 +611,12 @@ function Base.show(io::IO, bounds::T) where T<:AbstractStopConditions
 
     str = [
         "$T:";
-        ["  " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
+        [" " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
     ]
     
     print(io, join(str, "\n"))
 end
-function Base.show(io::IO, opts::T) where T<:options_numerical
+function Base.show(io::IO, opts::T) where T<:Union{options_numerical,AbstractOptionsModel,run_info}
     fields = fieldnames(T)
     vals = [getproperty(opts,field) for field in fields]
 
@@ -620,20 +624,7 @@ function Base.show(io::IO, opts::T) where T<:options_numerical
 
     str = [
         "$T:";
-        ["  " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
-    ]
-    
-    print(io, join(str, "\n"))
-end
-function Base.show(io::IO, opts::T) where T<:AbstractOptionsModel
-    fields = fieldnames(T)
-    vals = [getproperty(opts,field) for field in fields]
-
-    pad = maximum(length.(String.(fields)))+2
-
-    str = [
-        "$T:";
-        ["  " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
+        [" " * rpad("$(field): ", pad) * "$(val)" for (field,val) in zip(fields,vals)]
     ]
     
     print(io, join(str, "\n"))
@@ -650,25 +641,41 @@ method_string(run::run_constant{method_I,<:Any};     kw...) = method_name(run;kw
 method_string(run::run_constant{method_V,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) V"
 method_string(run::run_constant{method_P,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) W"
 
-function Base.show(io::IO, result::run_results{T}) where {T<:AbstractRun}
+function Base.show(io::IO,  ::MIME"text/plain", results::T) where T<:AbstractArray{run_results}
+    str = remove_module_name(summary(results)) * ":\n"
+    result_strs = [" $i: " * result_str(result) for (i,result) in enumerate(results)]
+    str *= join(result_strs, "\n")
+    
+    print(io, str)
+end
+function result_str(result::run_results)
     run = result.run
     tspan = result.tspan
-
+    
     fix(x, digits=2) = round(x, digits=digits)
-    str = method_string(run)
+    str = string(method_string(run))
     str *= " from ($(fix(tspan[1])) s, $(fix(tspan[2])) s)"
+
+    return str
+end
+remove_string_types(str::String) = str[1:findfirst('{',str)-1]
+function Base.show(io::IO, result::T) where T<:run_results
+    str = remove_string_types("$T") * ": " * result_str(result) * ":"
+    str *= "\n Fields: " * join(":" .* string.(fieldnames(T)), ", ")
 
     print(io, str)
 end
 
 function Base.show(io::IO, run::T) where {T<:AbstractRun}
-    str = "Run for $(method_string(run;shorthand=true))"
+    str = remove_string_types("$T") * ": " * "Run for $(method_string(run;shorthand=true))"
     if !isempty(run.info.exit_reason)
         str *= " with exit: $(run.info.exit_reason)"
     end
+    str *= "\n Fields: " * join(":" .* string.(fieldnames(T)), ", ")
     
     print(io, str)
 end
+
 (funcs::model_funcs)(sol::solution) = (@assert !isempty(sol); (@inbounds funcs(sol.results[end].run)))
 Base.show(io::IO, ::model_funcs) = println(io,"$(@__MODULE__) model functions")
 function Base.show(io::IO, sol::solution)
@@ -680,8 +687,7 @@ function Base.show(io::IO, sol::solution)
     end
     function str_runs()
     
-        str = length(results) == 1 ? "  Run: " : "  Runs:"
-        str *= " "^4
+        str = " Run" * (length(results) == 1 ? ": " : "s:") * " "^4
 
         methods = method_name.([result.run for result in results];shorthand=true)
 
@@ -719,20 +725,21 @@ function Base.show(io::IO, sol::solution)
     if !isempty(sol)
         str = @views @inbounds string(
                 "$title\n",
-                "  --------\n",
+                " --------\n",
                 str_runs(),
-                "  Time:    $(round(t;                  digits = 2)) $time_unit\n",
-                "  Current: $(C_rate_string(calc_I(Y,p);digits = 4))\n",
-                "  Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
-                "  Power:   $(round(calc_P(Y,p);        digits = 4)) W\n",
-                "  SOC:     $(round(sol.SOC[end];     digits = 4))\n",
+                " Time:    $(round(t;                  digits = 2)) $time_unit\n",
+                " Current: $(C_rate_string(calc_I(Y,p);digits = 4))\n",
+                " Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
+                " Power:   $(round(calc_P(Y,p);        digits = 2)) W/m²\n",
+                " SOC:     $(round(sol.SOC[end];       digits = 4))\n",
                 !(p.numerics.aging == false) ? 
-                "  SOH:     $(round(sol.SOH[end];     digits = 4))\n"
+                " SOH:     $(round(sol.SOH[end];       digits = 4))\n"
                 : "",
                 !(p.numerics.temperature == false) ? 
-                "  Temp.:   $(round(temperature_weighting(calc_T(Y,p),p)-273.15; digits = 4)) °C\n"
+                # " Temp.:   $(round(calc_T_avg(Y,p)-273.15; digits = 4)) °C\n"
+                " Temp.:   $(round(temperature_weighting(calc_T(Y,p),p)-273.15; digits = 4)) °C\n"
                 : "",
-                "  Exit:    $(sol.results[end].info.exit_reason)",
+                " Exit:    $(sol.results[end].info.exit_reason)",
             )
     else
         str = "$title: empty"
