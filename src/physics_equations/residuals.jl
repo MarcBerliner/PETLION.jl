@@ -99,7 +99,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     a_p, a_n = surface_area_to_volume_ratio(p)
 
     # Interpolation of the diffusion coefficients, same for electrolyte conductivities
-    D_eff_p, D_eff_s, D_eff_n = interpolate_electrolyte_conductivities(D_eff_p, D_eff_s, D_eff_n, p)
+    D_eff_p, D_eff_s, D_eff_n = interpolate_electrolyte_grid(D_eff_p, D_eff_s, D_eff_n, p)
 
     A_tot = -block_matrix_maker(p, D_eff_p, D_eff_s, D_eff_n)
 
@@ -128,7 +128,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     # Diffusion coefficient on the interface
     @views @inbounds first_s = D_eff_p[end]/den_s
     # Fix the values at the boundaries
-    @views @inbounds A_tot[p.N.p,p.N.p-1:p.N.p+1] .= [last_p; -(last_p + first_s); first_s]/(Δx.p*p.θ[:l_p]*p.θ[:ϵ_p])
+    @views @inbounds A_tot[p.N.p,p.N.p-1:p.N.p+1] .= [last_p; -(last_p + first_s); first_s]/(Δx.p*p.θ[:l_p])
 
     ## Interface between separator and cathode (first volume in the separator)
 
@@ -137,7 +137,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     # Diffusion coefficient on the interface
     @views @inbounds first_s = D_eff_p[end]/den_s
 
-    @views @inbounds A_tot[p.N.p+1,p.N.p:p.N.p+2] .= [first_s; -(first_s+second_s); second_s]/(Δx.s*p.θ[:l_s]*p.θ[:ϵ_s])
+    @views @inbounds A_tot[p.N.p+1,p.N.p:p.N.p+2] .= [first_s; -(first_s+second_s); second_s]/(Δx.s*p.θ[:l_s])
 
     ## Interface between separator and anode (last volume in the separator)
 
@@ -148,7 +148,7 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     # Diffusion coefficient on the interface
     @views @inbounds first_n = D_eff_s[end]/den_s
 
-    @views @inbounds A_tot[p.N.p+p.N.s,p.N.p+p.N.s-1:p.N.p+p.N.s+1] .= [last_s; -(last_s+first_n); first_n]/(Δx.s*p.θ[:l_s]*p.θ[:ϵ_s])
+    @views @inbounds A_tot[p.N.p+p.N.s,p.N.p+p.N.s-1:p.N.p+p.N.s+1] .= [last_s; -(last_s+first_n); first_n]/(Δx.s*p.θ[:l_s])
 
     ## Interface between separator and anode (first volume in the anode)
 
@@ -160,32 +160,9 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     @views @inbounds first_n = D_eff_s[end]/den_n
 
     
-    A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] .= [first_n; -(first_n+second_n); second_n]/(Δx.n*p.θ[:l_n]*p.θ[:ϵ_n])
+    A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] .= [first_n; -(first_n+second_n); second_n]/(Δx.n*p.θ[:l_n])
     
-    ϵ_tot = [
-        ones(p.N.p).*p.θ[:ϵ_p]
-        ones(p.N.s).*p.θ[:ϵ_s]
-        ones(p.N.n).*p.θ[:ϵ_n]
-        ]
-
-    K = 1.0./ϵ_tot
-    A_ϵ = zeros(eltype(K), (p.N.p+p.N.s+p.N.n), (p.N.p+p.N.s+p.N.n))
-    ind_diagonal = diagind(A_ϵ)
-    ind_neg1diag = diagind(A_ϵ, -1)
-    ind_pos1diag = diagind(A_ϵ, 1)
-    A_ϵ[ind_diagonal] .= K
-
-    # Build porosities matrix
-    @views @inbounds A_ϵ[ind_neg1diag] .= K[1:end-1]
-    @views @inbounds A_ϵ[ind_pos1diag] .= K[1:end-1]
-
-    @views @inbounds A_ϵ[p.N.p,p.N.p-1:p.N.p+1] .= 1.0
-    @views @inbounds A_ϵ[p.N.p+1,p.N.p:p.N.p+2] .= 1.0
-
-    @views @inbounds A_ϵ[p.N.p+p.N.s,p.N.p+p.N.s-1:p.N.p+p.N.s+1] .= 1.0
-    @views @inbounds A_ϵ[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] .= 1.0
-
-    A_tot = Matrix(A_tot).*Matrix(A_ϵ)
+    A_tot = Matrix(A_tot)
 
     # Write the RHS of the equation
     rhsCe = A_tot*c_e
@@ -195,9 +172,17 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
 
     ν_p,ν_s,ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 
-    rhsCe[ind_p] .+= K[ind_p].*(1-p.θ[:t₊]).*ν_p.*a_p.*j.p
+    rhsCe[ind_p] .+= (1-p.θ[:t₊]).*ν_p.*a_p.*j.p
     # nothing for the separator since a_s = 0
-    rhsCe[ind_n] .+= K[ind_n].*(1-p.θ[:t₊]).*ν_n.*a_n.*j.n
+    rhsCe[ind_n] .+= (1-p.θ[:t₊]).*ν_n.*a_n.*j.n
+    
+    ϵ = [
+        ones(p.N.p).*p.θ[:ϵ_p]
+        ones(p.N.s).*p.θ[:ϵ_s]
+        ones(p.N.n).*p.θ[:ϵ_n]
+        ]
+    
+    rhsCe ./= ϵ
 
     # Write the residual of the equation
     res_c_e .= rhsCe .- ∂c_e
@@ -655,7 +640,7 @@ function residuals_j_s!(res, states, p::AbstractModel)
     j_s_calc = -abs.((p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*(-exp.(-α.*F./(R.*T.n).*η_s)))
 
     # Only activate the side reaction during charge
-    j_s_calc .= [IfElse.ifelse(I_density > 0, x, 0) for x in j_s_calc]
+    j_s_calc .= IfElse.ifelse(I_density > 0, j_s_calc, 0)
 
     # side reaction residuals
     res_j_s .= j_s .- j_s_calc
@@ -684,7 +669,7 @@ function residuals_Φ_e!(res, states, p::AbstractModel)
     F = const_Faradays
 
     # Interpolate the K_eff values to the edge of the control volume
-    K̂_eff_p, K̂_eff_s, K̂_eff_n = interpolate_electrolyte_conductivities(K_eff.p, K_eff.s, K_eff.n, p)
+    K̂_eff_p, K̂_eff_s, K̂_eff_n = interpolate_electrolyte_grid(K_eff.p, K_eff.s, K_eff.n, p)
 
     A_tot = block_matrix_maker(p, K̂_eff_p, K̂_eff_s, K̂_eff_n)
 
@@ -787,12 +772,15 @@ function residuals_Φ_s!(res, states, p::AbstractModel)
     ## Cathode
     
     # RHS for the solid potential in the cathode and anode
-    f_p = @. p.θ[:l_p]^2*Δx.p^2*a_p*F*j.p/σ_eff_p
-    f_n = @. p.θ[:l_n]^2*Δx.n^2*a_n*F*j.n/σ_eff_n
+    f_p = @. p.θ[:l_p]^2*Δx.p^2*a_p*F*j.p
+    f_n = @. p.θ[:l_n]^2*Δx.n^2*a_n*F*j.n
 
     # Additional term at the electrode-current collector interface
-    f_p[1]   += -I_density*(Δx.p*p.θ[:l_p]/σ_eff_p)
-    f_n[end] += +I_density*(Δx.n*p.θ[:l_n]/σ_eff_n)
+    f_p[1]   += -I_density*(Δx.p*p.θ[:l_p])
+    f_n[end] += +I_density*(Δx.n*p.θ[:l_n])
+
+    f_p .*= 1 ./σ_eff_p
+    f_n .*= 1 ./σ_eff_n
 
     block_tridiag(N) = spdiagm(
         -1 => ones(eltype(j.p),N-1),

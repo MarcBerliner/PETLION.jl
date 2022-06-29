@@ -104,7 +104,7 @@ If an optional input argument for the initial algebraic states is given
     @assert length(states) == p.N.tot
     if !isempty(sol)
         error("ERROR\n--------\n" *
-        "  Cannot set `initial_states` and continue a previous run.")
+        " Cannot set `initial_states` and continue a previous run.")
     end
     set_var!(sol.Y, copy(states), true)
 end
@@ -128,7 +128,7 @@ end
         valid_methods = (method_symbol.(subtypes(AbstractMethod))...,)
         str_methods = replace("$(valid_methods)", ":"=>"")
         error("ERROR\n--------\n" *
-        "  Invalid keyword argument: $(String(names[1]))\n\n  Choose one from: $str_methods")
+        " Invalid keyword argument: $(String(names[1]))\n\n  Choose one from: $str_methods")
     end
 end
 
@@ -152,7 +152,7 @@ end
 @inline run_determination(::AbstractMethod, ::T) where T<:Function = run_function
 
 @inline custom_res!(p::model,res::T,sol;kw...) where T<:Tuple = custom_res!(p,res...,sol;kw...)
-@inline custom_res!(p::model,res::T,sol;kw...) where T<:Any = p.θ[:_residual_val] = 0.0
+@inline custom_res!(p::model,res::T,sol;kw...) where T<:Function = custom_res!(p,0.0,res,sol;kw...)
 @inline function custom_res!(p::model,x::T,func_RHS::Q,sol::solution;kw...) where {T<:Function,Q<:Function}
     p.θ[:_residual_val] = 0.0
     return (t,Y,YP,p) -> func_RHS(t,Y,YP,p) - func(t,Y,YP,p)
@@ -208,9 +208,16 @@ end
     end
     
     initial_current!(Y0,YP0,p,run,sol,res_I_guess)
-    
+
     ## getting the DAE integrator function
     initialize_states!(p,Y0,YP0,run,opts,funcs,SOC)
+
+    # for new runs, check that the initial SOC is
+    # within the appropriate bounds for (dis)charge
+    if new_run
+        I = @inbounds Y0[p.ind.I[1]]
+        check_initial_SOC(bounds, SOC, I)
+    end
     
     int = retrieve_integrator(run,p,funcs,Y0,YP0,opts,new_run)
     
@@ -483,6 +490,21 @@ end
     end
     # calculate the differential equations for YP0
     R_diff(YP,t,Y,YP,p,run)
+    
+    # Estimate dY_alg/dt. Improves stability of the initial guess
+    Δt = max(10opts.reltol_init, sqrt(eps(p.θ[:c_e₀])))
+    
+    Y_new_time = p.cache.Y_full
+    Y_new_time .= Y .+ Δt*YP
+    
+    R_alg(res,Δt,Y_new_time,YP,p,run)
+    
+    # Update the algebraic Jacobian (currently not used)
+    # J_alg(Δt,Y_new_time,YP,γ,p,run)
+    # factorize!(factor, J)
+
+    # The Newton update `-(factor\res)` is equal to (Y_alg(Δt + t0) - Y_alg(t0))
+    @inbounds YP[p.N.diff+1:end] .= -(factor\res)./Δt
     
     return nothing
 end

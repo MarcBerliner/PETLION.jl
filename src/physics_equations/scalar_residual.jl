@@ -13,6 +13,7 @@
 
 @inline calc_T(Y::Vector{<:Number}, p::AbstractModelTemp{true}) = @inbounds @views Y[p.ind.T]
 @inline calc_T(::Vector{<:Number}, p::AbstractModelTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
+@inline calc_T_avg(Y, p) = temperature_weighting(calc_T(Y,p),p)
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
 
@@ -30,8 +31,8 @@ function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractModel)
     c_s_star_n = @views @inbounds Y[n_indices]
 
     T = calc_T(Y,p)
-    T_p = T[(1:p.N.p) .+ (p.N.a)]
-    T_n = T[(1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)]
+    T_p = @inbounds @views T[(1:p.N.p) .+ (p.N.a)]
+    T_n = @inbounds @views T[(1:p.N.n) .+ (p.N.a+p.N.p+p.N.s)]
 
     # Put the surface concentration into a fraction
     θ_p = c_s_star_p./p.θ[:c_max_p]
@@ -41,7 +42,9 @@ function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractModel)
     U_p = p.numerics.OCV_p(θ_p, T_p, p)[1]
     U_n = p.numerics.OCV_n(θ_n, T_n, p)[1]
 
-    return return U_p, U_n
+    OCV = [U_p; U_n]
+
+    return OCV
 end
 
 function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractModel)
@@ -57,7 +60,7 @@ function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractModel)
 end
 
 # Metaprogramming to broadcast calc_x
-for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:K_eff,:η_plating,:OCV,:R_internal)
+for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:T_avg,:K_eff,:η_plating,:OCV,:R_internal)
     name = "calc_$x"
     str = "Base.broadcasted(f::typeof($name),  Y::T, p::AbstractModel) where T<:VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = [f(y,p) for y in Y]"
 
@@ -133,6 +136,7 @@ end
 @inline num_types_in_tuple(sig::UnionAll) = length(Base.unwrap_unionall(sig).parameters)
 
 @inline redefine_func(f::Any;kw...) = f
+@inline redefine_func(f::Tuple{<:Any,T};kw...) where T<:Function = (f[1],redefine_func(f[2];kw...))
 @inline function redefine_func(f::T;
     args::Int64=numargs(f,4),
     ) where T<:Function
@@ -141,17 +145,17 @@ end
     """
     
     if     args == 4
-        f_new = f
         # inputs = (:t,:Y,:YP,:p)
+        f_new = f
     elseif args == 3
-        f_new = (t,Y,YP,p) -> f(t,Y,p)
         # inputs = (:t,:Y,:p)
+        f_new = (t,Y,YP,p) -> f(t,Y,p)
     elseif args == 2
-        f_new = (t,Y,YP,p) -> f(t,p)
         # inputs = (:t,:p)
+        f_new = (t,Y,YP,p) -> f(t,p)
     elseif args == 1
-        f_new = (t,Y,YP,p) -> f(t)
         # inputs = (:t)
+        f_new = (t,Y,YP,p) -> f(t)
     else
         error("Input function must have at least one argument.")
     end
@@ -193,11 +197,11 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     """
     Updating the theta vector to ensure any new parameters will be accounted for
     """
-    θ_keys_scalar = @inbounds get_only_θ_used_in_sol(θ_sym, θ_keys, res[end])[2]
+    θ_keys_scalar = @inbounds get_only_θ_used_in_model(θ_sym, θ_keys, res[end])[2]
 
     θ_keys = deepcopy(p.cache.θ_keys)
     @inbounds for key in θ_keys_scalar
-        if !(key ∈ θ_keys)
+        if key ∉ θ_keys
             push!(θ_keys, key)
         end
     end
@@ -206,7 +210,7 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     θ_sym_slim = [p_sym.θ[key] for key in θ_keys]
     update_θ!(θ_tot,θ_keys,p)
 
-    J_scalar_func = eval(build_function(J_vec.nzval,t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
+    J_scalar_func = eval(build_function(J_vec.nzval,t,Y,YP,γ,θ_sym_slim; parallel=SerialForm(), expression=Val{false})[2])
 
     J_sp_base = p.funcs.J_y!.sp
     J_base_func = p.funcs.J_y!
@@ -230,15 +234,17 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
         catch
             residuals_PET!(res,t,Y,YP,p_sym)
         end
-        @inbounds for ind in ind_differential
-            res_algebraic = substitute(res_algebraic, Dict(YP[ind] => res[ind] + YP[ind]))
-        end
+        """
+        Replace the LHS of `YP` with the RHS of `YP`. This only works because the differential
+        states are in the form `residual = RHS - YP`.
+        """
+        res_algebraic = substitute(res_algebraic, Dict(YP[ind_differential] .=> res[ind_differential] + YP[ind_differential]))
 
-        scalar_residal_alg! = eval(build_function(res_algebraic,t,Y,YP,θ_sym_slim; expression=Val{false}))
+        scalar_residal_alg! = eval(build_function(res_algebraic,t,Y,YP,θ_sym_slim; parallel=SerialForm(), expression=Val{false}))
 
         J_alg_vec = @inbounds sparsejacobian([res_algebraic], Y[p.N.diff+1:end])[:]
         
-        J_scalar_alg_func = eval(build_function(J_alg_vec.nzval,t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
+        J_scalar_alg_func = eval(build_function(J_alg_vec.nzval,t,Y,YP,γ,θ_sym_slim; parallel=SerialForm(), expression=Val{false})[2])
         
         J_sp_alg_scalar = spzeros(Float64,p.N.alg)
         @inbounds J_sp_alg_scalar[J_alg_vec.nzind] .= 1
@@ -246,7 +252,7 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
         scalar_residal_alg! = scalar_residual!
 
         if scalar_contains_Y_diff
-            J_scalar_alg_func = eval(build_function((@inbounds J_vec[p.N.diff+1:end].nzval),t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
+            J_scalar_alg_func = eval(build_function((@inbounds J_vec[p.N.diff+1:end].nzval),t,Y,YP,γ,θ_sym_slim; parallel=SerialForm(), expression=Val{false})[2])
         else
             J_scalar_alg_func = J_scalar_func
         end
@@ -265,9 +271,7 @@ function truncated_res_diff(p::AbstractModel,ind_differential)
         str_old = rearrange_if_statements(str_old)
     end
 
-    str_old = PETLION.convert_to_ifelse(str_old)
-
-    str = collect(str_old)
+    str = collect(convert_to_ifelse(str_old))
 
     # Remove all the unnecessary lines
     out_char(i::Int) = collect("ˍ₋out[$i]")

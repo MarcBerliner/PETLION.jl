@@ -10,7 +10,7 @@ using KLU: klu, klu!, KLUFactorization, rcond, klu_factor!
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
 using RecursiveArrayTools: VectorOfArray
-using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse
+using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse, SerialForm
 using RecipesBase
 using SpecialFunctions: erf
 using SHA: sha1
@@ -59,11 +59,19 @@ include("physics_equations/input_methods.jl")
 include("checks.jl")
 
 ## Backwards compatability
-const Params = petlion
-const run_model = simulate
-const run_model! = simulate!
-const options_model = options_simulation
-const model_output = solution
+Params(x...;kw...) = petlion(x...;kw...)
+run_model(x...;kw...) = simulate(x...;kw...)
+run_model!(x...;kw...) = simulate!(x...;kw...)
+options_model(x...;kw...) = options_simulation(x...;kw...)
+model_output(x...;kw...) = solution(x...;kw...)
+
+## Deprecation warning
+@deprecate Params(cathode) petlion(cathode)
+@deprecate run_model(p,x...;kw...) simulate(p,x...;kw...)
+@deprecate run_model!(sol,p,x...;kw...) simulate!(sol,p,x...;kw...)
+@deprecate options_model() options_simulation()
+@deprecate model_output() solution()
+
 
 export Params, run_model, run_model!, options_model, model_output
 

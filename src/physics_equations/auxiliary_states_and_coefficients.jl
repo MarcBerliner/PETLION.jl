@@ -13,7 +13,7 @@ function build_auxiliary_states!(states, p::AbstractModel)
 
     # The final value of the x vector can either be I or P,
     # so this function specifically designates the I and P states
-    build_I_V_P!(states, p)
+    build_I_V!(states, p)
 
     # Temperature, T
     build_T!(states, p)
@@ -33,9 +33,9 @@ function build_auxiliary_states!(states, p::AbstractModel)
     return nothing
 end
 
-function build_I_V_P!(states, p::AbstractModel)
+function build_I_V!(states, p::AbstractModel)
     """
-    Define the current, voltage, and power.
+    Define the current and voltage
     """
 
     Φ_s = states[:Φ_s]
@@ -44,11 +44,9 @@ function build_I_V_P!(states, p::AbstractModel)
     
     I = states[:I][1]*I1C
     V = Φ_s[1] - Φ_s[end]
-    P = I*V
     
     states[:I] = state_new([I], (), p)
     states[:V] = state_new([V], (), p)
-    states[:P] = state_new([P], (), p)
 
     return nothing
 end
@@ -59,7 +57,7 @@ function build_j_total!(states, p::AbstractModel)
     """
     j = states[:j]
     
-    if !(p.numerics.aging ∈ (:SEI, :R_aging))
+    if p.numerics.aging ∉ (:SEI, :R_aging)
         states[:j_total] = state_new(j, (:p, :n), p)
         return nothing
     end
@@ -246,15 +244,17 @@ function build_heat_generation_rates!(states, p::AbstractModel)
         ## Solid potential derivatives
     
         # Cathode
-        dΦ_sp = [(-3*Φ_s[1]+4*Φ_s[2]-Φ_s[3])/(2*Δx.p*p.θ[:l_p])             # Forward differentiation scheme
+        dΦ_sp = [
+            (-3*Φ_s[1]+4*Φ_s[2]-Φ_s[3])/(2*Δx.p*p.θ[:l_p])                  # Forward differentiation scheme
             (Φ_s[3:p.N.p]-Φ_s[1:p.N.p-2]) / (2*Δx.p*p.θ[:l_p])              # Central differentiation scheme
             (3*Φ_s[p.N.p]-4*Φ_s[p.N.p-1]+Φ_s[p.N.p-2]) / (2*Δx.p*p.θ[:l_p]) # Backward differentiation scheme
             ]
     
         # Anode
-        dΦ_sn = [(-3*Φ_s[p.N.p+1]+4*Φ_s[p.N.p+2]-Φ_s[p.N.p+3])/(2*Δx.n*p.θ[:l_n]) # Forward differentiation scheme
-            (Φ_s[p.N.p+3:end]-Φ_s[p.N.p+1:end-2]) / (2*Δx.n*p.θ[:l_n])            # Central differentiation scheme
-            (3*Φ_s[end]-4*Φ_s[end-1]+Φ_s[end-2]) / (2*Δx.n*p.θ[:l_n])             # Backward differentiation scheme
+        dΦ_sn = [
+            (-3*Φ_s[p.N.p+1]+4*Φ_s[p.N.p+2]-Φ_s[p.N.p+3])/(2*Δx.n*p.θ[:l_n]) # Forward differentiation scheme
+            (Φ_s[p.N.p+3:end]-Φ_s[p.N.p+1:end-2]) / (2*Δx.n*p.θ[:l_n])       # Central differentiation scheme
+            (3*Φ_s[end]-4*Φ_s[end-1]+Φ_s[end-2]) / (2*Δx.n*p.θ[:l_n])        # Backward differentiation scheme
             ]
     
         dΦ_s = (
@@ -266,8 +266,9 @@ function build_heat_generation_rates!(states, p::AbstractModel)
     
         # Cathode
     
-        dΦ_ep = [ (-3*Φ_e[1]+4*Φ_e[2]-Φ_e[3])/(2*Δx.p*p.θ[:l_p]) # Forward differentiation scheme
-            (Φ_e[3:p.N.p]-Φ_e[1:p.N.p-2])/(2*Δx.p*p.θ[:l_p])     # Central differentiation scheme
+        dΦ_ep = [
+            (-3*Φ_e[1]+4*Φ_e[2]-Φ_e[3])/(2*Δx.p*p.θ[:l_p])   # Forward differentiation scheme
+            (Φ_e[3:p.N.p]-Φ_e[1:p.N.p-2])/(2*Δx.p*p.θ[:l_p]) # Central differentiation scheme
             ]
     
         # Interpolating to the control volume interface
@@ -298,7 +299,8 @@ function build_heat_generation_rates!(states, p::AbstractModel)
         dΦ_e_first_n = 2*(Φ_e[p.N.p+p.N.s+2]-Φ_e[p.N.p+p.N.s])/(3 * Δx.n*p.θ[:l_n] + Δx.s*p.θ[:l_s])
     
         # Central difference scheme
-        dΦ_en = [(Φ_e[p.N.p+p.N.s+3:end]-Φ_e[p.N.p+p.N.s+1:end-2])/(2*Δx.n*p.θ[:l_n]);
+        dΦ_en = [
+            (Φ_e[p.N.p+p.N.s+3:end]-Φ_e[p.N.p+p.N.s+1:end-2])/(2*Δx.n*p.θ[:l_n])
             (3*Φ_e[end]-4*Φ_e[end-1]+Φ_e[end-2])/(2*Δx.n*p.θ[:l_n])
             ]
         dΦ_e = (
@@ -342,8 +344,9 @@ function build_heat_generation_rates!(states, p::AbstractModel)
         # First control volume in the negative electrode: derivative approximation with a central scheme
         dc_e_first_n = 2*(c_e[p.N.p+p.N.s+2]-c_e[p.N.p+p.N.s])/(3 * Δx.n*p.θ[:l_n] + Δx.s*p.θ[:l_s])
     
-        dc_en = [(c_e[p.N.p+p.N.s+3:end]-c_e[p.N.p+p.N.s+1:end-2])/(2*Δx.p*p.θ[:l_p]) # Central differentiation scheme
-            (3*c_e[end]-4*c_e[end-1]+c_e[end-2])/(2*Δx.n*p.θ[:l_n])                   # Backward differentiation scheme
+        dc_en = [
+            (c_e[p.N.p+p.N.s+3:end]-c_e[p.N.p+p.N.s+1:end-2])/(2*Δx.p*p.θ[:l_p]) # Central differentiation scheme
+            (3*c_e[end]-4*c_e[end-1]+c_e[end-2])/(2*Δx.n*p.θ[:l_n])              # Backward differentiation scheme
             ]
     
         dc_e = (
@@ -370,11 +373,11 @@ function build_heat_generation_rates!(states, p::AbstractModel)
     ν_p, ν_s, ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 
     # Cathode ohmic generation rate
-    Q_ohm_p = σ_eff_p * dΦ_s.p.^2 + 2*R*K_eff.p.*T.p*(1-p.θ[:t₊]).*ν_p/F.*(dc_e.p./c_e.p).*dΦ_e.p + K_eff.p.*dΦ_e.p.^2 
+    Q_ohm_p = K_eff.p .* dΦ_e.p.^2 + 2*R*K_eff.p.*T.p*(1-p.θ[:t₊]).*ν_p/F.*(dc_e.p./c_e.p).*dΦ_e.p + σ_eff_p * dΦ_s.p.^2
     # Separator ohmic generation rate
-    Q_ohm_s = K_eff.s.* dΦ_e.s.^2 + 2*R*K_eff.s.*T.s*(1-p.θ[:t₊]).*ν_s/F.*(dc_e.s./c_e.s).*dΦ_e.s
-    # Negative electrode ohmic generation rate
-    Q_ohm_n = σ_eff_n * dΦ_s.n.^2 + 2*R*K_eff.n.*T.n*(1-p.θ[:t₊]).*ν_n/F.*(dc_e.n./c_e.n).*dΦ_e.n + K_eff.n.*dΦ_e.n.^2 
+    Q_ohm_s = K_eff.s .* dΦ_e.s.^2 + 2*R*K_eff.s.*T.s*(1-p.θ[:t₊]).*ν_s/F.*(dc_e.s./c_e.s).*dΦ_e.s
+    # Anode ohmic generation rate
+    Q_ohm_n = K_eff.n .* dΦ_e.n.^2 + 2*R*K_eff.n.*T.n*(1-p.θ[:t₊]).*ν_n/F.*(dc_e.n./c_e.n).*dΦ_e.n + σ_eff_n * dΦ_s.n.^2
     
     Q_rev = [Q_rev_p; Q_rev_n]
     Q_rxn = [Q_rxn_p; Q_rxn_n]
@@ -492,9 +495,9 @@ function limiting_electrode(p::AbstractModel)
     Q_n = ϵ_sn*θ[:l_n]*θ[:c_max_n]*(θ[:θ_max_n] - θ[:θ_min_n])
 
     if Q_p > Q_n
-        return :p, Q_p
+        return "anode", Q_n*PETLION.const_Faradays/3600.0
     else
-        return :n, Q_n
+        return "cathode", Q_p*PETLION.const_Faradays/3600.0
     end
 end
 
@@ -567,8 +570,11 @@ end
 end
 temperature_weighting(T::VectorOfArray,p::AbstractModel) = [temperature_weighting(_T,p) for _T in T]
 
-d_x(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractModel) -> YP[index]
-d_x(index::Int64) = d_x(Val(index))
+state_deriv_func(::Val{index}) where {index} = (t,Y,YP::AbstractVector{<:Number},p::AbstractModel) -> YP[index]
+state_deriv_func(index::Int64) = state_deriv_func(Val(index))
+
+state_func(::Val{index}) where {index} = (t,Y::AbstractVector{<:Number},YP,p::AbstractModel) -> Y[index]
+state_func(index::Int64) = state_func(Val(index))
 
 function c_s_indices(p::AbstractModelSolidDiff{:Fickian}, section::Symbol; surf::Bool=true,offset::Bool=true)
     N = p.N
