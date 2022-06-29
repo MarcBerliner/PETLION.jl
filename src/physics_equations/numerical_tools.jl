@@ -105,9 +105,9 @@ function block_matrix_maker(p, X, Y, Z)
     return A_tot
 end
 
-function interpolate_electrolyte_conductivities(Keff_p, Keff_s, Keff_n, p::AbstractModel)
+function interpolate_electrolyte_grid(Keff_p, Keff_s, Keff_n, p::AbstractModel)
     """
-    interpolate_electrolyte_conductivities interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
+    interpolate_electrolyte_grid interpolates electrolyte conductivities at the edges of control volumes using harmonic mean.
     """
 
     Δx = Δx_values(p.N)

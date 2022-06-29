@@ -122,7 +122,7 @@ function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYM
 
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
     
-    Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false)[2]
+    Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false, parallel=SerialForm())[2]
 
     ## jacobian
     Jac, jacFunc, J_sp = _symbolic_jacobian(p, res, t_sym, Y_sym, YP_sym, γ_sym, θ_sym, θ_sym_slim, progress=progress)
@@ -176,7 +176,7 @@ function load_functions_forward_diff(p::AbstractModel)
     
     θ_sym_slim, θ_keys_slim = get_only_θ_used_in_model(θ_sym, θ_keys, res, Y0_sym)
     
-    Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false)[2]
+    Y0Func = build_function(Y0_sym, SOC_sym, θ_sym_slim, X_applied, fillzeros=false, checkbounds=false, parallel=SerialForm())[2]
     
     res_algFunc, res_diffFunc = _symbolic_initial_conditions_res(p, res, t_sym, Y_sym, YP_sym, θ_sym, θ_sym_slim)
 
@@ -298,7 +298,7 @@ function _symbolic_jacobian(p::AbstractModel, res, t_sym, Y_sym, YP_sym, γ_sym,
     end
 
     # building the sparse jacobian
-    jacFunc = build_function(Jac.nzval, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim)[2]
+    jacFunc = build_function(Jac.nzval, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim, parallel=SerialForm())[2]
     fillpercent!(progress, 25)
 
     return Jac, jacFunc, J_sp
@@ -308,8 +308,8 @@ function _symbolic_initial_conditions_res(p::AbstractModel, res, t_sym, Y_sym, Y
     res_diff = res[1:p.N.diff]
     res_alg = res[p.N.diff+1:end]
     
-    res_diffFunc = build_function(res_diff, t_sym, Y_sym, YP_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
-    res_algFunc = build_function(res_alg,  t_sym, Y_sym, YP_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
+    res_diffFunc = build_function(res_diff, t_sym, Y_sym, YP_sym, θ_sym_slim, fillzeros=false, checkbounds=false, parallel=SerialForm())[2]
+    res_algFunc = build_function(res_alg,  t_sym, Y_sym, YP_sym, θ_sym_slim, fillzeros=false, checkbounds=false, parallel=SerialForm())[2]
     
     return res_algFunc, res_diffFunc
 end
@@ -317,7 +317,7 @@ function _symbolic_initial_conditions_jac(p::AbstractModel, Jac, t_sym, Y_sym, Y
     
     jac_alg = @inbounds Jac[p.N.diff+1:end,p.N.diff+1:end]
     
-    jac_algFunc = build_function(jac_alg.nzval, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim, fillzeros=false, checkbounds=false)[2]
+    jac_algFunc = build_function(jac_alg.nzval, t_sym, Y_sym, YP_sym, γ_sym, θ_sym_slim, fillzeros=false, checkbounds=false, parallel=SerialForm())[2]
     
     return jac_algFunc
 end

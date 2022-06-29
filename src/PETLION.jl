@@ -10,7 +10,7 @@ using KLU: klu, klu!, KLUFactorization, rcond, klu_factor!
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
 using RecursiveArrayTools: VectorOfArray
-using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse
+using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse, SerialForm
 using RecipesBase
 using SpecialFunctions: erf
 using SHA: sha1

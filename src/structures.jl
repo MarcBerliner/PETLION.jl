@@ -458,11 +458,14 @@ const STATE_NAMES = Dict{Symbol,String}(
     sol.t, x
 end
 
-function time_units(t::Number)
-    if     t < 3600
+function time_units(t::Number; digits=nothing)
+    # round the number to the nearest digits
+    rounding = t -> digits isa Number ? round(t; digits=digits) : t
+    
+    if     rounding(t) < 3600
         time_scale = 1.0
         time_unit = "s"
-    elseif t < 3600*24
+    elseif rounding(t) < 3600*24
         time_scale = 3600.0
         time_unit = "hr"
     else
@@ -470,6 +473,7 @@ function time_units(t::Number)
         time_unit = "days"
     end
     t /= time_scale
+    t = rounding(t)
     return t, time_unit, time_scale
 end
 
@@ -683,7 +687,7 @@ function Base.show(io::IO, sol::solution)
     if !isempty(sol)
         p = results[1].p
         Y = @views @inbounds sol.Y[end]
-        t, time_unit = time_units(sol.t[end])
+        t, time_unit = time_units(sol.t[end]; digits=2)
     end
     function str_runs()
     
@@ -727,7 +731,7 @@ function Base.show(io::IO, sol::solution)
                 "$title\n",
                 " --------\n",
                 str_runs(),
-                " Time:    $(round(t;                  digits = 2)) $time_unit\n",
+                " Time:    $(t) $time_unit\n",
                 " Current: $(C_rate_string(calc_I(Y,p);digits = 4))\n",
                 " Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
                 " Power:   $(round(calc_P(Y,p);        digits = 2)) W/m²\n",

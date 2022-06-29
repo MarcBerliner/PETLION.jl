@@ -210,7 +210,7 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     θ_sym_slim = [p_sym.θ[key] for key in θ_keys]
     update_θ!(θ_tot,θ_keys,p)
 
-    J_scalar_func = eval(build_function(J_vec.nzval,t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
+    J_scalar_func = eval(build_function(J_vec.nzval,t,Y,YP,γ,θ_sym_slim; parallel=SerialForm(), expression=Val{false})[2])
 
     J_sp_base = p.funcs.J_y!.sp
     J_base_func = p.funcs.J_y!
@@ -240,11 +240,11 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
         """
         res_algebraic = substitute(res_algebraic, Dict(YP[ind_differential] .=> res[ind_differential] + YP[ind_differential]))
 
-        scalar_residal_alg! = eval(build_function(res_algebraic,t,Y,YP,θ_sym_slim; expression=Val{false}))
+        scalar_residal_alg! = eval(build_function(res_algebraic,t,Y,YP,θ_sym_slim; parallel=SerialForm(), expression=Val{false}))
 
         J_alg_vec = @inbounds sparsejacobian([res_algebraic], Y[p.N.diff+1:end])[:]
         
-        J_scalar_alg_func = eval(build_function(J_alg_vec.nzval,t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
+        J_scalar_alg_func = eval(build_function(J_alg_vec.nzval,t,Y,YP,γ,θ_sym_slim; parallel=SerialForm(), expression=Val{false})[2])
         
         J_sp_alg_scalar = spzeros(Float64,p.N.alg)
         @inbounds J_sp_alg_scalar[J_alg_vec.nzind] .= 1
@@ -252,7 +252,7 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
         scalar_residal_alg! = scalar_residual!
 
         if scalar_contains_Y_diff
-            J_scalar_alg_func = eval(build_function((@inbounds J_vec[p.N.diff+1:end].nzval),t,Y,YP,γ,θ_sym_slim; expression=Val{false})[2])
+            J_scalar_alg_func = eval(build_function((@inbounds J_vec[p.N.diff+1:end].nzval),t,Y,YP,γ,θ_sym_slim; parallel=SerialForm(), expression=Val{false})[2])
         else
             J_scalar_alg_func = J_scalar_func
         end
