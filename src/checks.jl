@@ -9,7 +9,9 @@
     end
 
     # continue checking the bounds or return after only evaluating the time
-    !opts.check_bounds && (return nothing)
+    if !opts.check_bounds || check_is_rest(run)
+        return nothing
+    end
 
     I = calc_I(Y,p)
     
@@ -189,7 +191,7 @@ end
             t_frac = (bounds.prev.η_plating - bounds.η_plating_min)/(bounds.prev.η_plating - η_plating)
             if t_frac < bounds.prev.t_final_interp_frac
                 bounds.prev.t_final_interp_frac = t_frac
-                run.info.flag = 9
+                run.info.flag = 11
                 run.info.exit_reason = "Below min. η_plating"
             end
         end
@@ -200,6 +202,7 @@ end
 end
 
 @inline check_stop_dfilm(::model_age{false}, run, sol, Y, YP, bounds, ϵ, I) = nothing
+@inline check_stop_dfilm(::model_age{:stress}, run, sol, Y, YP, bounds, ϵ, I) = nothing
 @inline function check_stop_dfilm(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
     ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model_age{:SEI}, R5<:boundary_stop_conditions_immutable}
     
@@ -220,8 +223,6 @@ end
 
     return nothing
 end
-
-
 
 @inline function check_solve(run::run_constant, sol::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:solution,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if t == int.tprev
@@ -331,12 +332,10 @@ end
     """
     if I == 0
         return nothing
-    elseif !(SOC < bounds.SOC_max) && I > 0
-        show_int = x -> x == round(Int, x) ? Int(x) : x
-        error("The initial SOC ($(show_int(SOC))) must be less than SOC_max ($(show_int(bounds.SOC_max))) when charging")
-    elseif !(SOC > bounds.SOC_min) && I < 0
-        show_int = x -> x == round(Int, x) ? Int(x) : x
-        error("The initial SOC ($(show_int(SOC))) must be greater than SOC_min ($(show_int(bounds.SOC_min))) when discharging")
+    elseif SOC ≥ bounds.SOC_max && I > 0
+        error("The initial SOC ($(SOC)) must be less than SOC_max ($(bounds.SOC_max)) when charging")
+    elseif SOC ≤ bounds.SOC_min && I < 0
+        error("The initial SOC ($(SOC)) must be greater than SOC_min ($(bounds.SOC_min)) when discharging")
     end
 end
 
@@ -386,3 +385,6 @@ end
 
 check_is_hold(x::Symbol,sol::solution) = (x == :hold) && (!isempty(sol) ? true : error("Cannot use `:hold` without a previous sol."))
 check_is_hold(::Any,::solution) = false
+
+check_is_rest(run::run_constant{method_I, Symbol}) = run.input == :rest
+check_is_rest(::Any) = false

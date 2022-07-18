@@ -1,25 +1,26 @@
 module PETLION
 
-using StatsBase: mean
-using SciMLBase: DAEFunction, DAEProblem, step!, init
 using Dierckx: Spline1D
-using GeneralizedGenerated: mk_function, RuntimeFn
 using InteractiveUtils: subtypes
-using LinearAlgebra: diagind, Tridiagonal, norm
 using KLU: klu, klu!, KLUFactorization, rcond, klu_factor!
+using LinearAlgebra: diagind, Tridiagonal, norm
+using OrderedCollections: OrderedDict
+using RecipesBase
+using RecursiveArrayTools: VectorOfArray
+using SciMLBase: DAEFunction, DAEProblem, step!, init
+using SHA: sha1
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
-using RecursiveArrayTools: VectorOfArray
-using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse, SerialForm
-using RecipesBase
 using SpecialFunctions: erf
-using SHA: sha1
+using StatsBase: mean
+using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse, SerialForm
 
+import LinearAlgebra
 import PkgVersion
 import ProgressMeter
 import SuiteSparse
 import Sundials
-import LinearAlgebra
+import Symbolics
 
 # Must be loaded last
 using BSON: @load, @save

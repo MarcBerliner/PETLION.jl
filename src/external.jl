@@ -1,6 +1,9 @@
 ## Functions to complete the model structure
-function petlion(cathode::Function;kwargs...)
-    θ = Dict{Symbol,Float64}()
+function petlion(cathode::Function;
+    load_funcs::Bool = true,
+    kwargs...,
+    )
+    θ = OrderedDict{Symbol,Float64}()
     funcs = _funcs_numerical()
 
     anode, system = cathode(θ,funcs)
@@ -8,27 +11,31 @@ function petlion(cathode::Function;kwargs...)
         anode(θ,funcs)
         θ, bounds, opts, N, numerics = system(θ, funcs, cathode, anode; kwargs...)
 
-        return initialize_param(θ, bounds, opts, N, numerics)
+        return initialize_param(θ, bounds, opts, N, numerics, load_funcs)
     else
         error("Cathode function must return both anode and system functions.")
     end
 end
-function petlion(;cathode=cathode,anode=anode,system=system, # Input chemistry - can be modified
+function petlion(;
+    cathode=cathode,
+    anode=anode,
+    system=system, # Input chemistry - can be modified
+    load_funcs::Bool=true,
     kwargs... # keyword arguments for system
     )
-    θ = Dict{Symbol,Float64}()
+    θ = OrderedDict{Symbol,Float64}()
     funcs = _funcs_numerical()
 
     cathode(θ, funcs)
     anode(θ, funcs)
     θ, bounds, opts, N, numerics = system(θ, funcs; kwargs...)
 
-    p = initialize_param(θ, bounds, opts, N, numerics)
+    p = initialize_param(θ, bounds, opts, N, numerics, load_funcs)
 
     return p
 end
 
-function initialize_param(θ, bounds, opts, _N, numerics)
+function initialize_param(θ, bounds, opts, _N, numerics, load_funcs=true)
     
     ind, N_diff, N_alg, N_tot = state_indices(_N, numerics)
     N = discretizations_per_section(_N.p, _N.s, _N.n, _N.a, _N.z, _N.r_p, _N.r_n, N_diff, N_alg, N_tot)
@@ -38,16 +45,15 @@ function initialize_param(θ, bounds, opts, _N, numerics)
     
     # while θ must contain Float64s, we need it to possibly
     # contain any type during the function generation process
-    θ_any = Dict{Symbol,Any}()
-    @inbounds for key in keys(θ)
-        θ_any[key] = θ[key]
-    end
+    θ_any = convert(OrderedDict{Symbol,Any}, θ)
     θ[:I1C] = calc_I1C(θ)
     
     ## temporary params with no functions
     _p = model_skeleton(θ_any, numerics, N, ind, opts, bounds, cache)
     
-    funcs = load_functions(_p)
+    funcs = load_funcs ? load_functions(_p) : model_funcs()
+
+    sort!(θ)
     
     ## Real params with functions
     p = model(
@@ -308,10 +314,14 @@ function state_indices(N, numerics)
     c_s_avg_tot = numerics.solid_diffusion == :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
     T_tot       = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
     film_tot    = numerics.aging == :SEI ? (1:N.n) : nothing
+    δ_tot       = numerics.aging == :stress ? (1:N.n) : nothing
+    ϵ_s_tot     = numerics.aging == :stress ? (1:(N.p+N.n)) : nothing
     Q_tot       = numerics.solid_diffusion == :polynomial ? (1:(N.p+N.n)) : nothing
     j_tot       = 1:(N.p+N.n)
-    j_s_tot     = numerics.aging ∈ (:SEI, :R_aging) ? (1:N.n) : nothing
-    SOH_tot     = numerics.aging ∈ (:SEI, :R_aging) ? 1 : nothing
+    j_s_tot     = numerics.aging == :SEI ? (1:N.n) : nothing
+    j_SEI_tot   = numerics.aging == :stress ? (1:N.n) : nothing
+    σ_h_tot     = numerics.aging == :stress ? (1:(N.p+N.n)) : nothing
+    SOH_tot     = numerics.aging ∈ (:SEI, :stress) ? 1 : nothing
     Φ_e_tot     = 1:(N.p+N.s+N.n)
     Φ_s_tot     = 1:(N.p+N.n)
     I_tot       = 1
@@ -320,10 +330,14 @@ function state_indices(N, numerics)
     c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion == :Fickian)
     T       = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
     film    = add(:film,    film_tot,    (:n,),                :differential)
+    δ       = add(:δ,       δ_tot,       (:n,),                :differential)
+    ϵ_s     = add(:ϵ,       ϵ_s_tot,      (:p, :n),             :differential)
     Q       = add(:Q,       Q_tot,       (:p, :n),             :differential)
     SOH     = add(:SOH,     SOH_tot,     (),                   :differential)
     j       = add(:j,       j_tot,       (:p, :n),             :algebraic)
     j_s     = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
+    j_SEI   = add(:j_SEI,   j_SEI_tot,   (:n,),                :algebraic)
+    σ_h     = add(:σ_h,     σ_h_tot,     (:p, :n),             :algebraic)
     Φ_e     = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
     Φ_s     = add(:Φ_s,     Φ_s_tot,     (:p, :n),             :algebraic)
     I       = add(:I,       I_tot,       (),                   :algebraic)
@@ -334,7 +348,7 @@ function state_indices(N, numerics)
     Y = YP = t = V = P = SOC = index_state()
     state_vars = (state_vars...,)
 
-    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, Q, j, j_s, Φ_e, Φ_s, I, t, V, P, SOC, SOH, state_vars)
+    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, δ, ϵ_s, Q, j, j_s, j_SEI, σ_h, Φ_e, Φ_s, I, t, V, P, SOC, SOH, state_vars)
 
     return ind, N_diff, N_alg, N_tot
 end
@@ -369,18 +383,33 @@ end
         
     states[:Q] = zeros(p.N.p+p.N.n)
 
-    if p.numerics.aging ∈ (:SEI, :R_aging) states[:SOH] = 1.0 end
+    if !isempty(states[:SOH]) states[:SOH] = 1.0 end
+
+    if !isempty(states[:δ]) states[:δ] .= p.θ[:δ₀] end
+    
+    if !isempty(states[:ϵ_s])
+        ϵ_sp, ϵ_sn = active_material(p)
+        states[:ϵ_s].p .= ϵ_sp
+        states[:ϵ_s].n .= ϵ_sn
+    end
     
     # algebraic
-    states[:j] = 0.0
+    states[:j] .= 0.0
         
-    states[:Φ_e] = 0.0
+    states[:Φ_e] .= 0.0
         
     states[:Φ_s] = states[:U]
         
     states[:I] = X_applied
     
     if !isempty(states[:j_s]) states[:j_s] .= 0.0 end
+
+    if !isempty(states[:j_SEI]) states[:j_SEI] .= 0.0 end
+
+    if !isempty(states[:σ_h])
+        states[:σ_h].p .= 2p.θ[:Ω_p]*p.θ[:E_p]/(3(1-p.θ[:ν_p]))*(-2states[:c_s_avg].p[1]/3)
+        states[:σ_h].n .= 2p.θ[:Ω_n]*p.θ[:E_n]/(3(1-p.θ[:ν_n]))*(-2states[:c_s_avg].n[1]/3)
+    end
 
     build_residuals!(Y0, states, p)
 

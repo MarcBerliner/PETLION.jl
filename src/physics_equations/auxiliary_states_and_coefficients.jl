@@ -15,6 +15,18 @@ function build_auxiliary_states!(states, p::AbstractModel)
     # so this function specifically designates the I and P states
     build_I_V!(states, p)
 
+    # Active material, ϵ_s
+    build_ϵ_s!(states, p)
+
+    # Porisity, ϵ
+    build_ϵ!(states, p)
+
+    # Conductivity effective, σ_eff
+    build_σ_eff_p!(states, p)
+
+    # Surface area to volume ratio, a
+    build_a!(states, p)
+
     # Temperature, T
     build_T!(states, p)
 
@@ -29,6 +41,12 @@ function build_auxiliary_states!(states, p::AbstractModel)
 
     # Electrolyte conductivity, K_eff
     build_K_eff!(states, p)
+    
+    # Electrolyte diffusion, D_eff
+    build_D_eff!(states, p)
+
+    # Solid diffusion, D_s_eff
+    build_D_s_eff!(states, p)
     
     return nothing
 end
@@ -51,21 +69,114 @@ function build_I_V!(states, p::AbstractModel)
     return nothing
 end
 
+function build_ϵ_s!(states, p::AbstractModel)
+    """
+    If active material is not a state, include a vector of active material fractions for each section [-]
+    """
+    ϵ_sp, ϵ_sn = active_material(p)
+    ϵ_sp = ϵ_sp*ones(p.N.p)
+    ϵ_sn = ϵ_sn*ones(p.N.n)
+
+    if haskey(states, :ϵ_s)
+        ϵ_sp = iszero(p.ind.ϵ_s.p) ? ϵ_sp : states[:ϵ_s].p
+        ϵ_sn = iszero(p.ind.ϵ_s.n) ? ϵ_sn : states[:ϵ_s].n
+    end
+    
+    ϵ_s = [ϵ_sp;ϵ_sn]
+
+    states[:ϵ_s] = state_new(ϵ_s, (:p, :n), p)
+
+    return nothing
+end
+
+function build_ϵ!(states, p::AbstractModel)
+    """
+    Electrode porosity fraction [-]
+    """
+    ϵ_s = states[:ϵ_s]
+
+    ϵ_p_porosity = 1.0 .- (p.θ[:ϵ_fp] .+ ϵ_s.p)
+    ϵ_s_porosity = p.θ[:ϵ_s]*ones(p.N.s)
+    ϵ_n_porosity = 1.0 .- (p.θ[:ϵ_fn] .+ ϵ_s.n)
+
+    ϵ = [ϵ_p_porosity; ϵ_s_porosity; ϵ_n_porosity]
+
+    states[:ϵ] = state_new(ϵ, (:p, :s, :n), p)
+end
+
+function build_σ_eff_p!(states, p::AbstractModel)
+    """
+    Effective conductivity [S/m]
+    """
+    ϵ_s = states[:ϵ_s]
+
+    σ_eff_p = p.θ[:σ_p]*ϵ_s.p
+    σ_eff_n = p.θ[:σ_n]*ϵ_s.n
+
+    σ_eff = [σ_eff_p; σ_eff_n]
+
+    states[:σ_eff] = state_new(σ_eff, (:p, :n), p)
+
+    return nothing
+end
+
+function build_a!(states, p::AbstractModel)
+    """
+    Surface area to volume ratio for a sphere (SA/V = 4πr^2/(4/3πr^3)) multipled by the active material fraction [m^2/m^3]
+    """
+    ϵ_s = states[:ϵ_s]
+
+    a_p = 3ϵ_s.p/p.θ[:Rp_p]
+    a_n = 3ϵ_s.n/p.θ[:Rp_n]
+
+    a = [a_p; a_n]
+
+    states[:a] = state_new(a, (:p, :n), p)
+
+    return nothing
+end
+
+function substitute_porosities!(X, states, sections::Tuple, p::AbstractModel)
+    """
+    Some effective functions are written with a constant porosity, but
+    this function replaces the constant porosity with the state porosity
+    """
+    ϵ = states[:ϵ]
+    
+    start = 0
+    for section in sections
+        N = getfield(p.N, section)
+        name = Symbol("ϵ_", section)
+
+        for i in (1:N) .+ start
+            X[i] = substitute(X[i], p.θ[name] => ϵ[i])
+        end
+        start += N
+    end
+
+    return X
+end
+
 function build_j_total!(states, p::AbstractModel)
     """
-    Append `j` with possible additions from `j_s`
+    Append `j` with possible additions from `j_s` or `j_SEI`
     """
     j = states[:j]
     
-    if p.numerics.aging ∉ (:SEI, :R_aging)
+    if p.numerics.aging ∉ (:SEI, :stress)
         states[:j_total] = state_new(j, (:p, :n), p)
         return nothing
     end
     
     j_s = states[:j_s]
+    j_SEI = states[:j_SEI]
 
     j_total = copy(j)
-    j_total[p.N.p+1:end] .+= j_s
+    if p.numerics.aging == :SEI
+        j_total[p.N.p+1:end] .+= j_s
+    elseif p.numerics.aging == :stress
+        j_total[p.N.p+1:end] .+= j_SEI
+    end
 
     states[:j_total] = state_new(j_total, (:p, :n), p)
 
@@ -110,14 +221,11 @@ function build_c_s_star!(states, p::AbstractModelSolidDiff{:quadratic})
     """
     c_s_avg = states[:c_s_avg]
     j = states[:j]
-    T = states[:T]
-    
-    # Diffusion coefficients for the solid phase
-    D_sp_eff, D_sn_eff = p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
+    D_s_eff = states[:D_s_eff]
     
     # Evaluates the average surface concentration in both the electrodes.
-    c_s_star_p = c_s_avg.p-(p.θ[:Rp_p]./(D_sp_eff.*5)).*j.p
-    c_s_star_n = c_s_avg.n-(p.θ[:Rp_n]./(D_sn_eff.*5)).*j.n
+    c_s_star_p = c_s_avg.p-(p.θ[:Rp_p]./(D_s_eff.p.*5)).*j.p
+    c_s_star_n = c_s_avg.n-(p.θ[:Rp_n]./(D_s_eff.n.*5)).*j.n
     
     # Return the residuals
     c_s_star = [c_s_star_p; c_s_star_n]
@@ -133,14 +241,10 @@ function build_c_s_star!(states, p::AbstractModelSolidDiff{:polynomial})
     c_s_avg = states[:c_s_avg]
     j = states[:j]
     Q = states[:Q]
-    T = states[:T]
+    D_s_eff = states[:D_s_eff]
     
-    # Diffusion coefficients for the solid phase
-    D_sp_eff, D_sn_eff = p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
-    # Cathode
-    c_s_star_p = c_s_avg.p+(p.θ[:Rp_p]./(D_sp_eff.*35)).*(-j.p+8*D_sp_eff.*Q.p)
-    # Anode
-    c_s_star_n = c_s_avg.n+(p.θ[:Rp_n]./(D_sn_eff.*35)).*(-j.n+8*D_sn_eff.*Q.n)
+    c_s_star_p = c_s_avg.p+(p.θ[:Rp_p]./(D_s_eff.p.*35)).*(-j.p+8*D_s_eff.p.*Q.p)
+    c_s_star_n = c_s_avg.n+(p.θ[:Rp_n]./(D_s_eff.n.*35)).*(-j.n+8*D_s_eff.n.*Q.n)
     
     # Return the residuals
     c_s_star = [c_s_star_p; c_s_star_n]
@@ -181,6 +285,7 @@ function build_η!(states, p::AbstractModel)
     U = states[:U]
     j = states[:j]
     film = states[:film]
+    δ = states[:δ]
 
     F = const_Faradays
 
@@ -194,8 +299,8 @@ function build_η!(states, p::AbstractModel)
     if     p.numerics.aging == :SEI
         R_film = p.θ[:R_SEI] .+ film./p.θ[:k_n_aging]
         η_n .+= @. - F*j.n*R_film
-    elseif p.numerics.aging == :R_aging
-        #η_n .+= @. - F*j.n*p.θ[:R_aging]
+    elseif p.numerics.aging == :stress
+        η_n .+= @. - F*j.n*p.θ[:R_SEI]*δ
     end
 
     states[:η] = state_new([η_p; η_n], (:p, :n), p)
@@ -209,7 +314,38 @@ function build_K_eff!(states, p::AbstractModel)
 
     K_eff_p, K_eff_s, K_eff_n = p.numerics.K_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 
-    states[:K_eff] = state_new([K_eff_p; K_eff_s; K_eff_n], (:p, :s, :n), p)
+    K_eff = [K_eff_p; K_eff_s; K_eff_n]
+    substitute_porosities!(K_eff, states, (:p, :s, :n), p)
+
+    states[:K_eff] = state_new(K_eff, (:p, :s, :n), p)
+    
+    return nothing
+end
+
+function build_D_eff!(states, p::AbstractModel)
+    c_e = states[:c_e]
+    T = states[:T]
+
+    D_eff_p, D_eff_s, D_eff_n = p.numerics.D_eff(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
+
+    D_eff = [D_eff_p; D_eff_s; D_eff_n]
+    substitute_porosities!(D_eff, states, (:p, :s, :n), p)
+
+    states[:D_eff] = state_new(D_eff, (:p, :s, :n), p)
+    
+    return nothing
+end
+
+function build_D_s_eff!(states, p::AbstractModel)
+    c_s_avg = states[:c_s_star]
+    T = states[:T]
+
+    D_s_eff_p, D_s_eff_n = p.numerics.D_s_eff(c_s_avg.p, c_s_avg.n, T.p, T.n, p)
+
+    D_s_eff = [D_s_eff_p; D_s_eff_n]
+    substitute_porosities!(D_s_eff, states, (:p, :n), p)
+
+    states[:D_s_eff] = state_new(D_s_eff, (:p, :n), p)
     
     return nothing
 end
@@ -227,12 +363,11 @@ function build_heat_generation_rates!(states, p::AbstractModel)
     ∂U∂T = states[:∂U∂T]
     η = states[:η]
     K_eff = states[:K_eff]
+    a = states[:a]
+    σ_eff = states[:σ_eff]
 
     F = const_Faradays
     R = const_Ideal_Gas
-
-    a_p, a_n = surface_area_to_volume_ratio(p)
-    σ_eff_p, σ_eff_n = conductivity_effective(p)
 
     function thermal_derivatives(Φ_s, Φ_e, c_e, p)
         """
@@ -242,117 +377,118 @@ function build_heat_generation_rates!(states, p::AbstractModel)
         Δx = Δx_values(p.N)
     
         ## Solid potential derivatives
+
+        function forward_difference_left(x, state::Symbol)
+            Δx_c = getfield(Δx, state)
+            l = p.θ[Symbol(:l_, state)]
+            out = (-3x[1] + 4x[2] - x[3]) / (2Δx_c*l)
+
+            return out
+        end
+        forward_difference_right(x,state;kw...) = -forward_difference_left(reverse(x),state;kw...)
+
+        function central_difference(x, state::Symbol)
+            Δx_c = getfield(Δx, state)
+            l = p.θ[Symbol(:l_, state)]
+            out = (x[3:end] - x[1:end-2]) / (2Δx_c*l)
+
+            return out
+        end
+
+        function approx_central_difference_at_right_CV(x_l, state_l::Symbol, x_r, state_r::Symbol)
+            Δx_l = getfield(Δx, state_l)
+            l_l = p.θ[Symbol(:l_, state_l)]
+
+            Δx_r = getfield(Δx, state_r)
+            l_r = p.θ[Symbol(:l_, state_r)]
+            
+            out = 2(x_r[1] - x_l[end-1]) / (3Δx_l*l_l + Δx_r*l_r)
+
+            return out
+        end
+        function approx_central_difference_at_left_CV(x_l, state_l::Symbol, x_r, state_r::Symbol)
+            Δx_l = getfield(Δx, state_l)
+            l_l = p.θ[Symbol(:l_, state_l)]
+
+            Δx_r = getfield(Δx, state_r)
+            l_r = p.θ[Symbol(:l_, state_r)]
+            
+            out = 2*(x_r[2] - x_l[end]) / (Δx_l*l_l + 3Δx_r*l_r)
+        
+            return out
+        end
     
         # Cathode
         dΦ_sp = [
-            (-3*Φ_s[1]+4*Φ_s[2]-Φ_s[3])/(2*Δx.p*p.θ[:l_p])                  # Forward differentiation scheme
-            (Φ_s[3:p.N.p]-Φ_s[1:p.N.p-2]) / (2*Δx.p*p.θ[:l_p])              # Central differentiation scheme
-            (3*Φ_s[p.N.p]-4*Φ_s[p.N.p-1]+Φ_s[p.N.p-2]) / (2*Δx.p*p.θ[:l_p]) # Backward differentiation scheme
-            ]
+            forward_difference_left(Φ_s.p, :p)
+            central_difference(Φ_s.p, :p)
+            forward_difference_right(Φ_s.p, :p)
+        ]
     
         # Anode
         dΦ_sn = [
-            (-3*Φ_s[p.N.p+1]+4*Φ_s[p.N.p+2]-Φ_s[p.N.p+3])/(2*Δx.n*p.θ[:l_n]) # Forward differentiation scheme
-            (Φ_s[p.N.p+3:end]-Φ_s[p.N.p+1:end-2]) / (2*Δx.n*p.θ[:l_n])       # Central differentiation scheme
-            (3*Φ_s[end]-4*Φ_s[end-1]+Φ_s[end-2]) / (2*Δx.n*p.θ[:l_n])        # Backward differentiation scheme
-            ]
+            forward_difference_left(Φ_s.n, :n)
+            central_difference(Φ_s.n, :n)
+            forward_difference_right(Φ_s.n, :n)
+        ]
     
         dΦ_s = (
             p = dΦ_sp,
             n = dΦ_sn,
-            )
+        )
     
         ## Electrolyte potential derivatives
     
         # Cathode
     
         dΦ_ep = [
-            (-3*Φ_e[1]+4*Φ_e[2]-Φ_e[3])/(2*Δx.p*p.θ[:l_p])   # Forward differentiation scheme
-            (Φ_e[3:p.N.p]-Φ_e[1:p.N.p-2])/(2*Δx.p*p.θ[:l_p]) # Central differentiation scheme
-            ]
+            forward_difference_left(Φ_e.p, :p)
+            central_difference(Φ_e.p, :p)
+            approx_central_difference_at_right_CV(Φ_e.p, :p, Φ_e.s, :s)
+        ]
     
-        # Interpolating to the control volume interface
-    
-        # Last control volume in the cathode: derivative approximation with a central scheme
-        dΦ_e_last_p = 2*(Φ_e[p.N.p+1]-Φ_e[p.N.p-1])/(3 * Δx.p*p.θ[:l_p] + Δx.s*p.θ[:l_s])
-    
-        # Separator
-    
-        # Interpolating to the control volume interface
-    
-        # First control volume in the separator: derivative approximation with a central difference scheme
-        dΦ_e_first_s = 2*(Φ_e[p.N.p+2]-Φ_e[p.N.p])/(Δx.p*p.θ[:l_p] + 3* Δx.s*p.θ[:l_s])
-    
-        # Central difference scheme
-        dΦ_es =  (Φ_e[p.N.p+3:p.N.p+p.N.s]-Φ_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx.s*p.θ[:l_s])
-    
-        # Interpolating to the control volume interface
-    
-        # Last control volume in the separator: derivative approximation with a central scheme
-        dΦ_e_last_s = 2*(Φ_e[p.N.p+p.N.s+1]-Φ_e[p.N.p+p.N.s-1])/( Δx.n*p.θ[:l_n] + 3*Δx.s*p.θ[:l_s])
-    
-        # Negative electrode
-    
-        # Interpolating to the control volume interface
-    
-        # First control volume in the negative electrode: derivative approximation with a central scheme
-        dΦ_e_first_n = 2*(Φ_e[p.N.p+p.N.s+2]-Φ_e[p.N.p+p.N.s])/(3 * Δx.n*p.θ[:l_n] + Δx.s*p.θ[:l_s])
-    
-        # Central difference scheme
+        dΦ_es = [
+            approx_central_difference_at_left_CV(Φ_e.p, :p, Φ_e.s, :s)
+            central_difference(Φ_e.s, :s)
+            approx_central_difference_at_right_CV(Φ_e.s, :s, Φ_e.n, :n)
+        ]
+        
         dΦ_en = [
-            (Φ_e[p.N.p+p.N.s+3:end]-Φ_e[p.N.p+p.N.s+1:end-2])/(2*Δx.n*p.θ[:l_n])
-            (3*Φ_e[end]-4*Φ_e[end-1]+Φ_e[end-2])/(2*Δx.n*p.θ[:l_n])
-            ]
+            approx_central_difference_at_left_CV(Φ_e.s, :s, Φ_e.n, :n)
+            central_difference(Φ_e.n, :n)
+            forward_difference_right(Φ_e.n, :n)
+        ]
+        
         dΦ_e = (
-            p = [dΦ_ep;dΦ_e_last_p],
-            s = [dΦ_e_first_s;dΦ_es;dΦ_e_last_s],
-            n = [dΦ_e_first_n;dΦ_en],
+            p = dΦ_ep,
+            s = dΦ_es,
+            n = dΦ_en,
         )
     
         ## Electrolyte concentration derivatives
     
-        # Cathode
-    
-        dc_ep = [ (-3*c_e[1]+4*c_e[2]-c_e[3])/(2*Δx.p*p.θ[:l_p]) # Forward differentiation scheme
-            (c_e[3:p.N.p]-c_e[1:p.N.p-2])/(2*Δx.p*p.θ[:l_p])     # Central differentiation scheme
-            ]
-    
-        # Interpolating to the control volume interface
-    
-        # Last control volume in the Cathode: derivative approximation with a central scheme
-        dc_e_last_p = 2*(c_e[p.N.p+1]-c_e[p.N.p-1])/(3 * Δx.p*p.θ[:l_p] + Δx.s*p.θ[:l_s])
-    
-        # Separator
-    
-        # Interpolating to the control volume interface
-    
-        # First control volume in the separator: derivative approximation with a central scheme
-        dc_e_first_s = 2*(c_e[p.N.p+2]-c_e[p.N.p])/( Δx.p*p.θ[:l_p] + 3* Δx.s*p.θ[:l_s])
-    
-        # Central differentiation scheme
-        dc_es = (c_e[p.N.p+3:p.N.p+p.N.s]-c_e[p.N.p+1:p.N.p+p.N.s-2])/(2*Δx.s*p.θ[:l_s])
-    
-        # Interpolating to the control volume interface
-    
-        # Last control volume in the separator: derivative approximation with a central scheme
-        dc_e_last_s = 2*(c_e[p.N.p+p.N.s+1]-c_e[p.N.p+p.N.s-1])/( Δx.n*p.θ[:l_n] + 3*Δx.s*p.θ[:l_s])
-    
-        # Negative electrode
-    
-        # Interpolating to the control volume interface
-    
-        # First control volume in the negative electrode: derivative approximation with a central scheme
-        dc_e_first_n = 2*(c_e[p.N.p+p.N.s+2]-c_e[p.N.p+p.N.s])/(3 * Δx.n*p.θ[:l_n] + Δx.s*p.θ[:l_s])
-    
+        dc_ep = [
+            forward_difference_left(c_e.p, :p)
+            central_difference(c_e.p, :p)
+            approx_central_difference_at_right_CV(c_e.p, :p, c_e.s, :s)
+        ]
+
+        dc_es = [
+            approx_central_difference_at_left_CV(c_e.p, :p, c_e.s, :s)
+            central_difference(c_e.s, :s)
+            approx_central_difference_at_right_CV(c_e.s, :s, c_e.n, :n)
+        ]
+
         dc_en = [
-            (c_e[p.N.p+p.N.s+3:end]-c_e[p.N.p+p.N.s+1:end-2])/(2*Δx.p*p.θ[:l_p]) # Central differentiation scheme
-            (3*c_e[end]-4*c_e[end-1]+c_e[end-2])/(2*Δx.n*p.θ[:l_n])              # Backward differentiation scheme
-            ]
-    
+            approx_central_difference_at_left_CV(c_e.s, :s, c_e.n, :n)
+            central_difference(c_e.n, :n)
+            forward_difference_right(c_e.n, :n)
+        ]
+
         dc_e = (
-            p = [dc_ep;dc_e_last_p],
-            s = [dc_e_first_s;dc_es;dc_e_last_s],
-            n = [dc_e_first_n;dc_en],
+            p = dc_ep,
+            s = dc_es,
+            n = dc_en,
         )
     
         return dΦ_s, dΦ_e, dc_e
@@ -362,22 +498,22 @@ function build_heat_generation_rates!(states, p::AbstractModel)
     dΦ_s, dΦ_e, dc_e = thermal_derivatives(Φ_s, Φ_e, c_e, p)
 
     ## Reversible heat generation rate
-    @views @inbounds Q_rev_p = F*a_p*j.p.*T.p.*∂U∂T.p
-    @views @inbounds Q_rev_n = F*a_n*j.n.*T.n.*∂U∂T.n
+    @views @inbounds Q_rev_p = F.*a.p.*j.p.*T.p.*∂U∂T.p
+    @views @inbounds Q_rev_n = F.*a.n.*j.n.*T.n.*∂U∂T.n
 
     ## Reaction heat generation rate
-    @views @inbounds Q_rxn_p = F*a_p*j.p.*η.p
-    @views @inbounds Q_rxn_n = F*a_n*j.n.*η.n
+    @views @inbounds Q_rxn_p = F.*a.p.*j.p.*η.p
+    @views @inbounds Q_rxn_n = F.*a.n.*j.n.*η.n
 
     ## Ohmic heat generation rate
     ν_p, ν_s, ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 
     # Cathode ohmic generation rate
-    Q_ohm_p = K_eff.p .* dΦ_e.p.^2 + 2*R*K_eff.p.*T.p*(1-p.θ[:t₊]).*ν_p/F.*(dc_e.p./c_e.p).*dΦ_e.p + σ_eff_p * dΦ_s.p.^2
+    Q_ohm_p = K_eff.p .* dΦ_e.p.^2 + 2*R*K_eff.p.*T.p*(1-p.θ[:t₊]).*ν_p/F.*(dc_e.p./c_e.p).*dΦ_e.p .+ σ_eff.p .* dΦ_s.p.^2
     # Separator ohmic generation rate
     Q_ohm_s = K_eff.s .* dΦ_e.s.^2 + 2*R*K_eff.s.*T.s*(1-p.θ[:t₊]).*ν_s/F.*(dc_e.s./c_e.s).*dΦ_e.s
     # Anode ohmic generation rate
-    Q_ohm_n = K_eff.n .* dΦ_e.n.^2 + 2*R*K_eff.n.*T.n*(1-p.θ[:t₊]).*ν_n/F.*(dc_e.n./c_e.n).*dΦ_e.n + σ_eff_n * dΦ_s.n.^2
+    Q_ohm_n = K_eff.n .* dΦ_e.n.^2 + 2*R*K_eff.n.*T.n*(1-p.θ[:t₊]).*ν_n/F.*(dc_e.n./c_e.n).*dΦ_e.n .+ σ_eff.n .* dΦ_s.n.^2
     
     Q_rev = [Q_rev_p; Q_rev_n]
     Q_rxn = [Q_rxn_p; Q_rxn_n]
@@ -502,7 +638,7 @@ function limiting_electrode(p::AbstractModel)
 end
 
 @inline calc_I1C(p::AbstractModel) = calc_I1C(p.θ)
-@inline function calc_I1C(θ::Dict{Symbol,T}) where T<:Union{Float64,Any}
+@inline function calc_I1C(θ::OrderedDict{Symbol,T}) where T<:Union{Float64,Any}
     """
     Calculate the 1C current density (A⋅hr/m²) based on the limiting electrode
     """

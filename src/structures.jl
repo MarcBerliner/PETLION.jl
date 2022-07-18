@@ -71,9 +71,9 @@ Base.@kwdef struct index_state <: AbstractUnitRange{Int64}
     var_type::Symbol = :NA
 end
 
-struct jacobian_symbolic{T<:Function} <: AbstractJacobian
-    func::T
-    sp::SparseMatrixCSC{Float64,Int64}
+Base.@kwdef struct jacobian_symbolic{T<:Function} <: AbstractJacobian
+    func::T = emptyfunc
+    sp::SparseMatrixCSC{Float64,Int64} = spzeros(Float64,0,0)
 end
 (jac::jacobian_symbolic{<:Function})(x...) = jac.func(x...)
 
@@ -329,24 +329,29 @@ struct cache_run
     id::Vector{Int64}
 end
 
-struct model_funcs{T1<:Function,T2<:Function,T3<:Function,T4<:AbstractJacobian,T5<:AbstractJacobian}
-    initial_guess!::T1
-    f_diff!::T2
-    f_alg!::T3
-    J_y!::T4
-    J_y_alg!::T5
-    Dict_constant::Dict{DataType,Jac_and_res}
-    Dict_function::Dict{DataType,Dict{DataType,Jac_and_res}}
-    Dict_residual::Dict{DataType,Jac_and_res}
+Base.@kwdef struct model_funcs{T1<:Function,T2<:Function,T3<:Function,T4<:AbstractJacobian,T5<:AbstractJacobian}
+    initial_guess!::T1 = emptyfunc
+    f_diff!::T2 = emptyfunc
+    f_alg!::T3 = emptyfunc
+    J_y!::T4 = jacobian_symbolic()
+    J_y_alg!::T5 = jacobian_symbolic()
+    Dict_constant::Dict{DataType,Jac_and_res} = Dict{DataType,Jac_and_res}()
+    Dict_function::Dict{DataType,Dict{DataType,Jac_and_res}} = Dict{DataType,Dict{DataType,Jac_and_res}}()
+    Dict_residual::Dict{DataType,Jac_and_res} = Dict{DataType,Jac_and_res}()
 end
-model_funcs(x...) = model_funcs(x...,
+model_funcs(initial_guess!,f_diff!,f_alg!,J_y!,J_y_alg!) = model_funcs(
+    initial_guess!,
+    f_diff!,
+    f_alg!,
+    J_y!,
+    J_y_alg!,
     Dict{DataType,Jac_and_res}(),
     Dict{DataType,Dict{DataType,Jac_and_res}}(),
     Dict{DataType,Jac_and_res}()
     )
 
 struct model{T<:AbstractJacobian,temp,solid_diff,Fickian,age} <: AbstractModel{T,temp,solid_diff,Fickian,age}
-    θ::Dict{Symbol,Float64}
+    θ::OrderedDict{Symbol,Float64}
     numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
     ind::indices_states
@@ -369,7 +374,7 @@ const AbstractModelFickian{Fickian}      = AbstractModel{<:AbstractJacobian,<:An
 const AbstractModelAge{age}              = AbstractModel{<:AbstractJacobian,<:Any,<:Any,<:Any,age}
 
 struct model_skeleton{temp,solid_diff,Fickian,age} <: AbstractModel{AbstractJacobian,temp,solid_diff,Fickian,age}
-    θ::Dict{Symbol,Any}
+    θ::OrderedDict{Symbol,Any}
     numerics::options_numerical{temp,solid_diff,Fickian,age}
     N::discretizations_per_section
     ind::indices_states
@@ -417,7 +422,7 @@ const STATE_NAMES = Dict{Symbol,String}(
     :c_e => "Electrolyte Conc. (mol/m³)",
     :c_s_avg => "Solid Conc. (mol/m³)",
     :T => "Temperature (K)",
-    :film => "Li Plating Thickness (m)",
+    :film => "SEI Film Thickness (m)",
     :Q => "Q",
     :j => "Molar Ionic Flux (mol/m²⋅s)",
     :j_s => "Side Reaction Flux (mol/m²⋅s)",
@@ -429,6 +434,10 @@ const STATE_NAMES = Dict{Symbol,String}(
     :P => "Power (W)",
     :SOC => "State of Charge (-)",
     :SOH => "State of Health (-)",
+    :ϵ_s => "Active Material Frac. (-)",
+    :j_SEI => "Side Reaction Flux (mol/m²⋅s)",
+    :δ => "SEI Film Thickness (m)",
+    :σ_h => "Mechanical Stress (Pa)",
 )
 
 ## Modifying Base functions
@@ -458,9 +467,9 @@ const STATE_NAMES = Dict{Symbol,String}(
     sol.t, x
 end
 
-function time_units(t::Number; digits=nothing)
+function time_units(t::Number; digits::T=nothing) where T
     # round the number to the nearest digits
-    rounding = t -> digits isa Number ? round(t; digits=digits) : t
+    rounding = t -> T <: Number ? round(t; digits=digits) : t
     
     if     rounding(t) < 3600
         time_scale = 1.0
@@ -477,16 +486,20 @@ function time_units(t::Number; digits=nothing)
     return t, time_unit, time_scale
 end
 
-function C_rate_string(I::Number;digits::Int64=4,show_sign::Bool=true)
-    I_rat = rationalize(Float64(I))
+function C_rate_string(I::Number; show_sign::Bool=true)
+    I_rat = rationalize(float(I))
     num = abs(I_rat.num)
     den = I_rat.den
 
     if den > 100 || (num > 10 && den > 10)
-        return "$(round(I;digits=digits))C"
+        str = "$(show_sign ? I : abs(I))C"
+        return str
     end
     
-    str = I < 0 && show_sign ? "-" : ""
+    str = ""
+    if show_sign && I < 0
+        str *=  "-"
+    end
     
     if isone(num) && !isone(den)
         str *= "C"
@@ -570,39 +583,30 @@ end
 
 function Base.show(io::IO, ind::indices_states)
     
-    outputs_tot = Symbol[]
-    @inbounds for (name,_type) in zip(fieldnames(typeof(ind)), fieldtypes(typeof(ind)))
-        if !(_type <: Tuple)
-            push!(outputs_tot, name)
-        end
-    end
-    outputs_tot = (outputs_tot...,)
+    names = [fieldnames(indices_states)...]
 
-    vars = Symbol[]
-    tot = Int64[]
-    types = Symbol[]
-    indices = UnitRange{Int64}[]
+    X = [getfield(ind, name) for name in names]
 
-    for field in outputs_tot
-        ind_var = getproperty(ind, field)
-        if ind_var.var_type ∈ (:differential, :algebraic)
-            push!(vars, field)
-            push!(tot, ind_var.start)
-            push!(types, ind_var.var_type)
-            push!(indices, ind_var.start:ind_var.stop)
-        end
-    end
-    vars    .= vars[sortperm(tot)]
-    indices .= indices[sortperm(tot)]
+    isnt_used(x::index_state) = x.var_type == :NA
+    isnt_used(::Any) = true
 
-    pad = maximum(length.(String.(vars)))+2
+    inds_inactive = isnt_used.(X)
 
-    str = [
-        "indices_states:";
-        [" " * rpad("$(var): ", pad) * "$(length(index) > 1 ? index : index[1]), $(_type)" for (index,var,_type) in zip(indices,vars,types)]
-    ]
+    deleteat!(X, inds_inactive)
+    deleteat!(names, inds_inactive)
+
+    ind_sort = sortperm(X)
+
+    X .= X[ind_sort]
+    names .= names[ind_sort]
+
+    len = maximum(length.(String.(names)))
+
+    index_range(x) = x.start == x.stop ? "$(x.stop)" : "$(x.start):$(x.stop)"
+
+    str = "indices_states:\n" * join([rpad(" $(names[i]): ", len+3) * index_range(X[i]) * ", $(X[i].var_type)" for i in 1:length(names)], "\n")
     
-    print(io, join(str, "\n"))
+    print(io, str)
 end
 function Base.show(io::IO, bounds::T) where T<:AbstractStopConditions
     fields = fieldnames(T)[findall(fieldtypes(T) .<: Number)]
@@ -641,7 +645,7 @@ method_name(::run_function{method_I,<:Function};   shorthand::Bool=false) = shor
 method_name(::run_function{method_V,<:Function};   shorthand::Bool=false) = shorthand ? "V func"   : "voltage function"
 method_name(::run_function{method_P,<:Function};   shorthand::Bool=false) = shorthand ? "P func"   : "power function"
 
-method_string(run::run_constant{method_I,<:Any};     kw...) = method_name(run;kw...) * " = $(C_rate_string(value(run);digits=2))"
+method_string(run::run_constant{method_I,<:Any};     kw...) = method_name(run;kw...) * " = $(C_rate_string(round(value(run);digits=2)))"
 method_string(run::run_constant{method_V,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) V"
 method_string(run::run_constant{method_P,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) W"
 
@@ -731,13 +735,13 @@ function Base.show(io::IO, sol::solution)
                 "$title\n",
                 " --------\n",
                 str_runs(),
-                " Time:    $(t) $time_unit\n",
-                " Current: $(C_rate_string(calc_I(Y,p);digits = 4))\n",
-                " Voltage: $(round(calc_V(Y,p);        digits = 4)) V\n",
-                " Power:   $(round(calc_P(Y,p);        digits = 2)) W/m²\n",
-                " SOC:     $(round(sol.SOC[end];       digits = 4))\n",
+                " Time:    $(t) $(time_unit)\n",
+                " Current: $(C_rate_string(round(calc_I(Y,p); digits = 4)))\n",
+                " Voltage: $(round(calc_V(Y,p);               digits = 4) ) V\n",
+                " Power:   $(round(calc_P(Y,p);               digits = 2) ) W/m²\n",
+                " SOC:     $(round(sol.SOC[end];              digits = 4) )\n",
                 !(p.numerics.aging == false) ? 
-                " SOH:     $(round(sol.SOH[end];       digits = 4))\n"
+                " SOH:     $(round(sol.SOH[end];              digits = 4) )\n"
                 : "",
                 !(p.numerics.temperature == false) ? 
                 # " Temp.:   $(round(calc_T_avg(Y,p)-273.15; digits = 4)) °C\n"

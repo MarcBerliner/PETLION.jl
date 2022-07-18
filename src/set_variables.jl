@@ -43,11 +43,15 @@
     if keep.Φ_s     modify!(sol.Φ_s,     calc_Φ_s(Y, p)     ) end
     
     # exist as an optional output if the sol uses them
-    if ( p.numerics.temperature == true           && keep.T    ) modify!(sol.T,    calc_T(Y,p)    ) end
-    if ( p.numerics.aging == :SEI                 && keep.film ) modify!(sol.film, calc_film(Y,p) ) end
-    if ( p.numerics.aging == :SEI                 && keep.SOH  ) modify!(sol.SOH,  calc_SOH(Y, p) ) end
-    if ( !(p.numerics.aging == false)             && keep.j_s  ) modify!(sol.j_s,  calc_j_s(Y,p)  ) end
-    if ( p.numerics.solid_diffusion == :quadratic && keep.Q    ) modify!(sol.Q,    calc_Q(Y,p)    ) end
+    if ( p.numerics.temperature == true           && keep.T     ) modify!(sol.T,     calc_T(Y, p)     ) end
+    if ( p.numerics.solid_diffusion == :quadratic && keep.Q     ) modify!(sol.Q,     calc_Q(Y, p)     ) end
+    if ( p.numerics.aging == :SEI                 && keep.film  ) modify!(sol.film,  calc_film(Y, p)  ) end
+    if ( p.numerics.aging ∈ (:SEI, :stress)       && keep.SOH   ) modify!(sol.SOH,   calc_SOH(Y, p)   ) end
+    if ( p.numerics.aging == :SEI                 && keep.j_s   ) modify!(sol.j_s,   calc_j_s(Y, p)   ) end
+    if ( p.numerics.aging == :stress              && keep.δ     ) modify!(sol.δ,     calc_δ(Y, p)     ) end
+    if ( p.numerics.aging == :stress              && keep.ϵ_s   ) modify!(sol.ϵ_s,   calc_ϵ_s(Y, p)   ) end
+    if ( p.numerics.aging == :stress              && keep.j_SEI ) modify!(sol.j_SEI, calc_j_SEI(Y, p) ) end
+    if ( p.numerics.aging == :stress              && keep.σ_h   ) modify!(sol.σ_h,   calc_σ_h(Y, p)   ) end
 
     return nothing
 end
