@@ -388,3 +388,5 @@ check_is_hold(::Any,::solution) = false
 
 check_is_rest(run::run_constant{method_I, Symbol}) = run.input == :rest
 check_is_rest(::Any) = false
+
+check_is_half_cell(p::AbstractModel) = p.numerics.anode == lithium_foil

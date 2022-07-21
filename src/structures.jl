@@ -19,6 +19,8 @@ struct method_I   <: AbstractMethod end
 struct method_V   <: AbstractMethod end
 struct method_P   <: AbstractMethod end
 
+struct lithium_foil <: Function end
+
 struct discretizations_per_section
     p::Int64
     s::Int64

@@ -92,15 +92,13 @@ function block_matrix_maker(p, X, Y, Z)
     """
     single_block(x) = Matrix(Tridiagonal{eltype(x)}(-x[1:end-1],x .+ [0;x[1:end-1]],-x[1:end-1]))
 
-    ind_p = (1:p.N.p)
-    ind_s = (1:p.N.s) .+ (p.N.p)
-    ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
+    ind = indices_section((:p,:s,:n), p)
 
-    A_tot = zeros(eltype(X), ind_n[end], ind_n[end])
+    A_tot = zeros(eltype(X), ind.n[end], ind.n[end])
 
-    A_tot[ind_p,ind_p] .= single_block(X)
-    A_tot[ind_s,ind_s] .= single_block(Y)
-    A_tot[ind_n,ind_n] .= single_block(Z)
+    A_tot[ind.p,ind.p] .= single_block(X)
+    A_tot[ind.s,ind.s] .= single_block(Y)
+    A_tot[ind.n,ind.n] .= single_block(Z)
     
     return A_tot
 end

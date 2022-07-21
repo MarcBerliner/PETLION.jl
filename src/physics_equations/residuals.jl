@@ -115,21 +115,20 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
 
     A_tot = -block_matrix_maker(p, D_eff_p, D_eff_s, D_eff_n)
 
+    ind = indices_section((:p,:s,:n), p)
+        
     # dividing by the length and Δx
-    ind = 1:p.N.p
-    @views @inbounds A_tot[ind,ind] ./= (Δx.p*p.θ[:l_p])^2
-    ind = (1:p.N.s) .+ ind[end]
-    @views @inbounds A_tot[ind,ind] ./= (Δx.s*p.θ[:l_s])^2
-    ind = (1:p.N.n) .+ ind[end]
-    @views @inbounds A_tot[ind,ind] ./= (Δx.n*p.θ[:l_n])^2
+    @views @inbounds A_tot[ind.p,ind.p] ./= (Δx.p*p.θ[:l_p])^2
+    @views @inbounds A_tot[ind.s,ind.s] ./= (Δx.s*p.θ[:l_s])^2
+    @views @inbounds A_tot[ind.n,ind.n] ./= (Δx.n*p.θ[:l_n])^2
 
     # Reset values on the lines for the interfaces conditions
-    @views @inbounds A_tot[p.N.p,:]   .= 0.0
-    @views @inbounds A_tot[p.N.p+1,:] .= 0.0
+    @views @inbounds A_tot[ind.p[end],:] .= 0.0
+    @views @inbounds A_tot[ind.s[1],:]   .= 0.0
 
     # Reset values on the lines for the interfaces conditions
-    @views @inbounds A_tot[p.N.p+p.N.s,:]   .= 0.0
-    @views @inbounds A_tot[p.N.p+p.N.s+1,:] .= 0.0
+    @views @inbounds A_tot[ind.s[end],:] .= 0.0
+    @views @inbounds A_tot[ind.n[1],:]   .= 0.0
 
     ## Interface between separator and cathode (last volume in the cathode)
 
@@ -140,53 +139,50 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     # Diffusion coefficient on the interface
     @views @inbounds first_s = D_eff_p[end]/den_s
     # Fix the values at the boundaries
-    @views @inbounds A_tot[p.N.p,p.N.p-1:p.N.p+1] .= [last_p; -(last_p + first_s); first_s]/(Δx.p*p.θ[:l_p])
+    @views @inbounds A_tot[ind.p[end], ind.p[end-1]:ind.p[end]+1] .= [last_p; -(last_p + first_s); first_s]/(Δx.p*p.θ[:l_p])
 
     ## Interface between separator and cathode (first volume in the separator)
-
+    
     # First diffusion coefficient in the separator
     @views @inbounds second_s = D_eff_s[1]/(Δx.s*p.θ[:l_s])
     # Diffusion coefficient on the interface
     @views @inbounds first_s = D_eff_p[end]/den_s
-
-    @views @inbounds A_tot[p.N.p+1,p.N.p:p.N.p+2] .= [first_s; -(first_s+second_s); second_s]/(Δx.s*p.θ[:l_s])
-
+    
+    @views @inbounds A_tot[ind.s[1], ind.s[1]-1:ind.s[2]] .= [first_s; -(first_s+second_s); second_s]/(Δx.s*p.θ[:l_s])
+    
     ## Interface between separator and anode (last volume in the separator)
-
+    
     # Compute the common denominator at the interface
     @views @inbounds den_s = (Δx.s*p.θ[:l_s]/2 + Δx.n*p.θ[:l_n]/2)
     # Last diffusion coefficient in the separator
     @views @inbounds last_s = D_eff_s[end-1]/(Δx.s*p.θ[:l_s])
     # Diffusion coefficient on the interface
     @views @inbounds first_n = D_eff_s[end]/den_s
-
-    @views @inbounds A_tot[p.N.p+p.N.s,p.N.p+p.N.s-1:p.N.p+p.N.s+1] .= [last_s; -(last_s+first_n); first_n]/(Δx.s*p.θ[:l_s])
-
+    
+    @views @inbounds A_tot[ind.s[end], ind.s[end-1]:ind.s[end]+1] .= [last_s; -(last_s+first_n); first_n]/(Δx.s*p.θ[:l_s])
+    
     ## Interface between separator and anode (first volume in the anode)
-
+    
     # Compute the common denominator at the interface
     den_n = (Δx.s*p.θ[:l_s]/2 + Δx.n*p.θ[:l_n]/2)
     # First diffusion coefficient in the anode
     @views @inbounds second_n = D_eff_n[1]/(Δx.n*p.θ[:l_n])
     # Diffusion coefficient on the interface
     @views @inbounds first_n = D_eff_s[end]/den_n
-
     
-    A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] .= [first_n; -(first_n+second_n); second_n]/(Δx.n*p.θ[:l_n])
+    
+    A_tot[ind.n[1], ind.n[1]-1:ind.n[2]] .= [first_n; -(first_n+second_n); second_n]/(Δx.n*p.θ[:l_n])
     
     A_tot = Matrix(A_tot)
 
     # Write the RHS of the equation
     rhsCe = A_tot*c_e
-    
-    ind_p = (1:p.N.p)
-    ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
 
     ν_p,ν_s,ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 
-    rhsCe[ind_p] .+= (1-p.θ[:t₊]).*ν_p.*a.p.*j.p
+    rhsCe[ind.p] .+= (1-p.θ[:t₊]).*ν_p.*a.p.*j.p
     # nothing for the separator since a_s = 0
-    rhsCe[ind_n] .+= (1-p.θ[:t₊]).*ν_n.*a.n.*j.n
+    rhsCe[ind.n] .+= (1-p.θ[:t₊]).*ν_n.*a.n.*j.n
     
     if p.numerics.aging == :stress
         ## chain rule: ∂/∂t(ϵ c_e) = (c_e ∂ϵ/∂t) + (ϵ ∂c_e/∂t)
@@ -196,10 +192,13 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
         residuals_ϵ_s!(res, states, ∂states, p)
 
         ∂ϵ_s = res[:ϵ_s] .+ ∂states[:ϵ_s]
+
+        ind = indices_section((:p,:n), p)
+
         ∂ϵ = -[
-            ∂ϵ_s[1:p.N.p]
+            ∂ϵ_s[ind.p]
             zeros(p.N.s)
-            ∂ϵ_s[p.N.p.+(1:p.N.n)]
+            ∂ϵ_s[ind.n]
         ]
 
         rhsCe .-= c_e .* ∂ϵ
@@ -498,22 +497,13 @@ function residuals_T!(res, states, ∂states, p)
 
     A_tot = zeros(eltype(A_a), (p.N.p+p.N.s+p.N.n+p.N.a+p.N.z), (p.N.p+p.N.s+p.N.n+p.N.a+p.N.z))
 
-    ind = 1:p.N.a
-    A_tot[ind,ind] = A_a
+    ind = indices_section((:a,:p,:s,:n,:z), p)
 
-    ind = (1:p.N.p) .+ ind[end]
-    A_tot[ind,ind] = A_p
-
-    ind = (1:p.N.s) .+ ind[end]
-    A_tot[ind,ind] = A_s
-
-    ind = (1:p.N.n) .+ ind[end]
-    A_tot[ind,ind] = A_n
-
-    ind = (1:p.N.z) .+ ind[end]
-    A_tot[ind,ind] = A_z
-
-    ## Interfaces
+    A_tot[ind.a, ind.a] = A_a
+    A_tot[ind.p, ind.p] = A_p
+    A_tot[ind.s, ind.s] = A_s
+    A_tot[ind.n, ind.n] = A_n
+    A_tot[ind.z, ind.z] = A_z
 
     # Interface between aluminum current collector & cathode. We
     # are in the last volume of the current collector
@@ -524,7 +514,7 @@ function residuals_T!(res, states, ∂states, p)
     last_a  = p.θ[:λ_a] / (Δx.a*p.θ[:l_a])
     first_p = λ_a_p/den_a_p
 
-    A_tot[p.N.a,p.N.a-1:p.N.a+1] .= [last_a; -(last_a+first_p); first_p]/(Δx.a*p.θ[:l_a])
+    A_tot[ind.a[end], ind.a[end-1]:ind.a[end]+1] .= [last_a; -(last_a+first_p); first_p]/(Δx.a*p.θ[:l_a])
 
     # Interface between aluminum current collector & cathode. We
     # are in the first volume of the cathode
@@ -533,7 +523,7 @@ function residuals_T!(res, states, ∂states, p)
     second_p = p.θ[:λ_p] / (Δx.p*p.θ[:l_p])
     first_p  = λ_a_p/den_a_p
 
-    A_tot[p.N.a+1,p.N.a:p.N.a+2] .= [first_p; -(second_p+first_p); second_p]/(Δx.p*p.θ[:l_p])
+    A_tot[ind.p[1], ind.p[1]-1:ind.p[2]] .= [first_p; -(second_p+first_p); second_p]/(Δx.p*p.θ[:l_p])
 
     # Interface between cathode & separator. We
     # are in the last volume of the cathode
@@ -544,7 +534,7 @@ function residuals_T!(res, states, ∂states, p)
     last_p  = p.θ[:λ_p] / (Δx.p*p.θ[:l_p])
     first_s = λ_p_s/den_p_s
 
-    A_tot[p.N.a+p.N.p,p.N.a+p.N.p-1:p.N.a+p.N.p+1] .= [last_p; -(last_p+first_s); first_s]/(Δx.p*p.θ[:l_p])
+    A_tot[ind.p[end], ind.p[end-1]:ind.p[end]+1] .= [last_p; -(last_p+first_s); first_s]/(Δx.p*p.θ[:l_p])
 
     # Interface between cathode & separator. We
     # are in the first volume of the separator
@@ -552,7 +542,7 @@ function residuals_T!(res, states, ∂states, p)
     second_s = p.θ[:λ_s] / (Δx.s*p.θ[:l_s])
     first_s  = λ_p_s/den_p_s
 
-    A_tot[p.N.a+p.N.p+1,p.N.a+p.N.p:p.N.a+p.N.p+2] .= [first_s; -(second_s+first_s); second_s]/(Δx.s*p.θ[:l_s])
+    A_tot[ind.s[1], ind.s[1]-1:ind.s[2]] .= [first_s; -(second_s+first_s); second_s]/(Δx.s*p.θ[:l_s])
 
     # Interface between separator anode. We
     # are in the last volume of the separator
@@ -563,7 +553,7 @@ function residuals_T!(res, states, ∂states, p)
     last_s  = p.θ[:λ_s] / (Δx.s*p.θ[:l_s])
     first_n = λ_s_n/den_s_n
 
-    A_tot[p.N.a+p.N.p+p.N.s,p.N.a+p.N.p+p.N.s-1:p.N.a+p.N.p+p.N.s+1] .= [last_s; -(last_s+first_n); first_n]/(Δx.s*p.θ[:l_s])
+    A_tot[ind.s[end], ind.s[end-1]:ind.s[end]+1] .= [last_s; -(last_s+first_n); first_n]/(Δx.s*p.θ[:l_s])
 
     # Interface between separator anode. We
     # are in the first volume of the anode
@@ -572,7 +562,7 @@ function residuals_T!(res, states, ∂states, p)
     second_n = p.θ[:λ_n] / (Δx.n*p.θ[:l_n])
     first_n  = λ_s_n/den_s_n
 
-    A_tot[p.N.a+p.N.p+p.N.s+1,p.N.a+p.N.p+p.N.s:p.N.a+p.N.p+p.N.s+2] .= [first_n; -(first_n+second_n); second_n]/(Δx.n*p.θ[:l_n])
+    A_tot[ind.n[1], ind.n[1]-1:ind.n[2]] .= [first_n; -(first_n+second_n); second_n]/(Δx.n*p.θ[:l_n])
 
 
     # Interface between anode & negative current collector. We
@@ -584,7 +574,7 @@ function residuals_T!(res, states, ∂states, p)
     last_n   = p.θ[:λ_n] / (Δx.n*p.θ[:l_n])
     first_co = λ_n_z/den_n_co
 
-    A_tot[p.N.a+p.N.p+p.N.s+p.N.n,p.N.a+p.N.p+p.N.s+p.N.n-1:p.N.a+p.N.p+p.N.s+p.N.n+1] .= [last_n; -(last_n+first_co); first_co]/(Δx.n*p.θ[:l_n])
+    A_tot[ind.n[end], ind.n[end-1]:ind.n[end]+1] .= [last_n; -(last_n+first_co); first_co]/(Δx.n*p.θ[:l_n])
     
     # Interface between anode & negative current collector. We
     # are in the first volume of the negative current collector
@@ -593,7 +583,7 @@ function residuals_T!(res, states, ∂states, p)
     second_co = p.θ[:λ_z] / (Δx.z*p.θ[:l_z])
     first_co  = λ_n_z/den_n_co
 
-    A_tot[p.N.a+p.N.p+p.N.s+p.N.n+1,p.N.a+p.N.p+p.N.s+p.N.n:p.N.a+p.N.p+p.N.s+p.N.n+2] .= [first_co; -(second_co+first_co); second_co]/(Δx.z*p.θ[:l_z])
+    A_tot[ind.z[1], ind.z[1]-1:ind.z[2]] .= [first_co; -(second_co+first_co); second_co]/(Δx.z*p.θ[:l_z])
 
     Q_rev_tot = [
         zeros(p.N.a)
@@ -785,43 +775,42 @@ function residuals_Φ_e!(res, states, p::AbstractModel)
     F = const_Faradays
 
     # Interpolate the K_eff values to the edge of the control volume
-    K̂_eff_p, K̂_eff_s, K̂_eff_n = interpolate_electrolyte_grid(K_eff.p, K_eff.s, K_eff.n, p)
+    K̂_eff_p, K̂_eff_s, K̂_eff_n = PETLION.interpolate_electrolyte_grid(K_eff.p, K_eff.s, K_eff.n, p)
 
-    A_tot = block_matrix_maker(p, K̂_eff_p, K̂_eff_s, K̂_eff_n)
+    A_tot = PETLION.block_matrix_maker(p, K̂_eff_p, K̂_eff_s, K̂_eff_n)
 
-    ind = 1:p.N.p
-    A_tot[ind,ind] ./= (Δx.p*p.θ[:l_p])
-    ind = (1:p.N.s) .+ ind[end]
-    A_tot[ind,ind] ./= (Δx.s*p.θ[:l_s])
-    ind = (1:p.N.n) .+ ind[end]
-    A_tot[ind,ind] ./= (Δx.n*p.θ[:l_n])
+    ind = PETLION.indices_section((:p,:s,:n), p)
+
+    A_tot[ind.p,ind.p] ./= (Δx.p*p.θ[:l_p])
+    A_tot[ind.s,ind.s] ./= (Δx.s*p.θ[:l_s])
+    A_tot[ind.n,ind.n] ./= (Δx.n*p.θ[:l_n])
 
     # Φ_e(x = L) = 0
-    A_tot[end, end-1:end] .= [0.0, 1.0]
+    A_tot[ind.n[end], ind.n[end-1:end]] .= [0.0, 1.0]
 
     ## Interfaces Cathode [last volume of the positive]
 
     # Here we are in the last volume of the positive
     den = (Δx.p*p.θ[:l_p]/2+Δx.s*p.θ[:l_s]/2)
     last_p = K̂_eff_p[end-1]/(Δx.p*p.θ[:l_p])
-    A_tot[p.N.p,p.N.p-1:p.N.p+1] .= [-last_p, (last_p+K̂_eff_p[end]/den), -K̂_eff_p[end]/den]
+    A_tot[ind.p[end], ind.p[end-1]:ind.p[end]+1] .= [-last_p, (last_p+K̂_eff_p[end]/den), -K̂_eff_p[end]/den]
 
     ## Interfaces Cathode [first volume of the separator]
 
     # Here we are in the first volume of the separator
     first_s = K̂_eff_s[1]/(Δx.s*p.θ[:l_s])
-    A_tot[p.N.p+1,p.N.p:p.N.p+2] .= [-K̂_eff_p[end]/den, (first_s+K̂_eff_p[end]/den), -first_s]
+    A_tot[ind.s[1], ind.s[1]-1:ind.s[2]] .= [-K̂_eff_p[end]/den, (first_s+K̂_eff_p[end]/den), -first_s]
 
     ## Interfaces Cathode [last volume of the separator]
     # Here we are in the last volume of the separator
     den = (Δx.n*p.θ[:l_n]/2+Δx.s*p.θ[:l_s]/2)
     last_s = K̂_eff_s[end-1]/(Δx.s*p.θ[:l_s])
-    A_tot[p.N.p+p.N.s,p.N.p+p.N.s-1:p.N.p+p.N.s+1] .= [-last_s, (last_s+K̂_eff_s[end]/den), -K̂_eff_s[end]/den]
+    A_tot[ind.s[end], ind.s[end-1]:ind.s[end]+1] .= [-last_s, (last_s+K̂_eff_s[end]/den), -K̂_eff_s[end]/den]
 
     ## Interfaces Cathode [first volume of the negative]
     # Here we are inside the first volume of the anode
     first_n = K̂_eff_n[1]/(Δx.n*p.θ[:l_n])
-    A_tot[p.N.p+p.N.s+1,p.N.p+p.N.s:p.N.p+p.N.s+2] .= [-K̂_eff_s[end]/den, (first_n+K̂_eff_s[end]/den), -first_n]
+    A_tot[ind.n[1], ind.n[1]-1:ind.n[2]] .= [-K̂_eff_s[end]/den, (first_n+K̂_eff_s[end]/den), -first_n]
 
 
     ## Electrolyte concentration interpolation
@@ -855,11 +844,8 @@ function residuals_Φ_e!(res, states, p::AbstractModel)
         0 # for correct dimensions
     ]
 
-    ind_p = (1:p.N.p)
-    ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
-
-    f[ind_p] .+= @. (Δx.p*p.θ[:l_p]*F*a.p)*j.p
-    f[ind_n] .+= @. (Δx.n*p.θ[:l_n]*F*a.n)*j.n
+    f[ind.p] .+= @. (Δx.p*p.θ[:l_p]*F*a.p)*j.p
+    f[ind.n] .+= @. (Δx.n*p.θ[:l_n]*F*a.n)*j.n
 
     # The boundary condition enforces that Φ_e(x=L) = 0
     f[end] = 0

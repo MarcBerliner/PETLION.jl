@@ -164,7 +164,6 @@ function build_cache(θ, ind, N, numerics, opts)
     return cache
 end
 
-
 Base.@kwdef mutable struct state_sections{T} <: AbstractArray{T,1}
     tot::AbstractArray{T,1} = nothing
     a = nothing
@@ -353,6 +352,34 @@ function state_indices(N, numerics)
     return ind, N_diff, N_alg, N_tot
 end
 
+function indices_section(sections::Tuple, p::AbstractModel; offset::Int64=0)
+    """
+    Retrieve the indices of the given sections.
+    """
+    
+    ind_start = offset
+    sections_full = fieldnames(index_state)[findall(fieldtypes(index_state) .<: UnitRange)]
+    
+    order_section = sort([findfirst(sections_full .== section) for section in sections])
+    sections_organized = (sections_full[order_section]...,)
+
+    indices = Vector{UnitRange{Int64}}(undef, length(sections_organized))
+    for (i,section) in enumerate(sections_organized)
+        N = getfield(p.N, section)
+        indices[i] = (1:N) .+ ind_start
+        ind_start += N
+    end
+
+    ind = index_state(;
+        start = 1,
+        stop = ind_start,
+        sections = sections_organized,
+        NamedTuple{sections_organized}(indices)...,
+    )
+    
+    return ind
+end
+
 @inline function guess_init(p::AbstractModel, X_applied=0.0; SOC=p.opts.SOC)
     """
     Get the initial guess in the DAE initialization.
@@ -375,15 +402,15 @@ end
     build_OCV!(states, p)
     
     # differential
-    states[:c_e] = repeat([p.θ[:c_e₀]], (p.N.p+p.N.s+p.N.n))
+    states[:c_e] .= p.θ[:c_e₀]
         
-    states[:T] = repeat([p.θ[:T₀]], (p.N.p+p.N.s+p.N.n)+p.N.a+p.N.z)
+    states[:T] .= p.θ[:T₀]
         
-    states[:film] = zeros(p.N.n)
+    states[:film] .= 0
         
-    states[:Q] = zeros(p.N.p+p.N.n)
+    states[:Q] .= 0
 
-    if !isempty(states[:SOH]) states[:SOH] = 1.0 end
+    if !isempty(states[:SOH]) states[:SOH] .= 1.0 end
 
     if !isempty(states[:δ]) states[:δ] .= p.θ[:δ₀] end
     

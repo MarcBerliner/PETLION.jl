@@ -52,7 +52,7 @@ function load_functions_symbolic(p::AbstractModel)
         no_breaking_changes = (file_version[1] == PETLION_VERSION[1]) && (file_version[2] == PETLION_VERSION[2])
 
         if !no_breaking_changes
-            @warn "Breaking updates encountered: re-evaluating sol..."
+            @warn "Breaking updates encountered: re-evaluating model..."
             remove_model_files(p)
         end
 
