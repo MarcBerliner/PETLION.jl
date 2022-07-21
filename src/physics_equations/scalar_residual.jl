@@ -10,6 +10,10 @@
 @inline calc_film(Y::Vector{<:Number}, p::AbstractModel)    = @inbounds @views Y[p.ind.film]
 @inline calc_j_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.j_s]
 @inline calc_Q(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.Q]
+@inline calc_δ(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.δ]
+@inline calc_ϵ_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.ϵ_s]
+@inline calc_j_SEI(Y::Vector{<:Number}, p::AbstractModel)   = @inbounds @views Y[p.ind.j_SEI]
+@inline calc_σ_h(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.σ_h]
 
 @inline calc_T(Y::Vector{<:Number}, p::AbstractModelTemp{true}) = @inbounds @views Y[p.ind.T]
 @inline calc_T(::Vector{<:Number}, p::AbstractModelTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
@@ -60,9 +64,15 @@ function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractModel)
 end
 
 # Metaprogramming to broadcast calc_x
-for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:T_avg,:K_eff,:η_plating,:OCV,:R_internal)
+for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:T_avg,:K_eff,:η_plating,:OCV,:R_internal,:δ,:ϵ_s,:j_SEI,:σ_h)
     name = "calc_$x"
     str = "Base.broadcasted(f::typeof($name),  Y::T, p::AbstractModel) where T<:VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = [f(y,p) for y in Y]"
+
+    str = remove_module_name(str)
+    eval(Meta.parse(str))
+
+
+    str = "$name(sol::solution, p::T=sol.results[1].p) where T<:AbstractModel = $name.(sol.Y, p)"
 
     str = remove_module_name(str)
     eval(Meta.parse(str))

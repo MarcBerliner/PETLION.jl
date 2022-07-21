@@ -102,8 +102,7 @@ finishpercent!(::Nothing;kw...) = nothing
 function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYMBOLIC_FUNCTIONS])
     
     if verbose
-        println("Creating the model")
-        progress = ProgressMeter.Progress(200)
+        progress = ProgressMeter.Progress(200; desc="Creating model: ")
         fillpercent!(progress, 1)
         ProgressMeter.update!(progress)
     else
@@ -147,13 +146,13 @@ function generate_functions_symbolic(p::AbstractModel; verbose=options[:SAVE_SYM
             write(f, str)
         end
 
-        save_string(x) = (string(x) |> rearrange_inbounds |> remove_comments |> rearrange_if_statements |> join)
+        to_string(x) = rearrange_if_statements(string(Base.remove_linenums!(x)))
         
-        write(dir * "initial_guess.jl", save_string(Y0Func))
-        write(dir * "J_y.jl",           save_string(jacFunc))
-        write(dir * "f_alg.jl",         save_string(res_algFunc))
-        write(dir * "J_y_alg.jl",       save_string(jac_algFunc))
-        write(dir * "f_diff.jl",        save_string(res_diffFunc))
+        write(dir * "initial_guess.jl", to_string(Y0Func))
+        write(dir * "J_y.jl",           to_string(jacFunc))
+        write(dir * "f_alg.jl",         to_string(res_algFunc))
+        write(dir * "J_y_alg.jl",       to_string(jac_algFunc))
+        write(dir * "f_diff.jl",        to_string(res_diffFunc))
             
         @save dir * "J_sp.jl" J_y_sp θ_keys
     end
@@ -416,28 +415,6 @@ function rearrange_inbounds(str::String)
     str = "@inbounds " * str
 end
 
-remove_comments(str::String,x...) = remove_comments(collect(str),x...)
-function remove_comments(str::Vector{Char},first::String="#=",last::String="=#")
-    """
-    An annoying aspect of Symbolics is that saving the output of `build_function` has tons of comments,
-    severely adding to the memory size of the stored functions. This removes all comments
-    """
-    
-    ind_first = find_in_string(str, first, 1)
-    ind_last = find_in_string(str, last, length(last))
-
-    @assert length(ind_first) == length(ind_last)
-
-    ind_first .= reverse(ind_first)
-    ind_last  .= reverse(ind_last)
-
-    @inbounds for (l,u) in zip(ind_first,ind_last)
-        index = l:u
-        deleteat!(str,index)
-    end
-    return str
-end
-
 find_in_string(str::String,x...) = find_in_string(collect(str),x...)
 function find_in_string(str::AbstractVector,x::String,I::T=1:length(x)) where T
     N = length(str)
@@ -480,7 +457,7 @@ end
 rearrange_if_statements(str::String) = rearrange_if_statements(collect(str))
 function rearrange_if_statements(str::Vector{Char})
     ```
-    Puts all if statements from Symbolics on a single line
+    Puts all "if" statements from Symbolics on a single line
     ```
     inds = find_in_string(str, "if")
     @inbounds for ind_start in reverse(inds), _ in 1:4

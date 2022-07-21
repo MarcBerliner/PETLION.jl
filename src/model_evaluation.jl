@@ -13,7 +13,7 @@ eval(quote
     tf::T2 = 1e6; # a single number (length of the experiment) or a vector (interpolated points)
     sol::solution = solution(), # using a new sol or continuing from previous simulation?
     initial_states = nothing, # Starting vector of initial states
-    res_I_guess = nothing,
+    res_I_guess    = nothing,
     SOC             = p.opts.SOC, # initial SOC of the simulation. only valid if not continuing simulation
     outputs         = p.opts.outputs, # sol output states
     abstol          = p.opts.abstol, # absolute tolerance in DAE solve
@@ -77,7 +77,7 @@ eval(quote
     exit_simulation!(p, sol, run, bounds, int, opts)
 
     # If tf is a array of numbers, interpolate the results to those times
-    sol = interp_sol(sol, tf, interp_bc=opts.interp_bc)
+    sol = interp_sol(sol, tf; interp_bc=opts.interp_bc)
 
     if verbose println("\n$(sol)\n") end
 
@@ -255,47 +255,6 @@ end
     return int
 end
 
-@inline function estimate_steady_state(p::model, sol::solution, opts::AbstractOptionsModel = p.opts, run::AbstractRun = (@views @inbounds sol.results[end].run);
-    itermax::Int64=100)
-    funcs = p.funcs(sol)
-    t = @inbounds sol.t[end]
-    γ = Float64(1.0)
-    Y  = @inbounds copy(sol.Y[end])
-    @inbounds Y[p.ind.I[1]] = 0
-    YP = p.cache.YP0 .= 0
-    
-    R_full = funcs.R_full
-    J_full = funcs.J_full
-    factor = J_full.factor
-
-    res = p.cache.Y0
-    update = similar(res) .= +Inf
-    J = J_full.sp
-
-    @inbounds for iter in 1:itermax
-        R_full(res,t,Y,YP,p,run)
-        J_full(t,Y,YP,γ,p,run)
-        factorize!(factor, J)
-
-        res[p.ind.I[1]] = 0
-        update .= factor\res
-        
-        Y .-= update
-        if norm(update) < opts.reltol
-            return Y
-        elseif iter == itermax
-            error("Could not converge to a steady state in $itermax iterations.")
-        end
-    end
-end
-
-@inline function estimate_SOC(p::model, x...;kw...)
-    Y = estimate_steady_state(p, x...; kw...)
-    SOC = calc_SOC(Y,p)
-
-    return SOC
-end
-
 @inline function create_integrator(run::T, p::model, funcs::Q, Y0, YP0, opts::AbstractOptionsModel) where {T<:AbstractRun,Q<:Jac_and_res}
     R_full = funcs.R_full
     J_full = funcs.J_full
@@ -332,9 +291,9 @@ end
     
     sort!(tstops)
 
-    # the solver can fail is tstops includes 0
+    # the solver can fail if tstops includes 0
     if (@inbounds tstops[1]) ≤ 0.0
-        deleteat!(tstops, 1:findfirst(tstops .≤ 0))
+        deleteat!(tstops, 1:(findfirst(tstops .> 0)-1))
     end
     return nothing
 end
@@ -457,12 +416,10 @@ end
     =#
 end
 
-@inline function newtons_method!(p::model,Y,YP,run::AbstractRun,opts=p.opts;kw...)
-    funcs = p.funcs(run)
-    newtons_method!(p,Y,YP,run,opts,funcs.R_alg,funcs.R_diff,funcs.J_alg;kw...)
-end
-@inline function newtons_method!(p::model,Y::R1,YP::R1,run,opts::AbstractOptionsModel,R_alg::T1,R_diff::T2,J_alg::T3;
-    itermax::Int64=100, t::Float64=0.0
+@inline function newtons_method!(p::model,Y::R1,YP::R1,run,opts::AbstractOptionsModel=p.opts,R_alg::T1=p.funcs(run).R_alg,R_diff::T2=p.funcs(run).R_diff,J_alg::T3=p.funcs(run).J_alg;
+    itermax::Int64=100,
+    t::Float64=0.0,
+    initialize_algebraic_derivatives::Bool = true,
     ) where {R1<:Vector{Float64},T1<:residual_combined,T2<:residual_combined,T3<:jacobian_combined}
 
     res    = p.cache.res
@@ -491,20 +448,22 @@ end
     # calculate the differential equations for YP0
     R_diff(YP,t,Y,YP,p,run)
     
-    # Estimate dY_alg/dt. Improves stability of the initial guess
-    Δt = max(10opts.reltol_init, sqrt(eps(p.θ[:c_e₀])))
-    
-    Y_new_time = p.cache.Y_full
-    Y_new_time .= Y .+ Δt*YP
-    
-    R_alg(res,Δt,Y_new_time,YP,p,run)
-    
-    # Update the algebraic Jacobian (currently not used)
-    # J_alg(Δt,Y_new_time,YP,γ,p,run)
-    # factorize!(factor, J)
+    if initialize_algebraic_derivatives
+        # Estimate dY_alg/dt. Improves stability of the initial guess
+        Δt = max(10opts.reltol_init, sqrt(eps(p.θ[:c_e₀])))
+        
+        Y_new_time = p.cache.Y_full
+        Y_new_time .= Y .+ Δt*YP
+        
+        R_alg(res,Δt,Y_new_time,YP,p,run)
+        
+        # Update the algebraic Jacobian (currently not used)
+        # J_alg(Δt,Y_new_time,YP,γ,p,run)
+        # factorize!(factor, J)
 
-    # The Newton update `-(factor\res)` is equal to (Y_alg(Δt + t0) - Y_alg(t0))
-    @inbounds YP[p.N.diff+1:end] .= -(factor\res)./Δt
+        # The Newton update `-(factor\res)` is equal to (Y_alg(Δt + t0) - Y_alg(t0))
+        @inbounds YP[p.N.diff+1:end] .= -(factor\res)./Δt
+    end
     
     return nothing
 end

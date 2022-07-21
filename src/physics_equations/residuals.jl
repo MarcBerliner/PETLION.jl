@@ -40,6 +40,13 @@ function residuals_PET!(residuals, t, x, ẋ, p::AbstractModel)
         residuals_SOH!(res, states, ∂states, p)
     end
 
+    if p.numerics.aging == :stress
+        residuals_δ!(res, states, ∂states, p)
+        residuals_ϵ_s!(res, states, ∂states, p)
+        residuals_σ_h!(res, states, p)
+        residuals_SOH!(res, states, ∂states, p)
+    end
+
     # Check if the thermal dynamics are enabled.
     if p.numerics.temperature == true
         build_heat_generation_rates!(states, p)
@@ -53,8 +60,11 @@ function residuals_PET!(residuals, t, x, ẋ, p::AbstractModel)
     residuals_j!(res, states, p)
     
     # Residuals for side reaction ionic flux, j_s
-    if p.numerics.aging ∈ (:SEI, :R_aging)
+    if p.numerics.aging == :SEI
         residuals_j_s!(res, states, p)
+    end
+    if p.numerics.aging == :stress
+        residuals_j_SEI!(res, states, p)
     end
 
     # Residuals for the electrolyte potential, Φ_e
@@ -87,6 +97,10 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     c_e = states[:c_e]
     T   = states[:T]
     j   = states[:j_total]
+    ϵ = states[:ϵ]
+
+    D_eff = states[:D_eff]
+    a = states[:a]
 
     ∂c_e = ∂states[:c_e]
 
@@ -95,11 +109,9 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     Δx = Δx_values(p.N)
 
     # Diffusion coefficients and surface area to volume ratio
-    D_eff_p, D_eff_s, D_eff_n = coeff_electrolyte_diffusion_effective(states, p)
-    a_p, a_n = surface_area_to_volume_ratio(p)
 
     # Interpolation of the diffusion coefficients, same for electrolyte conductivities
-    D_eff_p, D_eff_s, D_eff_n = interpolate_electrolyte_grid(D_eff_p, D_eff_s, D_eff_n, p)
+    D_eff_p, D_eff_s, D_eff_n = interpolate_electrolyte_grid(D_eff.p, D_eff.s, D_eff.n, p)
 
     A_tot = -block_matrix_maker(p, D_eff_p, D_eff_s, D_eff_n)
 
@@ -172,18 +184,28 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
 
     ν_p,ν_s,ν_n = p.numerics.thermodynamic_factor(c_e.p, c_e.s, c_e.n, T.p, T.s, T.n, p)
 
-    rhsCe[ind_p] .+= (1-p.θ[:t₊]).*ν_p.*a_p.*j.p
+    rhsCe[ind_p] .+= (1-p.θ[:t₊]).*ν_p.*a.p.*j.p
     # nothing for the separator since a_s = 0
-    rhsCe[ind_n] .+= (1-p.θ[:t₊]).*ν_n.*a_n.*j.n
+    rhsCe[ind_n] .+= (1-p.θ[:t₊]).*ν_n.*a.n.*j.n
     
-    ϵ = [
-        ones(p.N.p).*p.θ[:ϵ_p]
-        ones(p.N.s).*p.θ[:ϵ_s]
-        ones(p.N.n).*p.θ[:ϵ_n]
+    if p.numerics.aging == :stress
+        ## chain rule: ∂/∂t(ϵ c_e) = (c_e ∂ϵ/∂t) + (ϵ ∂c_e/∂t)
+        # The former term is usually zero, but now ϵ_s is now a function of x
+        # ϵ = (1 - ϵ_f - ϵ_s)
+        # ∂ϵ/∂t = -∂ϵ_s/∂t
+        residuals_ϵ_s!(res, states, ∂states, p)
+
+        ∂ϵ_s = res[:ϵ_s] .+ ∂states[:ϵ_s]
+        ∂ϵ = -[
+            ∂ϵ_s[1:p.N.p]
+            zeros(p.N.s)
+            ∂ϵ_s[p.N.p.+(1:p.N.n)]
         ]
+
+        rhsCe .-= c_e .* ∂ϵ
+    end
     
     rhsCe ./= ϵ
-
     # Write the residual of the equation
     res_c_e .= rhsCe .- ∂c_e
 
@@ -216,13 +238,11 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
     """
     j = states[:j]
     c_s_avg = states[:c_s_avg]
+    D_s_eff = states[:D_s_eff]
 
     ∂c_s_avg = ∂states[:c_s_avg]
 
     res_c_s_avg = res[:c_s_avg]
-
-    # First, retreive the diffusion coefficients
-    D_sp_eff, D_sn_eff = coeff_solid_diffusion_effective(states, p)
 
     function rhs_func(c_s_avg,j,Rp,D_s_eff,N,N_r)
         # Matrices needed for first and second order derivatives
@@ -258,8 +278,8 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
         return rhsCs
     end
 
-    rhsCs_p = rhs_func(c_s_avg.p,j.p,p.θ[:Rp_p],D_sp_eff,p.N.p,p.N.r_p)
-    rhsCs_n = rhs_func(c_s_avg.n,j.n,p.θ[:Rp_n],D_sn_eff,p.N.n,p.N.r_n)
+    rhsCs_p = rhs_func(c_s_avg.p,j.p,p.θ[:Rp_p],D_s_eff.p,p.N.p,p.N.r_p)
+    rhsCs_n = rhs_func(c_s_avg.n,j.n,p.θ[:Rp_n],D_s_eff.n,p.N.n,p.N.r_n)
     
     res_c_s_avg .= [rhsCs_p; rhsCs_n] .- ∂c_s_avg
 
@@ -271,6 +291,7 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
     """
     j = states[:j]
     c_s_avg = states[:c_s_avg]
+    D_s_eff = states[:D_s_eff]
 
     ∂c_s_avg = ∂states[:c_s_avg]
 
@@ -287,9 +308,6 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
 
         return D, x
     end
-    
-    # First, retreive the diffusion coefficients
-    D_sp_eff, D_sn_eff = coeff_solid_diffusion_effective(states, p)
 
     function rhs_func(c_s_avg,j,Rp,D_s_eff,N,N_r)
         diffusion_matrix, radial_position = cheb(N_r-1)
@@ -315,8 +333,8 @@ function residuals_c_s_avg!(res, states, ∂states, p::T) where {jac,temp,T<:Abs
         return rhsCs
     end
 
-    rhsCs_p = rhs_func(c_s_avg.p,j.p,p.θ[:Rp_p],D_sp_eff,p.N.p,p.N.r_p)
-    rhsCs_n = rhs_func(c_s_avg.n,j.n,p.θ[:Rp_n],D_sn_eff,p.N.n,p.N.r_n)
+    rhsCs_p = rhs_func(c_s_avg.p,j.p,p.θ[:Rp_p],D_s_eff.p,p.N.p,p.N.r_p)
+    rhsCs_n = rhs_func(c_s_avg.n,j.n,p.θ[:Rp_n],D_s_eff.n,p.N.n,p.N.r_n)
     
     res_c_s_avg .= [rhsCs_p; rhsCs_n] .- ∂c_s_avg
     
@@ -332,19 +350,36 @@ function residuals_Q!(res, states, ∂states, p::AbstractModelSolidDiff{:polynom
 
     Q = states[:Q]
     j = states[:j]
+    D_s_eff = states[:D_s_eff]
 
     ∂Q = ∂states[:Q]
 
     res_Q = res[:Q]
     
-    # Diffusion coefficients for the solid phase
-    D_sp_eff, D_sn_eff = coeff_solid_diffusion_effective(states, p)
-    
-    rhsQ_p = @. (-30D_sp_eff*Q.p - 45/2*j.p)/p.θ[:Rp_p]^2
-    rhsQ_n = @. (-30D_sn_eff*Q.n - 45/2*j.n)/p.θ[:Rp_n]^2
+    rhsQ_p = @. (-D_s_eff.p*Q.p - 45/2*j.p)/p.θ[:Rp_p]^2
+    rhsQ_n = @. (-D_s_eff.n*Q.n - 45/2*j.n)/p.θ[:Rp_n]^2
     
     res_Q .= [rhsQ_p; rhsQ_n] .- ∂Q
     
+    return nothing
+end
+
+function residuals_δ!(res, states, ∂states, p::AbstractModel)
+    """
+    residuals_δ! describes the dynamics of the solid-electrolyte layer at the anode side [m]
+    """
+
+    j_SEI = states[:j_SEI]
+
+    ∂δ = ∂states[:δ]
+    
+    res_δ = res[:δ]
+    
+    # (m³/mol) ⋅ (mol/m²⋅s) = (m/s)
+    rhs_δ = @. -p.θ[:V̄_SEI]*j_SEI/2
+    
+    res_δ .= rhs_δ .- ∂δ
+
     return nothing
 end
 
@@ -371,7 +406,11 @@ function residuals_SOH!(res, states, ∂states, p::AbstractModel)
     residuals_SOH! integrates the SOH when aging is enabled and there are losses
     """
 
-    j_s = states[:j_s]
+    if p.numerics.aging == :SEI
+        j_s = states[:j_s]
+    elseif p.numerics.aging == :stress
+        j_s = states[:j_SEI]
+    end
     
     ∂SOH = ∂states[:SOH][1]
 
@@ -383,6 +422,26 @@ function residuals_SOH!(res, states, ∂states, p::AbstractModel)
     rhs_SOH = -j_s_int
 
     res_SOH .= rhs_SOH - ∂SOH
+
+    return nothing
+end
+
+function residuals_ϵ_s!(res, states, ∂states, p::AbstractModel)
+    """
+    Calculates the change in active material over time [-]
+    """
+    σ_h = states[:σ_h]
+
+    ∂ϵ_s = ∂states[:ϵ_s]
+
+    res_ϵ_s = res[:ϵ_s]
+
+    rhs_ϵ_s = -p.θ[:β_LAM].*([
+        σ_h.p/p.θ[:σ_critical_p]
+        σ_h.n/p.θ[:σ_critical_n]
+    ]).^p.θ[:m_LAM]
+
+    res_ϵ_s .= rhs_ϵ_s - ∂ϵ_s
 
     return nothing
 end
@@ -456,7 +515,7 @@ function residuals_T!(res, states, ∂states, p)
 
     ## Interfaces
 
-    # Interface between aluminium current collector & cathode. We
+    # Interface between aluminum current collector & cathode. We
     # are in the last volume of the current collector
     β_a_p   = (Δx.a*p.θ[:l_a]/2)/(Δx.a*p.θ[:l_a]/2+Δx.p*p.θ[:l_p]/2)
     λ_a_p   = harmonic_mean(β_a_p,p.θ[:λ_a],p.θ[:λ_p])
@@ -467,7 +526,7 @@ function residuals_T!(res, states, ∂states, p)
 
     A_tot[p.N.a,p.N.a-1:p.N.a+1] .= [last_a; -(last_a+first_p); first_p]/(Δx.a*p.θ[:l_a])
 
-    # Interface between aluminium current collector & cathode. We
+    # Interface between aluminum current collector & cathode. We
     # are in the first volume of the cathode
 
     den_a_p  = Δx.p*p.θ[:l_p]/2 +Δx.a*p.θ[:l_a]/2
@@ -553,11 +612,11 @@ function residuals_T!(res, states, ∂states, p)
         ]
 
     Q_ohm_tot = [
-        (I_density^2)./repeat([p.θ[:σ_a]], p.N.a)
+        (I_density^2)/p.θ[:σ_a] * ones(p.N.a)
         Q_ohm.p
         Q_ohm.s
         Q_ohm.n
-        (I_density^2)./repeat([p.θ[:σ_z]], p.N.z)
+        (I_density^2)/p.θ[:σ_z] * ones(p.N.z)
         ]
 
     BC = [
@@ -567,11 +626,11 @@ function residuals_T!(res, states, ∂states, p)
         ]
 
     ρ_Cp = [
-        repeat([p.θ[:ρ_a]*p.θ[:Cp_a]], p.N.a)
-        repeat([p.θ[:ρ_p]*p.θ[:Cp_p]], p.N.p)
-        repeat([p.θ[:ρ_s]*p.θ[:Cp_s]], p.N.s)
-        repeat([p.θ[:ρ_n]*p.θ[:Cp_n]], p.N.n)
-        repeat([p.θ[:ρ_z]*p.θ[:Cp_z]], p.N.z)
+        p.θ[:ρ_a]*p.θ[:Cp_a] * ones(p.N.a)
+        p.θ[:ρ_p]*p.θ[:Cp_p] * ones(p.N.p)
+        p.θ[:ρ_s]*p.θ[:Cp_s] * ones(p.N.s)
+        p.θ[:ρ_n]*p.θ[:Cp_n] * ones(p.N.n)
+        p.θ[:ρ_z]*p.θ[:Cp_z] * ones(p.N.z)
         ]
 
     rhsT   = A_tot*T
@@ -640,11 +699,68 @@ function residuals_j_s!(res, states, p::AbstractModel)
     j_s_calc = -abs.((p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*(-exp.(-α.*F./(R.*T.n).*η_s)))
 
     # Only activate the side reaction during charge
-    j_s_calc .= IfElse.ifelse(I_density > 0, j_s_calc, 0)
+    j_s_calc .= [IfElse.ifelse(I_density > 0, x, 0) for x in j_s_calc]
 
     # side reaction residuals
     res_j_s .= j_s .- j_s_calc
     
+    return nothing
+end
+
+function residuals_j_SEI!(res, states, p::AbstractModel)
+    """
+    Calculate the molar flux density side reaction residuals due to SEI resistance [mol/(m²•s)]
+    """
+    j = states[:j_total]
+    j_SEI = states[:j_SEI]
+    Φ_s = states[:Φ_s]
+    Φ_e = states[:Φ_e]
+    δ = states[:δ]
+    T = states[:T]
+
+    res_j_SEI = res[:j_SEI]
+
+    F = const_Faradays
+    R = const_Ideal_Gas
+
+    η_SEI = @. Φ_s.n - Φ_e.n - p.θ[:U_SEI] - F*j.n*p.θ[:R_SEI]*δ
+
+    c_EC_s = @. j_SEI*δ/p.θ[:D_SEI] + p.θ[:c_EC_bulk_n]
+
+    j_SEI_calc = @. -p.θ[:k_SEI]*c_EC_s*exp(-p.θ[:α_SEI]*η_SEI*(F/(R*T.n)))
+
+    # side reaction residuals
+    res_j_SEI .= j_SEI .- j_SEI_calc
+    
+    return nothing
+end
+
+function residuals_σ_h!(res, states, p::AbstractModel)
+    """
+    residuals_σ_h! evaluates residuals for the mechanical stress [Pa]
+    """
+    σ_h = states[:σ_h]
+    c_s_avg = states[:c_s_avg]
+    c_s_star = states[:c_s_star]
+
+    res_σ_h = res[:σ_h]
+
+    # indices for each solid particle
+    ind_p = map(x -> x.+(0:p.N.r_p-1), 1:p.N.r_p:(p.N.r_p*p.N.p))
+    ind_n = map(x -> x.+(0:p.N.r_n-1), 1:p.N.r_n:(p.N.r_n*p.N.n))
+
+    r_p = range(0, p.θ[:Rp_p]; length=p.N.r_p)
+    r_n = range(0, p.θ[:Rp_n]; length=p.N.r_n)
+
+    int_c_s_p = 1/p.θ[:Rp_p]^3*[trapz(r_p, c_s_avg.p[ind].*r_p.^2) for ind in ind_p]
+    int_c_s_n = 1/p.θ[:Rp_n]^3*[trapz(r_n, c_s_avg.n[ind].*r_n.^2) for ind in ind_n]
+
+    σ_h_calc = [
+        2p.θ[:Ω_p]*p.θ[:E_p]/(3(1-p.θ[:ν_p])).*(int_c_s_p .- c_s_star.p)
+        2p.θ[:Ω_n]*p.θ[:E_n]/(3(1-p.θ[:ν_n])).*(int_c_s_n .- c_s_star.n)
+    ]
+    res_σ_h .= σ_h .- abs.(σ_h_calc)
+
     return nothing
 end
 
@@ -657,13 +773,13 @@ function residuals_Φ_e!(res, states, p::AbstractModel)
     Φ_e = states[:Φ_e]
     c_e = states[:c_e]
     T   = states[:T]
-
+    
+    a = states[:a]
     K_eff = states[:K_eff]
 
     res_Φ_e = res[:Φ_e]
 
     Δx = Δx_values(p.N)
-    a_p, a_n = surface_area_to_volume_ratio(p)
     
     R = const_Ideal_Gas
     F = const_Faradays
@@ -734,16 +850,19 @@ function residuals_Φ_e!(res, states, p::AbstractModel)
     
     prod_tot[2:end] .-= prod_tot[1:end-1]
 
-    f = -K.*prod_tot
+    f = [
+        -K.*prod_tot
+        0 # for correct dimensions
+    ]
 
     ind_p = (1:p.N.p)
     ind_n = (1:p.N.n) .+ (p.N.p+p.N.s)
 
-    f[ind_p] .+= (Δx.p*p.θ[:l_p]*F*a_p)*j.p
-    f[ind_n[1:end-1]] .+= (Δx.n*p.θ[:l_n]*F*a_n)*j.n[1:end-1]
+    f[ind_p] .+= @. (Δx.p*p.θ[:l_p]*F*a.p)*j.p
+    f[ind_n] .+= @. (Δx.n*p.θ[:l_n]*F*a.n)*j.n
 
     # The boundary condition enforces that Φ_e(x=L) = 0
-    append!(f, 0.0)
+    f[end] = 0
 
     # Return the residual value for the electrolyte potential
     res_Φ_e .= A_tot*Φ_e .- f
@@ -759,28 +878,26 @@ function residuals_Φ_s!(res, states, p::AbstractModel)
     j = states[:j_total]
     Φ_s = states[:Φ_s]
     I_density = states[:I][1]
+    σ_eff = states[:σ_eff]
+    a = states[:a]
 
     res_Φ_s = res[:Φ_s]
 
     F = const_Faradays
     Δx = Δx_values(p.N)
     
-    # Effective conductivities and surface area to volume ratio
-    σ_eff_p, σ_eff_n = conductivity_effective(p)
-    a_p, a_n = surface_area_to_volume_ratio(p)
-
     ## Cathode
     
     # RHS for the solid potential in the cathode and anode
-    f_p = @. p.θ[:l_p]^2*Δx.p^2*a_p*F*j.p
-    f_n = @. p.θ[:l_n]^2*Δx.n^2*a_n*F*j.n
+    f_p = @. p.θ[:l_p]^2*Δx.p^2*a.p*F*j.p
+    f_n = @. p.θ[:l_n]^2*Δx.n^2*a.n*F*j.n
 
     # Additional term at the electrode-current collector interface
     f_p[1]   += -I_density*(Δx.p*p.θ[:l_p])
     f_n[end] += +I_density*(Δx.n*p.θ[:l_n])
 
-    f_p .*= 1 ./σ_eff_p
-    f_n .*= 1 ./σ_eff_n
+    f_p .*= 1 ./σ_eff.p
+    f_n .*= 1 ./σ_eff.n
 
     block_tridiag(N) = spdiagm(
         -1 => ones(eltype(j.p),N-1),
