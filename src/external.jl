@@ -132,14 +132,20 @@ function build_cache(θ, ind, N, numerics, opts)
 
     vars = variables_in_indices()
     
-    opts.var_keep = solution_states_logic(opts.outputs)[1]
-
     Y0 = zeros(Float64, N.tot)
     Y_full = zeros(Float64, N.tot)
     YP0 = zeros(Float64, N.tot)
     res = zeros(Float64, N.alg)
     Y_alg = zeros(Float64, N.alg)
     
+    opts.var_keep = solution_states_logic(opts.outputs)[1]
+    outputs_possible = Symbol[
+        :Y
+        :YP
+        :t
+        keys(merge(model_states_and_outputs(numerics; remove_inactive=true)...))...
+    ]
+
     id = [
         ones(Int64, N.diff)
         zeros(Int64,N.alg)
@@ -158,6 +164,7 @@ function build_cache(θ, ind, N, numerics, opts)
         YP0,
         res,
         Y_alg,
+        outputs_possible,
         id,
         )
     
@@ -178,13 +185,14 @@ Base.size(state::state_sections) = size(state.tot)
 Base.IndexStyle(::Type{<:state_sections}) = IndexLinear()
 Base.getindex(state::state_sections, i::Int64)= state.tot[i]
 Base.setindex!(state::state_sections, v, i::Int64)= (state.tot[i] = v)
+is_active(s::state_sections) = !isempty(s)
 
 function retrieve_states(Y::AbstractArray, p::AbstractModel)
     """
     Creates a dictionary of variables based on an input array and the indices in p.ind
     """
     if length(Y) < p.N.tot error("Input vector must be ≥ the number of indices.") end
-    
+
     states = Dict{Symbol,Any}()
     ind = p.ind
     vars_in_use = p.cache.vars
@@ -205,7 +213,6 @@ function retrieve_states(Y::AbstractArray, p::AbstractModel)
         section_values = Any[]
         
         for section in sections
-            section_name = Symbol(var, :_, section)
             ind_section = getproperty(ind_var, section)
 
             push!(section_values, section ∈ ind_var.sections ? Y[ind_section] : nothing)
@@ -263,91 +270,86 @@ function state_indices(N, numerics)
     e.g., temperature is still used in isothermal simulations
     """
 
-    N_diff = 0
-    N_alg = 0
-
-    state_vars = Symbol[]
-    function add(var::Symbol, tot, vars::Tuple, var_type::Symbol=:NA;
-        radial::Bool = false, replace = 0:0)
+    # preallocate the state dict with empty index_state structs
+    state_dict = OrderedDict{Symbol,Any}(
+        [name for (name,field) in zip(fieldnames(indices_states),fieldtypes(indices_states)) if field == index_state_immutable] .=> Ref(index_state())
+    )
+    
+    function add!(var::Symbol,var_type::Symbol,::Tuple{})
+        state_dict[var] = index_state(;start=1, stop=1, var_type=var_type)
+    end
+    function add!(var::Symbol,var_type::Symbol,sections::NTuple{T,Symbol}) where T
         """
         Adds a state to the indices dictionary
         """
-        if tot === nothing
-            return index_state()
-        elseif tot isa Int
-            tot = tot:tot
-        end
+        @assert !(:particle_p ∈ sections && :p ∈ sections)
+        @assert !(:particle_n ∈ sections && :n ∈ sections)
         
-        if var_type ∈ (:differential, :algebraic)
-            tot = tot .+ (N_diff+N_alg)
-            if     var_type == :differential
-                N_diff += length(tot)
-            elseif var_type == :algebraic
-                N_alg  += length(tot)
+        all_sections = (:a,:p,:s,:n,:z)
+        active_sections = Symbol[]
+
+        len = 0
+        indices = Dict(all_sections .=> Ref(0:0))
+        for section in sections
+            if section == :particle_p
+                ind = 1:(N.p*N.r_p)
+                push!(active_sections, :p)
+            elseif section == :particle_n
+                ind = 1:(N.n*N.r_n)
+                push!(active_sections, :n)
+            else
+                ind = 1:getfield(N, section)
+                push!(active_sections, section)
             end
+            ind = ind .+ len
+            indices[active_sections[end]] = ind
+
+            len += length(ind)
         end
-        
-        ind_a = 1:N.a
-        ind_p = 1:(radial ? N.p*N.r_p : N.p)
-        ind_s = 1:N.s
-        ind_n = 1:(radial ? N.n*N.r_n : N.n)
-        ind_z = 1:N.z
 
-        sections = Symbol[]
-        ind_start = 0
-        :a ∈ vars ? (a = tot[ind_a .+ ind_start]; push!(sections, :a); ind_start += length(ind_a)) : a = replace
-        :p ∈ vars ? (p = tot[ind_p .+ ind_start]; push!(sections, :p); ind_start += length(ind_p)) : p = replace
-        :s ∈ vars ? (s = tot[ind_s .+ ind_start]; push!(sections, :s); ind_start += length(ind_s)) : s = replace
-        :n ∈ vars ? (n = tot[ind_n .+ ind_start]; push!(sections, :n); ind_start += length(ind_n)) : n = replace
-        :z ∈ vars ? (z = tot[ind_z .+ ind_start]; push!(sections, :z); ind_start += length(ind_z)) : z = replace
+        active_sections_ordered = Tuple(intersect(all_sections,active_sections))
 
-        start = tot[1]
-        stop = tot[end]
-
-        push!(state_vars, var)
-
-        return index_state(start, stop, a, p, s, n, z, (sections...,), var_type)
+        state_dict[var] = index_state(1,
+            len,
+            getindex.(Ref(indices),all_sections)...,
+            active_sections_ordered,
+            var_type,
+        )
+    end
+    
+    #### Define the states and the sections they are in ####
+    active_states = model_states_and_outputs(numerics; remove_inactive=true)[1]
+    for state in keys(active_states)
+        active_state = active_states[state]
+        add!(state, active_state.var_type, active_state.sections)
     end
 
-    c_e_tot     = 1:(N.p+N.s+N.n)
-    c_s_avg_tot = numerics.solid_diffusion == :Fickian ? (1:N.p*N.r_p + N.n*N.r_n) : (1:(N.p+N.n))
-    T_tot       = numerics.temperature ? (1:(N.p+N.s+N.n) + (N.a+N.z)) : nothing
-    film_tot    = numerics.aging == :SEI ? (1:N.n) : nothing
-    δ_tot       = numerics.aging == :stress ? (1:N.n) : nothing
-    ϵ_s_tot     = numerics.aging == :stress ? (1:(N.p+N.n)) : nothing
-    Q_tot       = numerics.solid_diffusion == :polynomial ? (1:(N.p+N.n)) : nothing
-    j_tot       = 1:(N.p+N.n)
-    j_s_tot     = numerics.aging == :SEI ? (1:N.n) : nothing
-    j_SEI_tot   = numerics.aging == :stress ? (1:N.n) : nothing
-    σ_h_tot     = numerics.aging == :stress ? (1:(N.p+N.n)) : nothing
-    SOH_tot     = numerics.aging ∈ (:SEI, :stress) ? 1 : nothing
-    Φ_e_tot     = 1:(N.p+N.s+N.n)
-    Φ_s_tot     = 1:(N.p+N.n)
-    I_tot       = 1
-    
-    c_e     = add(:c_e,     c_e_tot,     (:p, :s, :n),         :differential)
-    c_s_avg = add(:c_s_avg, c_s_avg_tot, (:p, :n),             :differential; radial = numerics.solid_diffusion == :Fickian)
-    T       = add(:T,       T_tot,       (:a, :p, :s, :n, :z), :differential)
-    film    = add(:film,    film_tot,    (:n,),                :differential)
-    δ       = add(:δ,       δ_tot,       (:n,),                :differential)
-    ϵ_s     = add(:ϵ,       ϵ_s_tot,      (:p, :n),             :differential)
-    Q       = add(:Q,       Q_tot,       (:p, :n),             :differential)
-    SOH     = add(:SOH,     SOH_tot,     (),                   :differential)
-    j       = add(:j,       j_tot,       (:p, :n),             :algebraic)
-    j_s     = add(:j_s,     j_s_tot,     (:n,),                :algebraic)
-    j_SEI   = add(:j_SEI,   j_SEI_tot,   (:n,),                :algebraic)
-    σ_h     = add(:σ_h,     σ_h_tot,     (:p, :n),             :algebraic)
-    Φ_e     = add(:Φ_e,     Φ_e_tot,     (:p, :s, :n),         :algebraic)
-    Φ_s     = add(:Φ_s,     Φ_s_tot,     (:p, :n),             :algebraic)
-    I       = add(:I,       I_tot,       (),                   :algebraic)
-    
-    N_tot = N_diff + N_alg
-    
-    # These are the rest of the fields in the solution_states struct that, while must be input, are unused
-    Y = YP = t = V = P = SOC = index_state()
-    state_vars = (state_vars...,)
+    N_type = Dict((:differential,:algebraic,:tot) .=> 0)
 
-    ind = indices_states(Y, YP, c_e, c_s_avg, T, film, δ, ϵ_s, Q, j, j_s, j_SEI, σ_h, Φ_e, Φ_s, I, t, V, P, SOC, SOH, state_vars)
+    state_vars = Symbol[]
+    for var_type in (:differential, :algebraic), state in keys(state_dict)
+        state_ind = state_dict[state]
+        if state_dict[state].var_type == var_type
+            push!(state_vars, state)
+            tot = N_type[:tot]
+
+            for x in [:start, :stop, state_ind.sections...]
+                setfield!(state_ind, x, getfield(state_ind, x) .+ tot)
+            end
+
+            N_type[var_type] += length(state_dict[state])
+            N_type[:tot] += length(state_dict[state])
+        end
+    end
+
+    ind = indices_states(
+        [index_state_immutable(state_dict[state]) for state in keys(state_dict)]...,
+        Tuple(state_vars),
+    )
+
+    N_diff = N_type[:differential]
+    N_alg  = N_type[:algebraic]
+    N_tot  = N_type[:tot]
 
     return ind, N_diff, N_alg, N_tot
 end
@@ -373,74 +375,11 @@ function indices_section(sections::Tuple, p::AbstractModel; offset::Int64=0)
     ind = index_state(;
         start = 1,
         stop = ind_start,
-        sections = sections_organized,
         NamedTuple{sections_organized}(indices)...,
+        sections = sections_organized,
     )
     
     return ind
-end
-
-@inline function guess_init(p::AbstractModel, X_applied=0.0; SOC=p.opts.SOC)
-    """
-    Get the initial guess in the DAE initialization.
-    This function is made symbolic by Symbolics and saved as 
-    `initial_guess.jl`
-    """
-
-    Y0  = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
-    YP0 = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
-
-    states = retrieve_states(Y0, p)
-    
-    build_T!(states, p)
-
-    states[:c_s_avg].p .= p.θ[:c_max_p] * (SOC*(p.θ[:θ_max_p] - p.θ[:θ_min_p]) + p.θ[:θ_min_p])
-    states[:c_s_avg].n .= p.θ[:c_max_n] * (SOC*(p.θ[:θ_max_n] - p.θ[:θ_min_n]) + p.θ[:θ_min_n])
-    
-    build_c_s_star!(states, p)
-
-    build_OCV!(states, p)
-    
-    # differential
-    states[:c_e] .= p.θ[:c_e₀]
-        
-    states[:T] .= p.θ[:T₀]
-        
-    states[:film] .= 0
-        
-    states[:Q] .= 0
-
-    if !isempty(states[:SOH]) states[:SOH] .= 1.0 end
-
-    if !isempty(states[:δ]) states[:δ] .= p.θ[:δ₀] end
-    
-    if !isempty(states[:ϵ_s])
-        ϵ_sp, ϵ_sn = active_material(p)
-        states[:ϵ_s].p .= ϵ_sp
-        states[:ϵ_s].n .= ϵ_sn
-    end
-    
-    # algebraic
-    states[:j] .= 0.0
-        
-    states[:Φ_e] .= 0.0
-        
-    states[:Φ_s] = states[:U]
-        
-    states[:I] = X_applied
-    
-    if !isempty(states[:j_s]) states[:j_s] .= 0.0 end
-
-    if !isempty(states[:j_SEI]) states[:j_SEI] .= 0.0 end
-
-    if !isempty(states[:σ_h])
-        states[:σ_h].p .= 2p.θ[:Ω_p]*p.θ[:E_p]/(3(1-p.θ[:ν_p]))*(-2states[:c_s_avg].p[1]/3)
-        states[:σ_h].n .= 2p.θ[:Ω_n]*p.θ[:E_n]/(3(1-p.θ[:ν_n]))*(-2states[:c_s_avg].n[1]/3)
-    end
-
-    build_residuals!(Y0, states, p)
-
-    return Y0, YP0
 end
 
 model_info(p::AbstractModel) = model_info(p.N, p.numerics)

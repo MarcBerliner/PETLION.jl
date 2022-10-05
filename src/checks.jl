@@ -202,7 +202,6 @@ end
 end
 
 @inline check_stop_dfilm(::model_age{false}, run, sol, Y, YP, bounds, ϵ, I) = nothing
-@inline check_stop_dfilm(::model_age{:stress}, run, sol, Y, YP, bounds, ϵ, I) = nothing
 @inline function check_stop_dfilm(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
     ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model_age{:SEI}, R5<:boundary_stop_conditions_immutable}
     
@@ -224,7 +223,7 @@ end
     return nothing
 end
 
-@inline function check_solve(run::run_constant, sol::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:solution,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
+@inline function check_solve(run::Union{run_constant,run_residual}, sol::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:solution,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if t == int.tprev
         # Sometimes the initial step at t = 0 can be too large. This reduces the step size
         if t == 0.0

@@ -18,6 +18,8 @@ abstract type AbstractRun{T<:AbstractMethod,input<:Any} end
 struct method_I   <: AbstractMethod end
 struct method_V   <: AbstractMethod end
 struct method_P   <: AbstractMethod end
+struct method_η_p <: AbstractMethod end
+struct method_res <: AbstractMethod end
 
 struct lithium_foil <: Function end
 
@@ -59,9 +61,18 @@ struct run_function{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
     name::Symbol
     info::run_info
 end
+struct run_residual{T<:AbstractMethod,func<:Function} <: AbstractRun{T,func}
+    func::func
+    value::Base.RefValue{Float64}
+    method::T
+    t0::Float64
+    tf::Float64
+    name::Symbol
+    info::run_info
+end
 @inline value(run::AbstractRun) = @inbounds run.value[]
 
-Base.@kwdef struct index_state <: AbstractUnitRange{Int64}
+Base.@kwdef mutable struct index_state <: AbstractUnitRange{Int64}
     start::Int64 = 0
     stop::Int64 = 0
     a::UnitRange{Int64} = 0:0
@@ -220,6 +231,7 @@ function create_immutable_version(structure::DataType; str_replacements=(""=>"",
 
     return nothing
 end
+create_immutable_version(index_state)
 
 abstract type AbstractStopConditions end
 Base.@kwdef mutable struct boundary_stop_conditions <: AbstractStopConditions
@@ -238,38 +250,6 @@ Base.@kwdef mutable struct boundary_stop_conditions <: AbstractStopConditions
 end
 create_immutable_version(boundary_stop_conditions; conv_replacements=", x.prev" => ", x.$(fieldtypes(boundary_stop_conditions)[end])()")
 
-Base.@kwdef mutable struct _funcs_numerical
-    rxn_p::Function = emptyfunc
-    rxn_n::Function = emptyfunc
-    OCV_p::Function = emptyfunc
-    OCV_n::Function = emptyfunc
-    D_s_eff::Function = emptyfunc
-    D_eff::Function = emptyfunc
-    K_eff::Function = emptyfunc
-    thermodynamic_factor::Function = emptyfunc
-end
-
-struct options_numerical{temp,solid_diff,Fickian,age}
-    temperature::Bool
-    solid_diffusion::Symbol
-    Fickian_method::Symbol
-    aging::Union{Bool,Symbol}
-    cathode::Function
-    anode::Function
-    rxn_p::Function
-    rxn_n::Function
-    OCV_p::Function
-    OCV_n::Function
-    D_s_eff::Function
-    rxn_rate::Function
-    D_eff::Function
-    K_eff::Function
-    thermodynamic_factor::Function
-    jacobian::Symbol
-end
-options_numerical(temp,solid_diff,Fickian,age,x...) = 
-    options_numerical{temp,solid_diff,Fickian,age}(temp,solid_diff,Fickian,age,x...)
-
 const states_logic = solution_states{
     Bool,
     Bool,
@@ -277,8 +257,8 @@ const states_logic = solution_states{
 }
 
 const indices_states = solution_states{
-    index_state,
-    index_state,
+    index_state_immutable,
+    index_state_immutable,
     Tuple,
 }
 
@@ -328,6 +308,7 @@ struct cache_run
     YP0::Vector{Float64}
     res::Vector{Float64}
     Y_alg::Vector{Float64}
+    outputs_possible::Vector{Symbol}
     id::Vector{Int64}
 end
 
@@ -436,10 +417,6 @@ const STATE_NAMES = Dict{Symbol,String}(
     :P => "Power (W)",
     :SOC => "State of Charge (-)",
     :SOH => "State of Health (-)",
-    :ϵ_s => "Active Material Frac. (-)",
-    :j_SEI => "Side Reaction Flux (mol/m²⋅s)",
-    :δ => "SEI Film Thickness (m)",
-    :σ_h => "Mechanical Stress (Pa)",
 )
 
 ## Modifying Base functions
@@ -589,7 +566,7 @@ function Base.show(io::IO, ind::indices_states)
 
     X = [getfield(ind, name) for name in names]
 
-    isnt_used(x::index_state) = x.var_type == :NA
+    isnt_used(x::index_state_immutable) = x.var_type == :NA
     isnt_used(::Any) = true
 
     inds_inactive = isnt_used.(X)
@@ -646,10 +623,15 @@ method_name(::run_constant{method_P,<:Any};        shorthand::Bool=false) = shor
 method_name(::run_function{method_I,<:Function};   shorthand::Bool=false) = shorthand ? "I func"   : "current function"
 method_name(::run_function{method_V,<:Function};   shorthand::Bool=false) = shorthand ? "V func"   : "voltage function"
 method_name(::run_function{method_P,<:Function};   shorthand::Bool=false) = shorthand ? "P func"   : "power function"
+method_name(::run_constant{method_η_p,<:Any};      shorthand::Bool=false) = shorthand ? "η_p"    : "plating overpotential"
+method_name(::run_function{method_η_p,<:Function}; shorthand::Bool=false) = shorthand ? "η_p func" : "plating overpotential function"
+method_name(run::run_residual;                     shorthand::Bool=false) = run.name == "res" ? (shorthand ? "I res"  : "current residual") : run.name
 
 method_string(run::run_constant{method_I,<:Any};     kw...) = method_name(run;kw...) * " = $(C_rate_string(round(value(run);digits=2)))"
 method_string(run::run_constant{method_V,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) V"
 method_string(run::run_constant{method_P,<:Any};     kw...) = method_name(run;kw...) * " = $(round(value(run);digits=2)) W"
+
+method_string(run::Union{run_residual,run_function}; kw...) = method_name(run;kw...)
 
 function Base.show(io::IO,  ::MIME"text/plain", results::T) where T<:AbstractArray{run_results}
     str = remove_module_name(summary(results)) * ":\n"
@@ -745,7 +727,7 @@ function Base.show(io::IO, sol::solution)
                 !(p.numerics.aging == false) ? 
                 " SOH:     $(round(sol.SOH[end];              digits = 4) )\n"
                 : "",
-                !(p.numerics.temperature == false) ? 
+                p.numerics.temperature ? 
                 # " Temp.:   $(round(calc_T_avg(Y,p)-273.15; digits = 4)) °C\n"
                 " Temp.:   $(round(temperature_weighting(calc_T(Y,p),p)-273.15; digits = 4)) °C\n"
                 : "",
@@ -761,5 +743,3 @@ end
 Base.show(io::IO, ind::states_logic) = print(io, remove_module_name("states_logic using $(ind.results)"))
 
 Base.deleteat!(a::VectorOfArray, i::Integer) = (Base._deleteat!(a.u, i, 1); a.u)
-
-function emptyfunc end

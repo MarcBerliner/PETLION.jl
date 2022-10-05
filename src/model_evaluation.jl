@@ -49,7 +49,7 @@ eval(quote
     }
     
     # Check if the outputs are the same as in the cache
-    var_keep, outputs = solution_states_logic(outputs)
+    var_keep, outputs = solution_states_logic(outputs, p.cache.outputs_possible)
 
     initial_states!(sol,p,initial_states)
     
@@ -150,6 +150,7 @@ end
 
 @inline run_determination(::AbstractMethod, ::T) where T<:Any      = run_constant
 @inline run_determination(::AbstractMethod, ::T) where T<:Function = run_function
+@inline run_determination(::method_res, ::T) where T<:Function     = run_residual
 
 @inline custom_res!(p::model,res::T,sol;kw...) where T<:Tuple = custom_res!(p,res...,sol;kw...)
 @inline custom_res!(p::model,res::T,sol;kw...) where T<:Function = custom_res!(p,0.0,res,sol;kw...)

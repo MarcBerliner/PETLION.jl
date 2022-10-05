@@ -552,7 +552,7 @@ function NMC_LGM50(θ, funcs)
     # Activation energy of reaction rate equation
     θ[:Ea_k_p] = 17800
 
-    ## Stress parameters
+    ## Stress parameters (unused)
     θ[:E_p] = 375e9 # [Pa]
     θ[:ν_p] = 0.3 # [-]
     θ[:Ω_p] = -7.28e-7 # [m³/mol]
@@ -698,7 +698,7 @@ function system_LGM50_NMC_LiC6(θ, funcs, cathode, anode;
     # if solid_diffusion = :Fickian, then this can either be (:finite_difference) or (:spectral)
     Fickian_method = :finite_difference,
     # (false) off, (:SEI) SEI resistance
-    aging =  :stress,
+    aging =  :stress, # unused
     # (:symbolic) symbolic Jacobian, (:AD) automatic differenation Jacobian
     # use symbolic when speed is crucial
     jacobian = :symbolic,

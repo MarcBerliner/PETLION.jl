@@ -235,11 +235,10 @@ function load_functions_forward_diff(p::AbstractModel)
 end
 
 function _symbolic_initial_guess(p::AbstractModel, SOC_sym, θ_sym, X_applied)
-    
-    Y0_sym = guess_init(p, X_applied)[1]
+    Y0_sym = initial_guess(p)
 
     deleteat!(Y0_sym, p.N.tot)
-
+    
     return Y0_sym
 end
 
