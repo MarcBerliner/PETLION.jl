@@ -118,7 +118,7 @@ end
 end)
 
 eval(quote
-@inline function solution_states_logic(outputs::T,outputs_possible::Vector{Symbol}) where T<:Tuple
+@inline function solution_states_logic(outputs::T,outputs_possible::NTuple{N,Symbol}) where {T<:Tuple,N}
     outputs_tot = $(fieldnames(solution_states)[1:end-1])
     
     use_all = :all ∈ outputs

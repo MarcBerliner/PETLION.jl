@@ -44,16 +44,20 @@ function residuals_PET!(residuals, t, x, ẋ, p::PETLION.AbstractModel)
     
     """
     Differential residuals
+
+    residuals_name!(res, states, ∂states, p)
     """
     $(Meta.parse.(residuals_diff_vec)...)
     
     """
     Algebraic residuals
+
+    residuals_name!(res, states, p)
     """
     $(Meta.parse.(residuals_alg_vec)...)
 
     """
-    Compile all residuals together
+    Combine all residuals together
     """
     build_residuals!(residuals, res, p)
 
@@ -63,7 +67,7 @@ end)
 
 function residuals_PET!(p::AbstractModel)
     θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
-    res = similar(Y_sym)
+    res = zeros(eltype(Y_sym), length(Y_sym))
     residuals_PET!(res, t_sym, Y_sym, YP_sym, p_sym)
 end
 

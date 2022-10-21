@@ -235,16 +235,20 @@ function load_functions_forward_diff(p::AbstractModel)
 end
 
 function _symbolic_initial_guess(p::AbstractModel, SOC_sym, θ_sym, X_applied)
-    Y0_sym = initial_guess(p)
+    states = initial_guess(p)
+
+    Y0_sym = zeros(typeof(p.θ[Symbol.(keys(p.θ))[1]]), p.N.tot)
+
+    build_residuals!(Y0_sym, states, p)
 
     deleteat!(Y0_sym, p.N.tot)
     
     return Y0_sym
 end
 
-function _symbolic_residuals(p::AbstractModel, t_sym, Y_sym, YP_sym)
+function _symbolic_residuals(p::AbstractModel, t_sym, Y_sym::AbstractVector{T}, YP_sym) where T
     ## symbolic battery sol
-    res = similar(Y_sym)
+    res = zeros(T, length(Y_sym))
     residuals_PET!(res, t_sym, Y_sym, YP_sym, p)
 
     deleteat!(res, p.N.tot)

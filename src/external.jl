@@ -139,12 +139,12 @@ function build_cache(θ, ind, N, numerics, opts)
     Y_alg = zeros(Float64, N.alg)
     
     opts.var_keep = solution_states_logic(opts.outputs)[1]
-    outputs_possible = Symbol[
+    outputs_possible = Tuple(Symbol[
         :Y
         :YP
         :t
         keys(merge(model_states_and_outputs(numerics; remove_inactive=true)...))...
-    ]
+    ])
 
     id = [
         ones(Int64, N.diff)
@@ -172,12 +172,12 @@ function build_cache(θ, ind, N, numerics, opts)
 end
 
 Base.@kwdef mutable struct state_sections{T} <: AbstractArray{T,1}
-    tot::AbstractArray{T,1} = nothing
-    a = nothing
-    p = nothing
-    s = nothing
-    n = nothing
-    z = nothing
+    tot::AbstractArray{T,1} = T[]
+    a = T[]
+    p = T[]
+    s = T[]
+    n = T[]
+    z = T[]
     sections::Tuple = ()
     var_type::Symbol = :NA
 end
@@ -185,9 +185,17 @@ Base.size(state::state_sections) = size(state.tot)
 Base.IndexStyle(::Type{<:state_sections}) = IndexLinear()
 Base.getindex(state::state_sections, i::Int64)= state.tot[i]
 Base.setindex!(state::state_sections, v, i::Int64)= (state.tot[i] = v)
-is_active(s::state_sections) = !isempty(s)
+is_active(s::state_sections) = s.var_type ∈ (:differential, :algebraic)
 
-function retrieve_states(Y::AbstractArray, p::AbstractModel)
+
+function retrieve_states(p::AbstractModel;
+    type::DataType = typeof(p.θ[Symbol.(keys(p.θ))[1]]),
+    )
+
+    Y = zeros(type, p.N.tot)
+    return retrieve_states(Y, p)
+end
+function retrieve_states(Y::AbstractVector{T}, p::AbstractModel) where T
     """
     Creates a dictionary of variables based on an input array and the indices in p.ind
     """
@@ -215,11 +223,10 @@ function retrieve_states(Y::AbstractArray, p::AbstractModel)
         for section in sections
             ind_section = getproperty(ind_var, section)
 
-            push!(section_values, section ∈ ind_var.sections ? Y[ind_section] : nothing)
+            push!(section_values, section ∈ ind_var.sections ? Y[ind_section] : T[])
         end
-        
-        state = state_sections(
-            var ∈ vars_in_use ? Y[ind_var] : [],
+        state = state_sections{T}(
+            var ∈ vars_in_use ? Y[ind_var] : T[],
             section_values...,
             ind_var.sections,
             ind_var.var_type,
@@ -237,10 +244,10 @@ function retrieve_states(Y::AbstractArray, p::AbstractModel)
     return states
 end
 
-function state_new(x, sections::Tuple, p;
+function state_new(x::AbstractVector{T}, sections::Tuple, p;
         var_type=:NA,
         section_length = [getproperty(p.N, section) for section in sections],
-    )
+    ) where T
     
     x_vec = Any[]
     start = 0
@@ -252,7 +259,7 @@ function state_new(x, sections::Tuple, p;
         start += N
     end
     
-    state = state_sections(;
+    state = state_sections{T}(;
         tot = x,
         NamedTuple{sections}((x_vec...,))...,
         sections = sections,

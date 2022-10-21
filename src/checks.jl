@@ -355,7 +355,7 @@ end
     
     # if the function values at t vs. t + Δt are very different (i.e., there is a discontinuity)
     # then reinitialize the DAE at t + Δt
-    if !≈(value_old, value_new, atol=opts.abstol, rtol=opts.reltol)
+    if !≈(value_old, value_new; atol=opts.abstol, rtol=opts.reltol)
         initialize_states!(p,Y,YP,run,opts,funcs,(@inbounds sol.SOC[end]); t=t_new)
 
         Sundials.IDAReInit(int.mem, t_new, Y, YP)
@@ -374,7 +374,7 @@ end
     return nothing
 end
 
-function check_errors_initial(θ, numerics, N)
+@inline function check_errors_initial(θ, numerics, N)
     if numerics.jacobian ∉ (:symbolic, :AD)
         error("`jacobian` can either be :symbolic or :AD")
     end
@@ -382,10 +382,27 @@ function check_errors_initial(θ, numerics, N)
     return nothing
 end
 
-check_is_hold(x::Symbol,sol::solution) = (x == :hold) && (!isempty(sol) ? true : error("Cannot use `:hold` without a previous sol."))
-check_is_hold(::Any,::solution) = false
+@inline check_is_hold(x::Symbol,sol::solution) = (x == :hold) && (!isempty(sol) ? true : error("Cannot use `:hold` without a previous simulation."))
+@inline check_is_hold(::Any,::solution) = false
 
-check_is_rest(run::run_constant{method_I, Symbol}) = run.input == :rest
-check_is_rest(::Any) = false
+@inline check_is_rest(run::run_constant{method_I, Symbol}) = run.input == :rest
+@inline check_is_rest(::Any) = false
 
-check_is_half_cell(p::AbstractModel) = p.numerics.anode == lithium_foil
+@inline check_is_half_cell(p::AbstractModel) = p.numerics.anode == lithium_foil
+
+@inline function final_exit_reason(sol::solution)
+    ```
+    Return the final exit reason as a string
+    ```
+    @assert !isempty(sol)
+
+    return @inbounds sol.results[end].run.info.exit_reason
+end
+@inline function exit_reasons(sol::solution)
+    ```
+    Return the list of exit reasons as a vector of strings
+    ```
+    @assert !isempty(sol)
+
+    return String[result.run.info.exit_reason for result in sol.results]
+end

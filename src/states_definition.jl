@@ -84,8 +84,7 @@ end
     optionally saved as `initial_guess.jl`
     """
 
-    Y0 = zeros(eltype(p.θ[:c_e₀]), p.N.tot)
-    states = retrieve_states(Y0, p)
+    states = retrieve_states(p)
     
     build_T!(states, p)
 
@@ -118,7 +117,5 @@ end
     
     states[:j_s] .= 0
 
-    build_residuals!(Y0, states, p)
-
-    return Y0
+    return states
 end

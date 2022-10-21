@@ -308,7 +308,7 @@ struct cache_run
     YP0::Vector{Float64}
     res::Vector{Float64}
     Y_alg::Vector{Float64}
-    outputs_possible::Vector{Symbol}
+    outputs_possible::Tuple
     id::Vector{Int64}
 end
 

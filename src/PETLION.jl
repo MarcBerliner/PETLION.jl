@@ -27,6 +27,7 @@ using BSON: @load, @save
 
 export simulate, simulate!
 export solution
+export final_exit_reason, exit_reasons
 
 export petlion
 export boundary_stop_conditions, options_simulation, discretizations_per_section, options_numerical
