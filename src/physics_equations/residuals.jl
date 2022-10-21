@@ -3,92 +3,6 @@ Much of the code in this file is adapted from LIONSIMBA, a li-ion simulation too
 See https://github.com/lionsimbatoolbox/LIONSIMBA for more information.
 """
 
-function residuals_PET!(residuals, t, x, ẋ, p::AbstractModel)
-    """
-    First put the vector of x, ẋ, and residuals into dictionaries
-    """
-    states  = retrieve_states(x, p)
-    ∂states = retrieve_states(ẋ, p)
-    res     = retrieve_states(residuals, p)
-
-    states[:t] = t
-    states[:x] = x
-    states[:ẋ] = ẋ
-
-    """
-    Calculate a few necessary auxiliary variables
-    """
-    build_auxiliary_states!(states, p)
-    
-    """
-    Differential residuals
-    """
-    # Residual for the electrolyte concentration, c_e
-    residuals_c_e!(res, states, ∂states, p)
-
-    # Residual for the average surface concentration, c_s_avg
-    residuals_c_s_avg!(res, states, ∂states, p)
-    
-    # If the polynomial fit for the surface concentration is used, Q
-    if p.numerics.solid_diffusion == :polynomial
-        residuals_Q!(res, states, ∂states, p)
-    end
-
-    # Lithium plating film thickness, film
-    if p.numerics.aging == :SEI
-        residuals_film!(res, states, ∂states, p)
-        residuals_SOH!(res, states, ∂states, p)
-    end
-
-    if p.numerics.aging == :stress
-        residuals_δ!(res, states, ∂states, p)
-        residuals_ϵ_s!(res, states, ∂states, p)
-        residuals_σ_h!(res, states, p)
-        residuals_SOH!(res, states, ∂states, p)
-    end
-
-    # Check if the thermal dynamics are enabled.
-    if p.numerics.temperature == true
-        build_heat_generation_rates!(states, p)
-        residuals_T!(res, states, ∂states, p)
-    end
-
-    """
-    Algebraic residuals
-    """
-    # Residuals for ionic flux, j
-    residuals_j!(res, states, p)
-    
-    # Residuals for side reaction ionic flux, j_s
-    if p.numerics.aging == :SEI
-        residuals_j_s!(res, states, p)
-    end
-    if p.numerics.aging == :stress
-        residuals_j_SEI!(res, states, p)
-    end
-
-    # Residuals for the electrolyte potential, Φ_e
-    residuals_Φ_e!(res, states, p)
-
-    # Residuals for the solid potential, Φ_s
-    residuals_Φ_s!(res, states, p)
-
-    # Residuals for applied current density, I [not currently used]
-    residuals_scalar!(res, states, p)
-
-    """
-    Compile all residuals together
-    """
-    build_residuals!(residuals, res, p)
-
-    return nothing
-end
-function residuals_PET!(p::AbstractModel)
-    θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
-    res = similar(Y_sym)
-    residuals_PET!(res, t_sym, Y_sym, YP_sym, p_sym)
-end
-
 function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     """
     Calculate the electrolyte concentration residuals [mol/m³]
@@ -183,26 +97,6 @@ function residuals_c_e!(res, states, ∂states, p::AbstractModel)
     rhsCe[ind.p] .+= (1-p.θ[:t₊]).*ν_p.*a.p.*j.p
     # nothing for the separator since a_s = 0
     rhsCe[ind.n] .+= (1-p.θ[:t₊]).*ν_n.*a.n.*j.n
-    
-    if p.numerics.aging == :stress
-        ## chain rule: ∂/∂t(ϵ c_e) = (c_e ∂ϵ/∂t) + (ϵ ∂c_e/∂t)
-        # The former term is usually zero, but now ϵ_s is now a function of x
-        # ϵ = (1 - ϵ_f - ϵ_s)
-        # ∂ϵ/∂t = -∂ϵ_s/∂t
-        residuals_ϵ_s!(res, states, ∂states, p)
-
-        ∂ϵ_s = res[:ϵ_s] .+ ∂states[:ϵ_s]
-
-        ind = indices_section((:p,:n), p)
-
-        ∂ϵ = -[
-            ∂ϵ_s[ind.p]
-            zeros(p.N.s)
-            ∂ϵ_s[ind.n]
-        ]
-
-        rhsCe .-= c_e .* ∂ϵ
-    end
     
     rhsCe ./= ϵ
     # Write the residual of the equation
@@ -363,25 +257,6 @@ function residuals_Q!(res, states, ∂states, p::AbstractModelSolidDiff{:polynom
     return nothing
 end
 
-function residuals_δ!(res, states, ∂states, p::AbstractModel)
-    """
-    residuals_δ! describes the dynamics of the solid-electrolyte layer at the anode side [m]
-    """
-
-    j_SEI = states[:j_SEI]
-
-    ∂δ = ∂states[:δ]
-    
-    res_δ = res[:δ]
-    
-    # (m³/mol) ⋅ (mol/m²⋅s) = (m/s)
-    rhs_δ = @. -p.θ[:V̄_SEI]*j_SEI/2
-    
-    res_δ .= rhs_δ .- ∂δ
-
-    return nothing
-end
-
 function residuals_film!(res, states, ∂states, p::AbstractModel)
     """
     residuals_film! describes the dynamics of the solid-electrolyte layer at the anode side [m]
@@ -404,12 +279,8 @@ function residuals_SOH!(res, states, ∂states, p::AbstractModel)
     """
     residuals_SOH! integrates the SOH when aging is enabled and there are losses
     """
-
-    if p.numerics.aging == :SEI
-        j_s = states[:j_s]
-    elseif p.numerics.aging == :stress
-        j_s = states[:j_SEI]
-    end
+    
+    j_s = states[:j_s]
     
     ∂SOH = ∂states[:SOH][1]
 
@@ -425,30 +296,12 @@ function residuals_SOH!(res, states, ∂states, p::AbstractModel)
     return nothing
 end
 
-function residuals_ϵ_s!(res, states, ∂states, p::AbstractModel)
-    """
-    Calculates the change in active material over time [-]
-    """
-    σ_h = states[:σ_h]
-
-    ∂ϵ_s = ∂states[:ϵ_s]
-
-    res_ϵ_s = res[:ϵ_s]
-
-    rhs_ϵ_s = -p.θ[:β_LAM].*([
-        σ_h.p/p.θ[:σ_critical_p]
-        σ_h.n/p.θ[:σ_critical_n]
-    ]).^p.θ[:m_LAM]
-
-    res_ϵ_s .= rhs_ϵ_s - ∂ϵ_s
-
-    return nothing
-end
-
 function residuals_T!(res, states, ∂states, p)
     """
     Calculate the 1D temperature residuals [K]
     """
+    build_heat_generation_rates!(states, p)
+
     T         = states[:T]
     I_density = states[:I][1]
     Q_rev     = states[:Q_rev]
@@ -668,6 +521,7 @@ function residuals_j_s!(res, states, p::AbstractModel)
     Calculate the molar flux density side reaction residuals due to SEI resistance [mol/(m²•s)]
     """
     j_s = states[:j_s]
+    j_total = states[:j_total]
     Φ_s = states[:Φ_s]
     Φ_e = states[:Φ_e]
     film = states[:film]
@@ -683,7 +537,7 @@ function residuals_j_s!(res, states, p::AbstractModel)
     
     R_film = (p.θ[:R_SEI] .+ film./p.θ[:k_n_aging])
 
-    η_s = Φ_s.n .- Φ_e.n .- p.θ[:Uref_s] .- F.*j_s.*R_film
+    η_s = Φ_s.n .- Φ_e.n .- p.θ[:Uref_s] .- F.*j_total.n.*R_film
     α = 0.5
 
     j_s_calc = -abs.((p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*(-exp.(-α.*F./(R.*T.n).*η_s)))
@@ -694,63 +548,6 @@ function residuals_j_s!(res, states, p::AbstractModel)
     # side reaction residuals
     res_j_s .= j_s .- j_s_calc
     
-    return nothing
-end
-
-function residuals_j_SEI!(res, states, p::AbstractModel)
-    """
-    Calculate the molar flux density side reaction residuals due to SEI resistance [mol/(m²•s)]
-    """
-    j = states[:j_total]
-    j_SEI = states[:j_SEI]
-    Φ_s = states[:Φ_s]
-    Φ_e = states[:Φ_e]
-    δ = states[:δ]
-    T = states[:T]
-
-    res_j_SEI = res[:j_SEI]
-
-    F = const_Faradays
-    R = const_Ideal_Gas
-
-    η_SEI = @. Φ_s.n - Φ_e.n - p.θ[:U_SEI] - F*j.n*p.θ[:R_SEI]*δ
-
-    c_EC_s = @. j_SEI*δ/p.θ[:D_SEI] + p.θ[:c_EC_bulk_n]
-
-    j_SEI_calc = @. -p.θ[:k_SEI]*c_EC_s*exp(-p.θ[:α_SEI]*η_SEI*(F/(R*T.n)))
-
-    # side reaction residuals
-    res_j_SEI .= j_SEI .- j_SEI_calc
-    
-    return nothing
-end
-
-function residuals_σ_h!(res, states, p::AbstractModel)
-    """
-    residuals_σ_h! evaluates residuals for the mechanical stress [Pa]
-    """
-    σ_h = states[:σ_h]
-    c_s_avg = states[:c_s_avg]
-    c_s_star = states[:c_s_star]
-
-    res_σ_h = res[:σ_h]
-
-    # indices for each solid particle
-    ind_p = map(x -> x.+(0:p.N.r_p-1), 1:p.N.r_p:(p.N.r_p*p.N.p))
-    ind_n = map(x -> x.+(0:p.N.r_n-1), 1:p.N.r_n:(p.N.r_n*p.N.n))
-
-    r_p = range(0, p.θ[:Rp_p]; length=p.N.r_p)
-    r_n = range(0, p.θ[:Rp_n]; length=p.N.r_n)
-
-    int_c_s_p = 1/p.θ[:Rp_p]^3*[trapz(r_p, c_s_avg.p[ind].*r_p.^2) for ind in ind_p]
-    int_c_s_n = 1/p.θ[:Rp_n]^3*[trapz(r_n, c_s_avg.n[ind].*r_n.^2) for ind in ind_n]
-
-    σ_h_calc = [
-        2p.θ[:Ω_p]*p.θ[:E_p]/(3(1-p.θ[:ν_p])).*(int_c_s_p .- c_s_star.p)
-        2p.θ[:Ω_n]*p.θ[:E_n]/(3(1-p.θ[:ν_n])).*(int_c_s_n .- c_s_star.n)
-    ]
-    res_σ_h .= σ_h .- abs.(σ_h_calc)
-
     return nothing
 end
 
@@ -775,11 +572,11 @@ function residuals_Φ_e!(res, states, p::AbstractModel)
     F = const_Faradays
 
     # Interpolate the K_eff values to the edge of the control volume
-    K̂_eff_p, K̂_eff_s, K̂_eff_n = PETLION.interpolate_electrolyte_grid(K_eff.p, K_eff.s, K_eff.n, p)
+    K̂_eff_p, K̂_eff_s, K̂_eff_n = interpolate_electrolyte_grid(K_eff.p, K_eff.s, K_eff.n, p)
 
-    A_tot = PETLION.block_matrix_maker(p, K̂_eff_p, K̂_eff_s, K̂_eff_n)
+    A_tot = block_matrix_maker(p, K̂_eff_p, K̂_eff_s, K̂_eff_n)
 
-    ind = PETLION.indices_section((:p,:s,:n), p)
+    ind = indices_section((:p,:s,:n), p)
 
     A_tot[ind.p,ind.p] ./= (Δx.p*p.θ[:l_p])
     A_tot[ind.s,ind.s] ./= (Δx.s*p.θ[:l_s])
@@ -905,16 +702,4 @@ function residuals_Φ_s!(res, states, p::AbstractModel)
     return nothing
 end
 
-function residuals_scalar!(res, states, p::AbstractModel)
-    """
-    *** THE RESIDUALS ARE HANDLED IN `scalar_residual.jl` ***
-    
-    This function sets an arbitrary value for the current residuals [C-rate]
-    """
-    
-    res_I = res[:I]
-
-    res_I .= 0.0
-    
-    return nothing
-end
+# residuals_I!(...) is treated specially and is defined in the `scalar_residuals.jl`

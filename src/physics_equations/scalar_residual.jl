@@ -1,28 +1,114 @@
-@inline calc_V(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
-@inline calc_I(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds Y[p.ind.I[1]]
-@inline calc_P(Y::Vector{<:Number}, p::AbstractModel)       = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
-@inline calc_c_e(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.c_e]
-@inline calc_c_s_avg(Y::Vector{<:Number}, p::AbstractModel) = @inbounds @views Y[p.ind.c_s_avg]
-@inline calc_SOH(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds Y[p.ind.SOH[1]]
-@inline calc_j(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.j]
-@inline calc_Φ_e(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.Φ_e]
-@inline calc_Φ_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.Φ_s]
-@inline calc_film(Y::Vector{<:Number}, p::AbstractModel)    = @inbounds @views Y[p.ind.film]
-@inline calc_j_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.j_s]
-@inline calc_Q(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.Q]
-@inline calc_δ(Y::Vector{<:Number}, p::AbstractModel)       = @inbounds @views Y[p.ind.δ]
-@inline calc_ϵ_s(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.ϵ_s]
-@inline calc_j_SEI(Y::Vector{<:Number}, p::AbstractModel)   = @inbounds @views Y[p.ind.j_SEI]
-@inline calc_σ_h(Y::Vector{<:Number}, p::AbstractModel)     = @inbounds @views Y[p.ind.σ_h]
+function residuals_I!(res, states, p::AbstractModel)
+    """
+    *** THE APPLIED CURRENT RESIDUALS ARE HANDLED IN `scalar_residual.jl` ***
+    
+    This function sets an arbitrary value for the current residuals [C-rate]
+    """
+    
+    res_I = res[:I]
 
+    res_I .= 0.0
+    
+    return nothing
+end
+
+# Differential states have an input of `res, states, ∂states, p`
+residuals_diff_vec = [
+    "if is_active(states[:$(key)]) residuals_$(key)!(res, states, ∂states, p) end"
+    for key in keys(states_total) if states_total[key].var_type == :differential
+]
+
+# Algebraic states have an input of `res, states, p`
+residuals_alg_vec  = [
+    "if is_active(states[:$(key)]) residuals_$(key)!(res, states, p) end"
+    for key in keys(states_total) if states_total[key].var_type == :algebraic
+]
+
+eval(quote
+function residuals_PET!(residuals, t, x, ẋ, p::PETLION.AbstractModel)
+    """
+    First put the vector of x, ẋ, and residuals into dictionaries
+    """
+    states  = retrieve_states(x, p)
+    ∂states = retrieve_states(ẋ, p)
+    res     = retrieve_states(residuals, p)
+
+    states[:t] = t
+    states[:x] = x
+    states[:ẋ] = ẋ
+
+    """
+    Calculate a few necessary auxiliary variables
+    """
+    build_auxiliary_states!(states, p)
+    
+    """
+    Differential residuals
+
+    residuals_name!(res, states, ∂states, p)
+    """
+    $(Meta.parse.(residuals_diff_vec)...)
+    
+    """
+    Algebraic residuals
+
+    residuals_name!(res, states, p)
+    """
+    $(Meta.parse.(residuals_alg_vec)...)
+
+    """
+    Combine all residuals together
+    """
+    build_residuals!(residuals, res, p)
+
+    return nothing
+end
+end)
+
+function residuals_PET!(p::AbstractModel)
+    θ_sym, Y_sym, YP_sym, t_sym, SOC_sym, X_applied, γ_sym, p_sym, θ_keys = get_symbolic_vars(p)
+    res = zeros(eltype(Y_sym), length(Y_sym))
+    residuals_PET!(res, t_sym, Y_sym, YP_sym, p_sym)
+end
+
+# Differential and algebraic states of the model are handled using metaprogramming
+for state in keys(states_total)
+    if state ≠ :T # temperature is handled separately
+        is_scalar = isempty(states_total[state].sections)
+        str = "calc_$state(Y::Vector{<:Number}, p::AbstractModel) = " * (is_scalar ? "@inbounds Y[p.ind.$state[1]]" : "@inbounds @views Y[p.ind.$state]")
+        str = remove_module_name(str)
+        eval(Meta.parse(str))
+    end
+end
 @inline calc_T(Y::Vector{<:Number}, p::AbstractModelTemp{true}) = @inbounds @views Y[p.ind.T]
 @inline calc_T(::Vector{<:Number}, p::AbstractModelTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
+
+@inline calc_V(Y::Vector{<:Number}, p::AbstractModel) = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
+@inline calc_P(Y::Vector{<:Number}, p::AbstractModel) = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
 @inline calc_T_avg(Y, p) = temperature_weighting(calc_T(Y,p),p)
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
 @inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
 
-calc_η_plating(Y::Vector{<:Number},p::AbstractModel) = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
-calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
+@inline calc_η_plating(Y::Vector{<:Number},p::AbstractModel) = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+@inline calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
+
+@inline function calc_SOC(Y::AbstractVector{Float64}, p::model)
+    """
+    Calculate the SOC (dimensionless fraction)
+    """
+    c_s_avg_sum = @views @inbounds mean(Y[p.ind.c_s_avg[(p.numerics.solid_diffusion == :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end]])
+
+    return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
+end
+@inline function calc_SOC(SOC::E, Y::T, t::E, sol::solution, p::model) where {E<:Float64,T<:Vector{E}}
+    """
+    Calculate the SOC (dimensionless fraction) using the trapezoidal rule
+    """
+    Y_prev = @inbounds @views sol.Y[end]
+    t_prev = @inbounds sol.t[end]
+    SOC_new = SOC + 0.5*(t - t_prev)*(calc_I(Y,p) + calc_I(Y_prev,p))/3600.0
+    return SOC_new
+end
 
 function calc_OCV(Y::AbstractVector{<:Number}, p::AbstractModel)
     """
@@ -64,7 +150,7 @@ function calc_R_internal(Y::AbstractVector{<:Number}, p::AbstractModel)
 end
 
 # Metaprogramming to broadcast calc_x
-for x in (:I,:V,:P,:c_e,:c_s_avg,:SOH,:j,:Φ_e,:Φ_s,:film,:j_s,:Q,:T,:T_avg,:K_eff,:η_plating,:OCV,:R_internal,:δ,:ϵ_s,:j_SEI,:σ_h)
+for x in unique([keys(states_total)...,:SOC,:V,:P,:T_avg,:K_eff,:η_plating,:OCV,:R_internal])
     name = "calc_$x"
     str = "Base.broadcasted(f::typeof($name),  Y::T, p::AbstractModel) where T<:VectorOfArray{Float64, 2, Vector{Vector{Float64}}} = [f(y,p) for y in Y]"
 
@@ -82,6 +168,8 @@ end
 
 @inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_function{method,func}) where {method<:AbstractMethod,T<:Num,func<:Function}     = @inbounds (res[end] = method(Y,p) - run.func(t,Y,YP,p))
 @inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_function{method,func}) where {method<:AbstractMethod,T<:Float64,func<:Function} = @inbounds (val = run.func(t,Y,YP,p); run.value[] = val; res[end] = method(Y,p) - val)
+
+@inline scalar_residual!(res::Vector{T},t,Y,YP,p,run::run_residual{method_res,func}) where {T<:Number,func<:Function} = @inbounds (res[end] = p.θ[:_residual_val] - run.func(t,Y,YP,p))
 
 @inline function scalar_jacobian(t,Y,YP,γ,p::AbstractModel,run::T) where T<:Union{run_constant,run_function}
     J = get_jacobian_sparsity(p,run;jac_type=typeof(t))
@@ -107,6 +195,11 @@ end
     J[3] = V*I1C
     return nothing
 end
+@inline @inbounds function scalar_jacobian!(J::SM,::T,Y::T2,::T2,γ::T,p::AbstractModel,::AbstractRun{method_η_p,<:Any}) where {T<:Number,SM<:SubArray{T,1,Vector{T},Tuple{Vector{Int64}},false},T2<:Vector{T}}
+    J[1] = -1
+    J[2] = 1
+    return nothing
+end
 
 @inbounds function get_jacobian_sparsity(p::AbstractModel, ::AbstractRun{method_I,<:Any};jac_type::DataType=Float64)
     J = spzeros(jac_type,p.N.tot)
@@ -124,6 +217,13 @@ end
     J = spzeros(jac_type,p.N.tot)
     J[p.ind.I[1]] = 1
     J[p.ind.Φ_s[[1,end]]] .= 1
+
+    return J
+end
+@inbounds function get_jacobian_sparsity(p::AbstractModel, ::AbstractRun{method_η_p,<:Any};jac_type::DataType=Float64)
+    J = spzeros(jac_type,p.N.tot)
+    J[p.ind.Φ_e.n[1]] = 1
+    J[p.ind.Φ_s.n[1]] = 1
 
     return J
 end
@@ -197,9 +297,25 @@ function _get_method_funcs(p::model, run::run_function)
     end
 end
 
-function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys) where T<:run_function
+function _get_method_funcs(p::model, run::run_residual)
+    θ_sym, Y, YP, t, SOC, I, γ, p_sym, θ_keys = get_symbolic_vars(p; original_keys=p.cache.θ_keys)
+    res = similar(Y) .= 0.0
+
+    scalar_residual!(res,t,Y,YP,p_sym,run)
+    
+    J_Y  = @inbounds sparsejacobian([res[end]], collect(Y))[:]
+    J_YP = @inbounds sparsejacobian([res[end]], collect(YP))[:]
+    J_vec = J_Y .+ γ.*J_YP
+
+    return differentiate_residual_func(p,run,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys)
+end
+
+function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y,YP,t,SOC,I,γ,p_sym,θ_keys) where T<:Union{run_function,run_residual}
     scalar_contains_Y_diff = @inbounds !isempty(J_Y[1:p.N.diff].nzval)
     scalar_contains_YP     = !isempty(J_YP.nzval)
+    
+    Y = collect(Y)
+    YP = collect(YP)
 
     J_sp_scalar = spzeros(Float64,p.N.tot)
     @inbounds J_sp_scalar[J_vec.nzind] .= 1
@@ -207,7 +323,7 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
     """
     Updating the theta vector to ensure any new parameters will be accounted for
     """
-    θ_keys_scalar = @inbounds get_only_θ_used_in_model(θ_sym, θ_keys, res[end])[2]
+    θ_keys_scalar = @inbounds get_only_θ_used_in_model(collect(θ_sym), θ_keys, res[end])[2]
 
     θ_keys = deepcopy(p.cache.θ_keys)
     @inbounds for key in θ_keys_scalar
@@ -244,13 +360,9 @@ function differentiate_residual_func(p::model,run::T,J_vec,J_Y,J_YP,res,θ_sym,Y
         catch
             residuals_PET!(res,t,Y,YP,p_sym)
         end
-        """
-        Replace the LHS of `YP` with the RHS of `YP`. This only works because the differential
-        states are in the form `residual = RHS - YP`.
-        """
-        res_algebraic = substitute(res_algebraic, Dict(YP[ind_differential] .=> res[ind_differential] + YP[ind_differential]))
-
-        scalar_residal_alg! = eval(build_function(res_algebraic,t,Y,YP,θ_sym_slim; parallel=SerialForm(), expression=Val{false}))
+        res_algebraic = substitute(res_algebraic, Dict(YP[ind_differential] .=> res[ind_differential] .+ YP[ind_differential]))
+        
+        scalar_residal_alg! = eval(build_function(res_algebraic,t,Y,YP,θ_sym_slim; expression=Val{false}))
 
         J_alg_vec = @inbounds sparsejacobian([res_algebraic], Y[p.N.diff+1:end])[:]
         
@@ -436,6 +548,9 @@ function get_method_funcs!(p::model,run::run_function{method,func}) where {metho
 
     return nothing
 end
+function get_method_funcs!(p::model,run::run_residual{method_res,func}) where {func<:Function}
+    p.funcs.Dict_residual[func] = _get_method_funcs(p,run)
+end
 
 """
 Multiple dispatch for the residuals function
@@ -543,6 +658,8 @@ model_funcs definitions
 """
 (f::model_funcs)(::run_constant{method,input}) where {method<:AbstractMethod,input<:Any}     = f.Dict_constant[method]
 (f::model_funcs)(::run_function{method,func})  where {method<:AbstractMethod,func<:Function} = f.Dict_function[method][func]
+(f::model_funcs)(::run_residual{method,func})  where {method<:method_res,func<:Function}     = f.Dict_residual[func]
 
 Base.haskey(f::model_funcs,::run_constant{method,input})  where {method<:AbstractMethod,input<:Any}     = haskey(f.Dict_constant,method)
 Base.haskey(f::model_funcs,::run_function{method,func})   where {method<:AbstractMethod,func<:Function} = haskey(f.Dict_function,method) && haskey(f.Dict_function[method],func)
+Base.haskey(f::model_funcs,::run_residual{method,func})   where {method<:method_res,func<:Function}     = haskey(f.Dict_residual,func)

@@ -27,6 +27,7 @@ using BSON: @load, @save
 
 export simulate, simulate!
 export solution
+export final_exit_reason, exit_reasons
 
 export petlion
 export boundary_stop_conditions, options_simulation, discretizations_per_section, options_numerical
@@ -44,11 +45,11 @@ export rxn_BV, rxn_BV_γMod_01
 export rxn_MHC
 
 
+include("states_definition.jl")
 include("outputs.jl")
 include("structures.jl")
 include("params.jl")
 include("external.jl")
-include("set_variables.jl")
 include("model_evaluation.jl")
 include("generate_functions.jl")
 include("physics_equations/residuals.jl")
@@ -58,6 +59,7 @@ include("physics_equations/custom_functions.jl")
 include("physics_equations/numerical_tools.jl")
 include("physics_equations/input_methods.jl")
 include("checks.jl")
+include("save_outputs.jl")
 
 ## Backwards compatability
 Params(x...;kw...) = petlion(x...;kw...)

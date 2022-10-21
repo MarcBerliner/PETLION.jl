@@ -1,3 +1,14 @@
+# Get all the states and outputs
+begin 
+    states = Symbol.(keys(merge(model_states_and_outputs()...)))
+    
+    for remove_state in (:SOC,)
+        deleteat!(states, findall(states .== remove_state))
+    end
+    outputs_vec = Meta.parse.(["if keep.$state modify!(sol.$state, calc_$state(Y, p) ) end" for state in states])
+end
+
+eval(quote
 @inline function set_vars!(sol::R1, p::R2, Y::R3, YP::R3, t::R4, run::R5, opts::R6, bounds::R7;
     modify!::R8=set_var!,
     init_all::Bool=false,
@@ -13,48 +24,20 @@
         R8<:Function,
         }
     """
-    Sets all the outputs for the sol. There are three kinds of variable outputs:
-    
-    1. `keep.x = true`: The variable is calculated and saved on every iteration
-    
-    2. `keep.x = false` WITHOUT the check `if keep.x ... end`: These variables  MUST be
-        calculated to ensure that `check_simulation_stop!` works properly (e.g., check if
-        `t > tf` or `SOC > SOC_max`), but they are not saved on every iteration
-    
-    3. `keep.x = false` WITH the check `if keep.x ... end`: These variables are not
-        evaluated at all and may not even be calculable (e.g., `T` if there is no
-        temperature enabled)
+    Sets all the outputs for the solution.
     """
     keep = opts.var_keep
 
-    # these variables must be calculated, but they may not necessarily be kept
     modify!(sol.SOC, isempty(sol.SOC) ? SOC : calc_SOC(SOC, Y, t + run.t0, sol, p), (keep.SOC || init_all))
     modify!(sol.t,   t + run.t0, (keep.t || init_all))
     
     # these variables do not need to be calculated
-    if keep.YP      modify!(sol.YP,      copy(YP)           ) end
-    if keep.I       modify!(sol.I,       calc_I(Y, p)       ) end
-    if keep.V       modify!(sol.V,       calc_V(Y, p)       ) end
-    if keep.P       modify!(sol.P,       calc_P(Y, p)       ) end
-    if keep.c_e     modify!(sol.c_e,     calc_c_e(Y, p)     ) end
-    if keep.c_s_avg modify!(sol.c_s_avg, calc_c_s_avg(Y, p) ) end
-    if keep.j       modify!(sol.j,       calc_j(Y, p)       ) end
-    if keep.Φ_e     modify!(sol.Φ_e,     calc_Φ_e(Y, p)     ) end
-    if keep.Φ_s     modify!(sol.Φ_s,     calc_Φ_s(Y, p)     ) end
-    
-    # exist as an optional output if the sol uses them
-    if ( p.numerics.temperature == true           && keep.T     ) modify!(sol.T,     calc_T(Y, p)     ) end
-    if ( p.numerics.solid_diffusion == :quadratic && keep.Q     ) modify!(sol.Q,     calc_Q(Y, p)     ) end
-    if ( p.numerics.aging == :SEI                 && keep.film  ) modify!(sol.film,  calc_film(Y, p)  ) end
-    if ( p.numerics.aging ∈ (:SEI, :stress)       && keep.SOH   ) modify!(sol.SOH,   calc_SOH(Y, p)   ) end
-    if ( p.numerics.aging == :SEI                 && keep.j_s   ) modify!(sol.j_s,   calc_j_s(Y, p)   ) end
-    if ( p.numerics.aging == :stress              && keep.δ     ) modify!(sol.δ,     calc_δ(Y, p)     ) end
-    if ( p.numerics.aging == :stress              && keep.ϵ_s   ) modify!(sol.ϵ_s,   calc_ϵ_s(Y, p)   ) end
-    if ( p.numerics.aging == :stress              && keep.j_SEI ) modify!(sol.j_SEI, calc_j_SEI(Y, p) ) end
-    if ( p.numerics.aging == :stress              && keep.σ_h   ) modify!(sol.σ_h,   calc_σ_h(Y, p)   ) end
+    if keep.YP modify!(sol.YP, copy(YP)) end
+    $(outputs_vec...)
 
     return nothing
 end
+end)
 
 @inline set_var!(x, x_val) = push!(x, x_val)
 @inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:Vector{Float64},T2<:Number}

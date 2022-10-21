@@ -15,25 +15,27 @@ import Pkg; Pkg.add("PETLION")
 ```
 
 # Getting started
-To [get started](examples/getting_started.ipynb), we recommend checking out the [list of examples](examples). To simulate a simple [constant current-constant voltage (CC-CV) charge](examples/CC-CV.ipynb), run the following:
+To [get started](examples/getting_started.ipynb), we recommend checking out the [list of examples](examples). To simulate a [constant current-constant temperature-constant voltage (CC-CT-CV) fast charge](examples/fast_charging_CC-CT-CV.ipynb), run the following:
 ```julia
 using PETLION
-p = petlion(LCO)
+p = petlion(LCO; temperature=true)
 
-sol = simulate(p, I=2, SOC=0, V_max=4.1)
-simulate!(sol, p, 1800, V=:hold, I_min=1/20)
+sol = simulate(p, I=4, SOC=0, V_max=4.1, T_max=40+273.15)
+simulate!(sol, p, dT=:hold, V_max=4.1)
+simulate!(sol, p, V=:hold)
 ```
-<img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CCCV_I.png" width="50%"><img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CCCV_V.png" width="50%">
+<img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CC-CT-CV.png" width="100%"
 ```julia
 PETLION simulation
-  --------
-  Runs:    I → V
-  Time:    2440.61 s
-  Current: 0.1955C
-  Voltage: 4.1 V
-  Power:   23.432 W
-  SOC:     1.0001
-  Exit:    Above maximum SOC limit
+ --------
+ Runs:    I → dT → V
+ Time:    1865.61 s
+ Current: 0.1959C
+ Voltage: 4.1 V
+ Power:   23.47 W/m²
+ SOC:     1.0
+ Temp.:   25.6963 °C
+ Exit:    Above max. SOC
 ```
 
 # Credits

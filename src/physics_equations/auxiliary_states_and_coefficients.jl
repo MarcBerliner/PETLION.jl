@@ -159,24 +159,18 @@ end
 
 function build_j_total!(states, p::AbstractModel)
     """
-    Append `j` with possible additions from `j_s` or `j_SEI`
+    Append `j` with possible additions from `j_s`
     """
     j = states[:j]
+    j_s = states[:j_s]
     
-    if p.numerics.aging ∉ (:SEI, :stress)
+    if !is_active(j_s)
         states[:j_total] = state_new(j, (:p, :n), p)
         return nothing
     end
-    
-    j_s = states[:j_s]
-    j_SEI = states[:j_SEI]
 
     j_total = copy(j)
-    if p.numerics.aging == :SEI
-        j_total[p.N.p+1:end] .+= j_s
-    elseif p.numerics.aging == :stress
-        j_total[p.N.p+1:end] .+= j_SEI
-    end
+    j_total[p.N.p+1:end] .+= j_s
 
     states[:j_total] = state_new(j_total, (:p, :n), p)
 
@@ -285,7 +279,6 @@ function build_η!(states, p::AbstractModel)
     U = states[:U]
     j = states[:j]
     film = states[:film]
-    δ = states[:δ]
 
     F = const_Faradays
 
@@ -299,8 +292,6 @@ function build_η!(states, p::AbstractModel)
     if     p.numerics.aging == :SEI
         R_film = p.θ[:R_SEI] .+ film./p.θ[:k_n_aging]
         η_n .+= @. - F*j.n*R_film
-    elseif p.numerics.aging == :stress
-        η_n .+= @. - F*j.n*p.θ[:R_SEI]*δ
     end
 
     states[:η] = state_new([η_p; η_n], (:p, :n), p)
@@ -653,24 +644,6 @@ end
         )
 
     return I1C
-end
-
-@inline function calc_SOC(Y::AbstractVector{Float64}, p::model)
-    """
-    Calculate the SOC (dimensionless fraction)
-    """
-    c_s_avg_sum = @views @inbounds mean(Y[p.ind.c_s_avg[(p.numerics.solid_diffusion == :Fickian ? p.N.p*p.N.r_p : p.N.p)+1:end]])
-
-    return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
-end
-@inline function calc_SOC(SOC::E, Y::T, t::E, sol::solution, p::model) where {E<:Float64,T<:Vector{E}}
-    """
-    Calculate the SOC (dimensionless fraction) using the trapezoidal rule
-    """
-    Y_prev = @inbounds @views sol.Y[end]
-    t_prev = @inbounds sol.t[end]
-    SOC_new = SOC + 0.5*(t - t_prev)*(calc_I(Y,p) + calc_I(Y_prev,p))/3600.0
-    return SOC_new
 end
 
 @inline function temperature_weighting(T::AbstractVector{<:Number},p::AbstractModel)
