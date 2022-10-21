@@ -23,10 +23,8 @@ p = petlion(LCO; temperature=true)
 sol = simulate(p, I=4, SOC=0, V_max=4.1, T_max=40+273.15)
 simulate!(sol, p, dT=:hold, V_max=4.1)
 simulate!(sol, p, V=:hold)
-```
-<img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CC-CT-CV.png" width="100%"
-```julia
-PETLION simulation
+
+julia> PETLION simulation
  --------
  Runs:    I → dT → V
  Time:    1865.61 s
@@ -37,6 +35,7 @@ PETLION simulation
  Temp.:   25.6963 °C
  Exit:    Above max. SOC
 ```
+<img src="https://raw.githubusercontent.com/MarcBerliner/PETLION.jl/master/docs/example_pictures/CC-CT-CV.png" width="100%">
 
 # Credits
 + [Marc D. Berliner](https://marcberliner.com/) – Creating and maintaining the code
