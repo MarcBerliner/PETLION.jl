@@ -1,7 +1,7 @@
 name = "PETLION"
 uuid = "5e0a28e4-193c-47fa-bbb8-9c901cc1ac2c"
 authors = ["Marc D. Berliner", "Richard D. Braatz"]
-version = "1.0.0"
+version = "1.0.1"
 
 [deps]
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
@@ -30,7 +30,7 @@ Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 BSON = "0.3"
 Dierckx = "0.5"
 GeneralizedGenerated = "0.3"
-IfElse = "0.1.0"
+IfElse = "0.1"
 KLU = "0.4"
 OrderedCollections = "1"
 PkgVersion = "0.1 - 0.3"
@@ -42,7 +42,7 @@ SparseDiffTools = "1"
 SpecialFunctions = "1, 2"
 StatsBase = "0.3 - 0.33"
 Sundials = "4"
-Symbolics = "1 - 4"
+Symbolics = "5"
 julia = "1"
 
 [extras]
