@@ -12,7 +12,7 @@ using SHA: sha1
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
 using SpecialFunctions: erf
-using StatsBase: mean
+using Statistics: mean
 using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse, SerialForm
 
 import LinearAlgebra
