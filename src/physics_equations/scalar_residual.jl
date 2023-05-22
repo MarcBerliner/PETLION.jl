@@ -75,21 +75,21 @@ end
 for state in keys(states_total)
     if state ≠ :T # temperature is handled separately
         is_scalar = isempty(states_total[state].sections)
-        str = "calc_$state(Y::Vector{<:Number}, p::AbstractModel) = " * (is_scalar ? "@inbounds Y[p.ind.$state[1]]" : "@inbounds @views Y[p.ind.$state]")
+        str = "calc_$state(Y::AbstractVector{<:Number}, p::AbstractModel) = " * (is_scalar ? "@inbounds Y[p.ind.$state[1]]" : "@inbounds @views Y[p.ind.$state]")
         str = remove_module_name(str)
         eval(Meta.parse(str))
     end
 end
-@inline calc_T(Y::Vector{<:Number}, p::AbstractModelTemp{true}) = @inbounds @views Y[p.ind.T]
-@inline calc_T(::Vector{<:Number}, p::AbstractModelTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
+@inline calc_T(Y::AbstractVector{<:Number}, p::AbstractModelTemp{true}) = @inbounds @views Y[p.ind.T]
+@inline calc_T(::AbstractVector{<:Number}, p::AbstractModelTemp{false}) = repeat([p.θ[:T₀]], p.N.a+p.N.p+p.N.s+p.N.n+p.N.z)
 
-@inline calc_V(Y::Vector{<:Number}, p::AbstractModel) = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
-@inline calc_P(Y::Vector{<:Number}, p::AbstractModel) = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
+@inline calc_V(Y::AbstractVector{<:Number}, p::AbstractModel) = @inbounds Y[p.ind.Φ_s[1]] - Y[p.ind.Φ_s[end]]
+@inline calc_P(Y::AbstractVector{<:Number}, p::AbstractModel) = calc_I(Y,p)*p.θ[:I1C]*calc_V(Y,p)
 @inline calc_T_avg(Y, p) = temperature_weighting(calc_T(Y,p),p)
-@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
-@inline calc_K_eff(Y::Vector{<:Number}, p::AbstractModelTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
+@inline calc_K_eff(Y::AbstractVector{<:Number}, p::AbstractModelTemp{true})  = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], Y[p.ind.T.p], Y[p.ind.T.s], Y[p.ind.T.n], p)
+@inline calc_K_eff(Y::AbstractVector{<:Number}, p::AbstractModelTemp{false}) = @inbounds @views p.numerics.K_eff(Y[p.ind.c_e.p], Y[p.ind.c_e.s], Y[p.ind.c_e.n], repeat([p.θ[:T₀]], p.N.p), repeat([p.θ[:T₀]], p.N.s), repeat([p.θ[:T₀]], p.N.n), p)
 
-@inline calc_η_plating(Y::Vector{<:Number},p::AbstractModel) = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
+@inline calc_η_plating(Y::AbstractVector{<:Number},p::AbstractModel) = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
 @inline calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
 
 @inline function calc_SOC(Y::AbstractVector{Float64}, p::model)
