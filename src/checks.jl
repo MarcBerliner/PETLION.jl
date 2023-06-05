@@ -29,9 +29,9 @@
 end
 
 @inline check_stop_I(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun{method_I},R4<:model,R5<:boundary_stop_conditions_immutable} = nothing
+    ) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun{method_I},R4<:model,R5<:boundary_stop_conditions_immutable} = nothing
 @inline function check_stop_I(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions_immutable}
     
     if (I - bounds.I_max > ϵ) && calc_I(YP,p) > 0
         t_frac = (bounds.prev.I - bounds.I_max)/(bounds.prev.I - I)
@@ -54,9 +54,9 @@ end
 end
 
 @inline check_stop_V(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-) where {R2<:Vector{Float64}, R3<:AbstractRun{method_V},R4<:model,R5<:boundary_stop_conditions_immutable} = nothing
+) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun{method_V},R4<:model,R5<:boundary_stop_conditions_immutable} = nothing
 @inline function check_stop_V(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, method, R3<:AbstractRun{method},R4<:model,R5<:boundary_stop_conditions_immutable}
     
     V = calc_V(Y,p)
     if (bounds.V_min - V > ϵ) && calc_V(YP,p) < 0
@@ -80,7 +80,7 @@ end
 end
 
 @inline function check_stop_SOC(p::R4, run::R3, sol::solution, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions_immutable}
     
     SOC = @inbounds sol.SOC[end]
     if (bounds.SOC_min - SOC > ϵ) && I < 0
@@ -105,7 +105,7 @@ end
 
 @inline check_stop_T(p::model_temp{false}, run, sol, Y, YP, bounds, ϵ, I) = nothing
 @inline function check_stop_T(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:model_temp{true},R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun,R4<:model_temp{true},R5<:boundary_stop_conditions_immutable}
 
     if !isnan(bounds.T_max) && run.name ≠ :dT && run.name ≠ :T
         T = temperature_weighting(calc_T(Y,p),p)
@@ -123,14 +123,14 @@ end
     return nothing
 end
 
-@inline function c_s_n_maximum(Y::Vector{Float64},p::model_solid_diff{:Fickian})
+@inline function c_s_n_maximum(Y::AbstractVector{<:Number},p::model_solid_diff{:Fickian})
     c_s_n_max = -Inf
     @inbounds for i in 1:p.N.n
         @inbounds c_s_n_max = max(c_s_n_max, Y[p.ind.c_s_avg.n[p.N.r_n*i]])
     end
     return c_s_n_max
 end
-@inline function c_s_n_maximum(Y::Vector{Float64},p::Union{model_solid_diff{:polynomial},model_solid_diff{:quadratic}})
+@inline function c_s_n_maximum(Y::AbstractVector{<:Number},p::Union{model_solid_diff{:polynomial},model_solid_diff{:quadratic}})
     c_s_n_max = -Inf
     @inbounds for ind in p.ind.c_s_avg.n
         @inbounds c_s_n_max = max(c_s_n_max, Y[ind])
@@ -139,7 +139,7 @@ end
 end
 
 @inline function check_stop_c_s_surf(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun,R4<:model,R5<:boundary_stop_conditions_immutable}
     
     if !isnan(bounds.c_s_n_max)
         c_s_n_max = c_s_n_maximum(Y,p)
@@ -161,7 +161,7 @@ end
 end
 
 @inline function check_stop_c_e(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model, R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun, R4<:model, R5<:boundary_stop_conditions_immutable}
     
     if !isnan(bounds.c_e_min)
         c_e_min = +Inf
@@ -183,7 +183,7 @@ end
 end
 
 @inline function check_stop_η_plating(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model, R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun, R4<:model, R5<:boundary_stop_conditions_immutable}
     
     if !isnan(bounds.η_plating_min)
         η_plating = calc_η_plating(Y,p)
@@ -203,7 +203,7 @@ end
 
 @inline check_stop_dfilm(::model_age{false}, run, sol, Y, YP, bounds, ϵ, I) = nothing
 @inline function check_stop_dfilm(p::R4, run::R3, sol, Y::R2, YP::R2, bounds::R5, ϵ::Float64, I::Float64
-    ) where {R2<:Vector{Float64}, R3<:AbstractRun, R4<:model_age{:SEI}, R5<:boundary_stop_conditions_immutable}
+    ) where {R2<:AbstractVector{<:Number}, R3<:AbstractRun, R4<:model_age{:SEI}, R5<:boundary_stop_conditions_immutable}
     
     dfilm_max = -Inf
     @inbounds for i in 1:p.N.n
@@ -223,7 +223,7 @@ end
     return nothing
 end
 
-@inline function check_solve(run::Union{run_constant,run_residual}, sol::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:solution,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
+@inline function check_solve(run::Union{run_constant,run_residual}, sol::R1, int::R2, p, bounds, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::AbstractVector{<:Float64}, t::Float64) where {R1<:solution,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if t == int.tprev
         # Sometimes the initial step at t = 0 can be too large. This reduces the step size
         if t == 0.0
@@ -248,7 +248,7 @@ end
     return true
 end
 
-@inline function check_solve(run::run_function, sol::R1, int::R2, p::model, bounds::boundary_stop_conditions_immutable, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::Vector{Float64}, t::Float64) where {R1<:solution,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
+@inline function check_solve(run::run_function, sol::R1, int::R2, p::model, bounds::boundary_stop_conditions_immutable, opts::R5, funcs, keep_Y::Bool, iter::Int64, Y::AbstractVector{<:Number}, t::Float64) where {R1<:solution,R2<:Sundials.IDAIntegrator,R5<:AbstractOptionsModel}
     if iter == opts.maxiters
         error("Reached max iterations of $(opts.maxiters) at t = $(int.t)")
     elseif within_bounds(run)
@@ -345,8 +345,8 @@ end
     then rerun Newton's method and reinitialize at this new time step.
     """
     
-    Y = int.u.v
-    YP = int.du.v
+    Y = int.u
+    YP = int.du
     # take a step of Δt = the relative tolerance
     t_new = int.t + opts.reltol
 

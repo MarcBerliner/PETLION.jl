@@ -92,7 +92,7 @@ end
 @inline calc_η_plating(Y::AbstractVector{<:Number},p::AbstractModel) = @inbounds Y[p.ind.Φ_s.n[1]] - Y[p.ind.Φ_e.n[1]]
 @inline calc_η_plating(t,Y,YP,p) = calc_η_plating(Y,p)
 
-@inline function calc_SOC(Y::AbstractVector{Float64}, p::model)
+@inline function calc_SOC(Y::AbstractVector{<:Number}, p::model)
     """
     Calculate the SOC (dimensionless fraction)
     """
@@ -100,7 +100,7 @@ end
 
     return (c_s_avg_sum/p.θ[:c_max_n] - p.θ[:θ_min_n])/(p.θ[:θ_max_n] - p.θ[:θ_min_n]) # cell-soc fraction
 end
-@inline function calc_SOC(SOC::E, Y::T, t::E, sol::solution, p::model) where {E<:Float64,T<:Vector{E}}
+@inline function calc_SOC(SOC::E, Y::T, t::E, sol::solution, p::model) where {E<:Float64,T<:AbstractVector{<:E}}
     """
     Calculate the SOC (dimensionless fraction) using the trapezoidal rule
     """

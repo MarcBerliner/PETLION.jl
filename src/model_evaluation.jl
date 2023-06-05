@@ -301,8 +301,8 @@ end
 
 @inline function solve!(sol,int::R1,run::R2,p,bounds,opts::R3,funcs) where {R1<:Sundials.IDAIntegrator,R2<:AbstractRun,R3<:AbstractOptionsModel}
     keep_Y = opts.var_keep.Y
-    Y  = int.u.v
-    YP = int.du.v
+    Y  = int.u
+    YP = int.du
     
     iter = 1
     status = within_bounds(run)
@@ -328,7 +328,7 @@ end
         if opts.interp_final && !(run.info.flag == 0) && int.t > 1
             interp_final_points!(p, sol, run, bounds, int, opts)
         else
-            set_var!(sol.Y, opts.var_keep.Y ? copy(int.u.v) : int.u.v, opts.var_keep.Y)
+            set_var!(sol.Y, opts.var_keep.Y ? copy(int.u) : int.u, opts.var_keep.Y)
         end
     end
 
@@ -365,7 +365,7 @@ end
     
     t = bounds.prev.t_final_interp_frac*(int.t - int.tprev) + int.tprev
     
-    set_var!(sol.Y,  bounds.prev.t_final_interp_frac.*(int.u.v .- sol.Y[end]) .+ sol.Y[end], opts.var_keep.Y)
+    set_var!(sol.Y,  bounds.prev.t_final_interp_frac.*(int.u .- sol.Y[end]) .+ sol.Y[end], opts.var_keep.Y)
     set_vars!(sol, p, sol.Y[end], YP, t, run, opts, bounds; modify! = set_var_last!)
     
     return nothing

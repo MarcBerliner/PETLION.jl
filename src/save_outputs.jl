@@ -16,7 +16,7 @@ eval(quote
     ) where {
         R1<:solution,
         R2<:model,
-        R3<:Vector{Float64},
+        R3<:AbstractVector{<:Float64},
         R4<:Float64,
         R5<:AbstractRun,
         R6<:options_simulation_immutable,
@@ -40,17 +40,17 @@ end
 end)
 
 @inline set_var!(x, x_val) = push!(x, x_val)
-@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:Vector{Float64},T2<:Number}
+@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:AbstractVector{<:Float64},T2<:Number}
     keep ? push!(x, x_val) : (@inbounds x[1] = x_val)
 end
-@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
+@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{<:Float64}}
     keep ? push!(x, x_val) : (@inbounds x[1] .= x_val)
 end
 
-@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:Vector{Float64},T2<:Number}
+@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:AbstractVector{<:Float64},T2<:Number}
     @inbounds x[end] = x_val
 end
-@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{Float64}}
+@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{<:Float64}}
     @inbounds x[end] .= x_val
 end
 
@@ -110,7 +110,7 @@ end
     return sol_interp
 end
 @inline interpolate_variable(x::Any,y...;kw...) = x
-@inline function interpolate_variable(x::R1, sol::R2, tspan::T1, interp_bc::Symbol,tspan_indices::Dict{Int64,Vector{Int64}},sol_indices::Dict{Int64,UnitRange{Int64}};k::Int64=3,kw...) where {R1<:AbstractVector{Float64},R2<:solution,T1<:AbstractArray{<:Number}}
+@inline function interpolate_variable(x::R1, sol::R2, tspan::T1, interp_bc::Symbol,tspan_indices::Dict{Int64,Vector{Int64}},sol_indices::Dict{Int64,UnitRange{Int64}};k::Int64=3,kw...) where {R1<:AbstractVector{<:Float64},R2<:solution,T1<:AbstractArray{<:Number}}
     out = zeros(Float64,length(tspan))
     
     @inbounds for ind in keys(tspan_indices)
