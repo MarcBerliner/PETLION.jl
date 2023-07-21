@@ -267,7 +267,7 @@ end
 
     prob = DAEProblem(DAEfunc, YP0, Y0, (0.0, run.tf), run, differential_vars=p.cache.id)
 
-    int = init(prob, Sundials.IDA(;linear_solver=:KLU, init_all=false), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, save_start=false, verbose=false)
+    int = init(prob, Sundials.IDA(;linear_solver=:KLU, init_all=false), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, verbose=false)
 
     if isempty(funcs.int)
         push!(funcs.int, int)
