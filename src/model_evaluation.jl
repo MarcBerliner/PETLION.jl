@@ -267,7 +267,17 @@ end
 
     prob = DAEProblem(DAEfunc, YP0, Y0, (0.0, run.tf), run, differential_vars=p.cache.id)
 
-    int = init(prob, Sundials.IDA(;linear_solver=:KLU, init_all=false), tstops=Float64[], abstol=opts.abstol, reltol=opts.reltol, save_everystep=false, verbose=false)
+    int = init(prob, Sundials.IDA(;
+            linear_solver=:KLU,
+            init_all=false
+        ),
+        initializealg = NoInit(),
+        tstops=Float64[],
+        abstol=opts.abstol,
+        reltol=opts.reltol,
+        save_everystep=false,
+        verbose=false,
+    )
 
     if isempty(funcs.int)
         push!(funcs.int, int)
@@ -356,7 +366,7 @@ end
     return nothing
 end
 
-@views @inbounds @inline function interp_final_points!(p::R1, sol::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:model,R2<:solution,R3<:AbstractRun,R4<:boundary_stop_conditions_immutable,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
+@inline function interp_final_points!(p::R1, sol::R2, run::R3, bounds::R4, int::R5, opts::R6) where {R1<:model,R2<:solution,R3<:AbstractRun,R4<:boundary_stop_conditions_immutable,R5<:Sundials.IDAIntegrator,R6<:AbstractOptionsModel}
     if opts.var_keep.YP
         YP = length(sol.YP) > 1 ? bounds.prev.t_final_interp_frac.*(sol.YP[end] .- sol.YP[end-1]) .+ sol.YP[end-1] : sol.YP[end]
     else

@@ -40,18 +40,18 @@ end
 end)
 
 @inline set_var!(x, x_val) = push!(x, x_val)
-@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:AbstractVector{<:Float64},T2<:Number}
+@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:AbstractVector,T2<:Number}
     keep ? push!(x, x_val) : (@inbounds x[1] = x_val)
 end
-@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{<:Float64}}
-    keep ? push!(x, x_val) : (@inbounds x[1] .= x_val)
+@inline function set_var!(x::T1, x_val::T2, keep::Bool) where {T1<:VectorOfArray,T2<:AbstractVector}
+    keep ? push!(x, x_val) : copyto!(x[1], x_val)
 end
 
-@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:AbstractVector{<:Float64},T2<:Number}
-    @inbounds x[end] = x_val
+@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:AbstractVector,T2<:Number}
+    x[end] = x_val
 end
-@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:VectorOfArray{Float64,2,Array{Array{Float64,1},1}},T2<:AbstractVector{<:Float64}}
-    @inbounds x[end] .= x_val
+@inline function set_var_last!(x::T1, x_val::T2, keep=true) where {T1<:VectorOfArray,T2<:AbstractVector}
+    copyto!(x[end], x_val)
 end
 
 export reset_t!

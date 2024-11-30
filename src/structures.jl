@@ -429,8 +429,8 @@ const STATE_NAMES = Dict{Symbol,String}(
     end
 
     x = getproperty(sol, x_name)
-    if x isa AbstractMatrix
-        x = x'
+    if x isa VectorOfArray
+        x = Matrix(x')
     end
     
     if haskey(STATE_NAMES, x_name)
@@ -523,7 +523,13 @@ function Base.show(io::IO, p::AbstractModel)
     end
     header = "$(@__MODULE__) $header"
 
-    lim_electrode, Q_min = limiting_electrode(p)
+    try
+        lim_electrode, Q_min = limiting_electrode(p)
+    catch
+        lim_electrode = "Unknown"
+        Q_min = NaN
+    end
+
     
     str = string(
     "$header:\n",
@@ -674,7 +680,7 @@ function Base.show(io::IO, sol::solution)
     results = sol.results
     if !isempty(sol)
         p = results[1].p
-        Y = @views @inbounds sol.Y[end]
+        Y = @inbounds sol.Y[end]
         t, time_unit = time_units(sol.t[end]; digits=2)
     end
     function str_runs()
@@ -715,7 +721,7 @@ function Base.show(io::IO, sol::solution)
 
     title = "$(@__MODULE__) simulation"
     if !isempty(sol)
-        str = @views @inbounds string(
+        str = @inbounds string(
                 "$title\n",
                 " --------\n",
                 str_runs(),
