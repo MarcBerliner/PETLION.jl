@@ -205,7 +205,10 @@ function retrieve_states(Y::AbstractVector{T}, p::AbstractModel) where T
     ind = p.ind
     vars_in_use = p.cache.vars
     
-    vars = fieldnames(solution)[findall(fieldtypes(solution) .<: AbstractArray{<:Number})]
+    vars = fieldnames(solution)[findall(fieldtypes(solution) .<: Union{
+        AbstractArray{<:Number},
+        VectorOfArray,
+    })]
 
     sections = Symbol[]
     @inbounds for (field,_type) in zip(fieldnames(index_state), fieldtypes(index_state))

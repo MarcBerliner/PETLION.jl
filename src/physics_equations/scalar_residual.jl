@@ -104,7 +104,7 @@ end
     """
     Calculate the SOC (dimensionless fraction) using the trapezoidal rule
     """
-    Y_prev = @inbounds @views sol.Y[end]
+    Y_prev = sol.Y[end]
     t_prev = @inbounds sol.t[end]
     SOC_new = SOC + 0.5*(t - t_prev)*(calc_I(Y,p) + calc_I(Y_prev,p))/3600.0
     return SOC_new

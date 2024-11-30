@@ -483,7 +483,7 @@ function convert_to_ifelse(str::Vector{Char})
     str = replace(str, "; else; " => ", ")
     str = replace(str, "; end" => ")")
     str = replace(str, ";" => ",")
-    str = replace(str, "if" => "IfElse.ifelse(")
+    str = replace(str, "if" => "ifelse(")
 
     return str
 end

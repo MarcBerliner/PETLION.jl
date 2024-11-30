@@ -543,7 +543,7 @@ function residuals_j_s!(res, states, p::AbstractModel)
     j_s_calc = -abs.((p.θ[:i_0_jside].*(I_density/I1C)^p.θ[:w]./F).*(-exp.(-α.*F./(R.*T.n).*η_s)))
 
     # Only activate the side reaction during charge
-    j_s_calc .= [IfElse.ifelse(I_density > 0, x, 0) for x in j_s_calc]
+    j_s_calc .= [ifelse(I_density > 0, x, 0) for x in j_s_calc]
 
     # side reaction residuals
     res_j_s .= j_s .- j_s_calc

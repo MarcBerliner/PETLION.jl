@@ -7,7 +7,7 @@ using LinearAlgebra: diagind, Tridiagonal, norm
 using OrderedCollections: OrderedDict
 using RecipesBase
 using RecursiveArrayTools: VectorOfArray
-using SciMLBase: DAEFunction, DAEProblem, step!, init
+using SciMLBase: DAEFunction, DAEProblem, step!, init, NoInit
 using SHA: sha1
 using SparseArrays: sparse, findnz, SparseMatrixCSC, spzeros, spdiagm
 using SparseDiffTools: matrix_colors, ForwardColorJacCache, forwarddiff_color_jacobian!
@@ -16,6 +16,7 @@ using Statistics: mean
 using Symbolics: @variables, Num, gradient, jacobian_sparsity, expand_derivatives, Differential, get_variables, sparsejacobian, substitute, simplify, build_function, IfElse, SerialForm
 
 import LinearAlgebra
+import NaNMath
 import PkgVersion
 import ProgressMeter
 import SuiteSparse

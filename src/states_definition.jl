@@ -77,7 +77,7 @@ function model_variables(numerics)
     return states, outputs
 end
 
-@inline function initial_guess(p)
+function initial_guess(p)
     """
     Get the initial guess in the DAE initialization.
     This function is made symbolic by Symbolics and 
