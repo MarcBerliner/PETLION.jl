@@ -523,11 +523,10 @@ function Base.show(io::IO, p::AbstractModel)
     end
     header = "$(@__MODULE__) $header"
 
-    try
-        lim_electrode, Q_min = limiting_electrode(p)
+    lim_electrode, Q_min = try
+        limiting_electrode(p)
     catch
-        lim_electrode = "Unknown"
-        Q_min = NaN
+        "Unknown", NaN
     end
 
     
